@@ -6,9 +6,10 @@ import {
   onSnapshot,
   updateDoc,
   doc,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { formatDateTime } from '@/lib/admin-firestore';
+import { formatDateTime, timestampToDate, toDateTimeInputValue } from '@/lib/admin-firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -43,6 +44,8 @@ import {
   Trophy,
   Star,
   Activity,
+  Gift,
+  CalendarClock,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -55,6 +58,8 @@ interface AppUser {
   role?: string;
   subscriptionStatus?: string;
   isPremium?: boolean;
+  subscriptionExpiryDate?: any;
+  subscriptionStartDate?: any;
   totalTestsAttempted?: number;
   averageScore?: number;
   totalXp?: number;
@@ -80,8 +85,11 @@ function roleBadge(role?: string) {
   );
 }
 
-function subscriptionBadge(status?: string) {
-  switch (status) {
+function subscriptionBadge(status?: string, expiry?: any) {
+  const expiryDate = timestampToDate(expiry);
+  const isExpired = expiryDate && expiryDate.getTime() < Date.now();
+  const effectiveStatus = isExpired && status === 'premium' ? 'expired' : status;
+  switch (effectiveStatus) {
     case 'premium':
       return (
         <Badge variant="outline" className="bg-emerald-950/60 text-emerald-400 border-emerald-800/50">
@@ -110,11 +118,17 @@ export default function Users() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const [form, setForm] = useState<{ role: string; subscriptionStatus: string; isActive: boolean }>({
+  const [form, setForm] = useState<{ role: string; subscriptionStatus: string; isActive: boolean; subscriptionExpiryDate: string }>({
     role: 'user',
     subscriptionStatus: 'free',
     isActive: true,
+    subscriptionExpiryDate: '',
   });
+  const [grantOpen, setGrantOpen] = useState(false);
+  const [grantUserId, setGrantUserId] = useState<string | null>(null);
+  const [grantUserName, setGrantUserName] = useState<string>('');
+  const [grantMonths, setGrantMonths] = useState<number>(1);
+  const [granting, setGranting] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -151,9 +165,54 @@ export default function Users() {
       role: user.role || 'user',
       subscriptionStatus: user.subscriptionStatus || 'free',
       isActive: user.isActive !== false,
+      subscriptionExpiryDate: user.subscriptionExpiryDate ? toDateTimeInputValue(user.subscriptionExpiryDate) : '',
     });
     setEditingId(user.id);
     setDialogOpen(true);
+  };
+
+  const openGrant = (user: AppUser) => {
+    setGrantUserId(user.id);
+    setGrantUserName(user.name || user.email || user.phoneNumber || 'this user');
+    setGrantMonths(1);
+    setGrantOpen(true);
+  };
+
+  const handleGrantPremium = async () => {
+    if (!grantUserId) return;
+    setGranting(true);
+    try {
+      const startDate = new Date();
+      const expiryDate = new Date();
+      expiryDate.setMonth(expiryDate.getMonth() + grantMonths);
+      await updateDoc(doc(db, 'users', grantUserId), {
+        isPremium: true,
+        subscriptionStatus: 'premium',
+        subscriptionStartDate: startDate,
+        subscriptionExpiryDate: expiryDate,
+        updatedAt: serverTimestamp(),
+      });
+      toast.success(`Premium granted for ${grantMonths} month${grantMonths === 1 ? '' : 's'}!`);
+      setGrantOpen(false);
+      setGrantUserId(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to grant premium');
+    } finally {
+      setGranting(false);
+    }
+  };
+
+  const handleRevokePremium = async (userId: string) => {
+    try {
+      await updateDoc(doc(db, 'users', userId), {
+        isPremium: false,
+        subscriptionStatus: 'expired',
+        updatedAt: serverTimestamp(),
+      });
+      toast.success('Premium revoked');
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to revoke premium');
+    }
   };
 
   const handleSave = async () => {
@@ -166,6 +225,12 @@ export default function Users() {
         isPremium: form.subscriptionStatus === 'premium',
         isActive: form.isActive,
       };
+      if (form.subscriptionStatus === 'premium' && form.subscriptionExpiryDate) {
+        updates.subscriptionExpiryDate = new Date(form.subscriptionExpiryDate);
+        if (!updates.subscriptionStartDate) updates.subscriptionStartDate = new Date();
+      } else if (form.subscriptionStatus !== 'premium') {
+        updates.subscriptionExpiryDate = null;
+      }
       await updateDoc(doc(db, 'users', editingId), updates);
       toast.success('User updated');
       setDialogOpen(false);
@@ -288,7 +353,17 @@ export default function Users() {
                         {user.phoneNumber || '—'}
                       </TableCell>
                       <TableCell>{roleBadge(user.role)}</TableCell>
-                      <TableCell>{subscriptionBadge(user.subscriptionStatus)}</TableCell>
+                      <TableCell>
+                        <div className="flex flex-col gap-1">
+                          {subscriptionBadge(user.subscriptionStatus, user.subscriptionExpiryDate)}
+                          {user.subscriptionExpiryDate && (
+                            <span className="text-[10px] text-slate-500 flex items-center gap-0.5">
+                              <CalendarClock className="w-2.5 h-2.5" />
+                              {formatDateTime(user.subscriptionExpiryDate)}
+                            </span>
+                          )}
+                        </div>
+                      </TableCell>
                       <TableCell className="hidden lg:table-cell">
                         <div className="flex items-center gap-3 text-xs">
                           <span className="inline-flex items-center text-slate-400" title="Tests attempted">
@@ -309,14 +384,36 @@ export default function Users() {
                         {user.lastActiveAt ? formatDateTime(user.lastActiveAt) : '—'}
                       </TableCell>
                       <TableCell className="text-right">
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-8 border-slate-700 text-slate-300 hover:bg-slate-800"
-                          onClick={() => openEdit(user)}
-                        >
-                          <Pencil className="w-3 h-3 mr-1" /> Manage
-                        </Button>
+                        <div className="flex items-center justify-end gap-1.5">
+                          {user.subscriptionStatus !== 'premium' ? (
+                            <Button
+                              size="sm"
+                              className="h-8 bg-amber-600 hover:bg-amber-700 text-white"
+                              onClick={() => openGrant(user)}
+                              title="Grant Premium"
+                            >
+                              <Gift className="w-3 h-3 mr-1" /> Grant Premium
+                            </Button>
+                          ) : (
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="h-8 text-red-400 hover:bg-red-950/40"
+                              onClick={() => handleRevokePremium(user.id)}
+                              title="Revoke Premium"
+                            >
+                              Revoke
+                            </Button>
+                          )}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-8 border-slate-700 text-slate-300 hover:bg-slate-800"
+                            onClick={() => openEdit(user)}
+                          >
+                            <Pencil className="w-3 h-3" />
+                          </Button>
+                        </div>
                       </TableCell>
                     </TableRow>
                   ))}
@@ -371,6 +468,22 @@ export default function Users() {
                 Premium unlocks all tests & ad-free experience.
               </p>
             </div>
+            {form.subscriptionStatus === 'premium' && (
+              <div className="space-y-2">
+                <Label className="flex items-center gap-1">
+                  <CalendarClock className="w-3.5 h-3.5" /> Premium Expiry Date
+                </Label>
+                <Input
+                  type="datetime-local"
+                  value={form.subscriptionExpiryDate}
+                  onChange={(e) => setForm({ ...form, subscriptionExpiryDate: e.target.value })}
+                  className="bg-slate-800 border-slate-700"
+                />
+                <p className="text-xs text-slate-500">
+                  User will lose premium access after this date.
+                </p>
+              </div>
+            )}
             <div className="flex items-center gap-2 pt-2 pb-1 border-t border-slate-800">
               <Switch
                 checked={form.isActive}
@@ -389,6 +502,65 @@ export default function Users() {
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               Save Changes
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Grant Premium Dialog */}
+      <Dialog open={grantOpen} onOpenChange={setGrantOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2">
+              <Gift className="w-5 h-5 text-amber-400" /> Grant Premium
+            </DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4">
+            <p className="text-sm text-slate-400">
+              Grant premium access to <span className="text-white font-semibold">{grantUserName}</span>.
+              This will unlock all premium tests & content.
+            </p>
+            <div className="space-y-2">
+              <Label>Duration</Label>
+              <Select
+                value={String(grantMonths)}
+                onValueChange={(v) => setGrantMonths(Number(v))}
+              >
+                <SelectTrigger className="bg-slate-800 border-slate-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="1">1 month</SelectItem>
+                  <SelectItem value="3">3 months</SelectItem>
+                  <SelectItem value="6">6 months</SelectItem>
+                  <SelectItem value="12">1 year (12 months)</SelectItem>
+                  <SelectItem value="120">Lifetime (10 years)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="rounded-lg bg-amber-950/30 border border-amber-800/40 p-3 text-xs text-amber-300/80">
+              <p className="flex items-center gap-1.5">
+                <Crown className="w-3.5 h-3.5" />
+                <span>
+                  Premium will be active from <span className="font-semibold">now</span> until{' '}
+                  <span className="font-semibold">
+                    {new Date(new Date().setMonth(new Date().getMonth() + grantMonths)).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}
+                  </span>
+                </span>
+              </p>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setGrantOpen(false)} className="border-slate-700 text-slate-300">
+              Cancel
+            </Button>
+            <Button
+              onClick={handleGrantPremium}
+              disabled={granting}
+              className="bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white font-semibold"
+            >
+              {granting ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <Crown className="w-4 h-4 mr-1" />}
+              Grant Premium
             </Button>
           </DialogFooter>
         </DialogContent>

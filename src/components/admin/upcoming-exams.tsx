@@ -86,7 +86,7 @@ interface Category {
 const emptyForm = {
   name: '',
   organization: '',
-  categoryId: '',
+  categoryId: 'none',
   examDate: '',
   applicationStartDate: '',
   applicationEndDate: '',
@@ -214,7 +214,7 @@ export default function UpcomingExams() {
     setForm({
       name: item.name || '',
       organization: item.organization || '',
-      categoryId: item.categoryId || '',
+      categoryId: item.categoryId || 'none',
       examDate: item.examDate ? toDateTimeInputValue(item.examDate) : '',
       applicationStartDate: item.applicationStartDate ? toDateTimeInputValue(item.applicationStartDate) : '',
       applicationEndDate: item.applicationEndDate ? toDateTimeInputValue(item.applicationEndDate) : '',
@@ -263,7 +263,7 @@ export default function UpcomingExams() {
       const data: Record<string, any> = {
         name: form.name.trim(),
         organization: form.organization.trim() || null,
-        categoryId: form.categoryId || null,
+        categoryId: form.categoryId === 'none' ? null : form.categoryId,
         examDate: new Date(form.examDate),
         applicationStartDate: form.applicationStartDate ? new Date(form.applicationStartDate) : null,
         applicationEndDate: form.applicationEndDate ? new Date(form.applicationEndDate) : null,
@@ -471,7 +471,7 @@ export default function UpcomingExams() {
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {categories.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name}

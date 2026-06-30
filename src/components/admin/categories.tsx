@@ -22,7 +22,15 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers } from 'lucide-react';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee } from 'lucide-react';
+import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 
 interface Category {
@@ -35,9 +43,12 @@ interface Category {
   color?: string;
   order?: number;
   subjectCount?: number;
+  isPremium?: boolean;
+  premiumPrice?: number;
+  premiumDurationMonths?: number;
 }
 
-const emptyForm = { name: '', slug: '', icon: '', description: '', image: '', color: '#10b981', order: 0 };
+const emptyForm = { name: '', slug: '', icon: '', description: '', image: '', color: '#10b981', order: 0, isPremium: false, premiumPrice: 99, premiumDurationMonths: 1 };
 
 export default function Categories() {
   const { setCurrentSection } = useAppStore();
@@ -118,6 +129,9 @@ export default function Categories() {
       image: item.image || '',
       color: item.color || '#10b981',
       order: item.order || 0,
+      isPremium: !!item.isPremium,
+      premiumPrice: item.premiumPrice ?? 99,
+      premiumDurationMonths: item.premiumDurationMonths ?? 1,
     });
     setEditingId(item.id);
     setDialogOpen(true);
@@ -153,6 +167,9 @@ export default function Categories() {
         image: form.image || null,
         color: form.color || null,
         order: Number(form.order) || 0,
+        isPremium: !!form.isPremium,
+        premiumPrice: form.isPremium ? (Number(form.premiumPrice) || 0) : null,
+        premiumDurationMonths: form.isPremium ? (Number(form.premiumDurationMonths) || 1) : null,
       };
       if (editingId) {
         await updateDoc(doc(db, 'categories', editingId), { ...data, updatedAt: serverTimestamp() });
@@ -228,8 +245,13 @@ export default function Categories() {
                     </div>
                   )}
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2 flex-wrap">
                       <h4 className="text-white font-medium truncate">{item.name}</h4>
+                      {item.isPremium ? (
+                        <Badge variant="outline" className="bg-amber-950/60 text-amber-400 border-amber-800/50 shrink-0">
+                          <Crown className="w-3 h-3 mr-1" /> ₹{item.premiumPrice || 0}
+                        </Badge>
+                      ) : null}
                       <Badge variant="outline" className="text-slate-500 border-slate-700 shrink-0">{item.subjectCount || 0} subjects</Badge>
                     </div>
                     {item.description && <p className="text-slate-500 text-xs mt-1 line-clamp-2">{item.description}</p>}
@@ -308,6 +330,55 @@ export default function Categories() {
             <div className="space-y-2">
               <Label>Order</Label>
               <Input type="number" value={form.order} onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} className="bg-slate-800 border-slate-700" />
+            </div>
+            {/* Premium toggle */}
+            <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-amber-400" />
+                  <Label className="cursor-pointer font-semibold text-white">Premium Category</Label>
+                </div>
+                <Switch
+                  checked={form.isPremium}
+                  onCheckedChange={(v) => setForm({ ...form, isPremium: v })}
+                />
+              </div>
+              <p className="text-xs text-slate-500">
+                Premium categories require a subscription to access their tests & content.
+              </p>
+              {form.isPremium && (
+                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-700">
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> Price (₹)</Label>
+                    <Input
+                      type="number"
+                      value={form.premiumPrice}
+                      onChange={(e) => setForm({ ...form, premiumPrice: Number(e.target.value) })}
+                      placeholder="99"
+                      min="0"
+                      className="bg-slate-800 border-slate-700"
+                    />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Duration (months)</Label>
+                    <Select
+                      value={String(form.premiumDurationMonths)}
+                      onValueChange={(v) => setForm({ ...form, premiumDurationMonths: Number(v) })}
+                    >
+                      <SelectTrigger className="bg-slate-800 border-slate-700">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent className="bg-slate-800 border-slate-700">
+                        <SelectItem value="1">1 month</SelectItem>
+                        <SelectItem value="3">3 months</SelectItem>
+                        <SelectItem value="6">6 months</SelectItem>
+                        <SelectItem value="12">12 months</SelectItem>
+                        <SelectItem value="120">Lifetime (10 years)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

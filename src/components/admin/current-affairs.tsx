@@ -96,7 +96,7 @@ const emptyForm = {
   content: '',
   source: '',
   category: '',
-  categoryId: '',
+  categoryId: 'none',
   isImportant: false,
   tags: '',
   pdfUrl: '',
@@ -214,7 +214,7 @@ export default function CurrentAffairs() {
       content: item.content || '',
       source: item.source || '',
       category: item.category || '',
-      categoryId: item.categoryId || '',
+      categoryId: item.categoryId || 'none',
       isImportant: !!item.isImportant,
       tags: Array.isArray(item.tags) ? item.tags.join(', ') : '',
       pdfUrl: item.pdfUrl || '',
@@ -284,7 +284,7 @@ export default function CurrentAffairs() {
         content: form.content.trim(),
         source: form.source.trim() || null,
         category: form.category.trim() || null,
-        categoryId: form.categoryId || null,
+        categoryId: form.categoryId === 'none' ? null : form.categoryId,
         isImportant: !!form.isImportant,
         tags: tagsArray,
         pdfUrl: form.pdfUrl || null,
@@ -529,7 +529,7 @@ export default function CurrentAffairs() {
                     <SelectValue placeholder="None" />
                   </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
-                    <SelectItem value="">None</SelectItem>
+                    <SelectItem value="none">None</SelectItem>
                     {categories.map((c) => (
                       <SelectItem key={c.id} value={c.id}>
                         {c.name}

@@ -17,6 +17,7 @@ import {
   Image,
   Newspaper,
   Users,
+  CreditCard,
   LogOut,
   Menu,
   Cloud,
@@ -60,9 +61,10 @@ const NAV_GROUPS: NavGroup[] = [
     ],
   },
   {
-    title: 'Users',
+    title: 'Users & Billing',
     items: [
       { id: 'users', label: 'Users', icon: Users },
+      { id: 'payments', label: 'Payments', icon: CreditCard },
     ],
   },
 ];

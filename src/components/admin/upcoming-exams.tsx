@@ -9,6 +9,7 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import {
@@ -54,6 +55,7 @@ import {
   EyeOff,
   Building2,
   BookOpen,
+  Layers,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -121,7 +123,50 @@ export default function UpcomingExams() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const BULK_SAMPLE = '[{"name":"SSC CGL 2024","organization":"Staff Selection Commission","examDate":"2024-12-15T00:00:00.000Z","applicationStartDate":"2024-10-01T00:00:00.000Z","applicationEndDate":"2024-10-31T00:00:00.000Z","description":"Combined Graduate Level","isPublished":true,"order":1},{"name":"IBPS PO 2024","organization":"IBPS","examDate":"2024-11-20T00:00:00.000Z","description":"Probationary Officer exam","isPublished":true,"order":2}]';
+
+  const handleBulkImport = async () => {
+    let parsed: any;
+    try {
+      parsed = JSON.parse(bulkText);
+    } catch (e: any) {
+      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+      return;
+    }
+    if (!Array.isArray(parsed)) {
+      toast.error('JSON must be an array of items');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const batch = writeBatch(db);
+      const colRef = collection(db, 'upcoming_exams');
+      parsed.forEach((item) => {
+        const ref = doc(colRef);
+        const payload = { ...item };
+        // Convert ISO date strings to Date objects if present
+        ['examDate', 'applicationStartDate', 'applicationEndDate'].forEach((key) => {
+          if (typeof payload[key] === 'string') payload[key] = new Date(payload[key]);
+        });
+        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+        batch.set(ref, payload);
+      });
+      await batch.commit();
+      toast.success(`Imported ${parsed.length} items successfully`);
+      setBulkOpen(false);
+      setBulkText('');
+    } catch (err: any) {
+      toast.error(err?.message || 'Bulk import failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   useEffect(() => {
     const unsub1 = onSnapshot(
@@ -272,9 +317,18 @@ export default function UpcomingExams() {
           </h3>
           <p className="text-slate-500 text-sm">Exam schedule with countdown for users</p>
         </div>
-        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-          <Plus className="w-4 h-4 mr-1" /> Add Exam
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Plus className="w-4 h-4 mr-1" /> Add Exam
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setBulkOpen(true)}
+            className="border-slate-700 text-slate-200 hover:bg-slate-800"
+          >
+            <Layers className="w-4 h-4 mr-1" /> Bulk Add
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -548,6 +602,65 @@ export default function UpcomingExams() {
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               {editingId ? 'Update' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Add Dialog */}
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Add Upcoming Exams</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-slate-500">
+                Paste a JSON array of upcoming exam objects below.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkText(BULK_SAMPLE)}
+                className="border-slate-700 text-slate-300 h-8"
+              >
+                Load Sample
+              </Button>
+            </div>
+            <Textarea
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              rows={15}
+              placeholder='[{"name":"SSC CGL 2024","organization":"...","examDate":"2024-12-15T00:00:00.000Z"}]'
+              className="bg-slate-800 border-slate-700 font-mono text-xs"
+            />
+            <p className="text-xs text-slate-500">
+              Fields: <span className="text-slate-400">name</span>,{' '}
+              <span className="text-slate-400">organization</span>,{' '}
+              <span className="text-slate-400">examDate</span> (ISO string),{' '}
+              <span className="text-slate-400">applicationStartDate</span> (ISO string),{' '}
+              <span className="text-slate-400">applicationEndDate</span> (ISO string),{' '}
+              <span className="text-slate-400">description</span>,{' '}
+              <span className="text-slate-400">isPublished</span> (boolean),{' '}
+              <span className="text-slate-400">order</span> (number)
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(false)}
+              className="border-slate-700 text-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkImport}
+              disabled={bulkSaving || !bulkText.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {bulkSaving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Validate & Import
             </Button>
           </DialogFooter>
         </DialogContent>

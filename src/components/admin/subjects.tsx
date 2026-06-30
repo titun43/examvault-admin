@@ -9,6 +9,7 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { uploadImage } from '@/lib/admin-firestore';
@@ -21,7 +22,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, BookOpen } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, BookOpen, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Subject {
@@ -52,6 +53,45 @@ export default function Subjects() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
+
+  const BULK_SAMPLE = '[{"name":"Quantitative Aptitude","description":"Math for competitive exams","icon":"🔢","categoryId":"<paste existing category id>","order":1,"isActive":true},{"name":"Reasoning","description":"Logical reasoning","icon":"🧩","categoryId":"<paste existing category id>","order":2,"isActive":true}]';
+
+  const handleBulkImport = async () => {
+    let parsed: any;
+    try {
+      parsed = JSON.parse(bulkText);
+    } catch (e: any) {
+      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+      return;
+    }
+    if (!Array.isArray(parsed)) {
+      toast.error('JSON must be an array of items');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const batch = writeBatch(db);
+      const colRef = collection(db, 'subjects');
+      parsed.forEach((item) => {
+        const ref = doc(colRef);
+        const payload = { ...item };
+        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+        batch.set(ref, payload);
+      });
+      await batch.commit();
+      toast.success(`Imported ${parsed.length} items successfully`);
+      setBulkOpen(false);
+      setBulkText('');
+    } catch (err: any) {
+      toast.error(err?.message || 'Bulk import failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   useEffect(() => {
     const u1 = onSnapshot(collection(db, 'subjects'), (snap) => {
@@ -130,9 +170,18 @@ export default function Subjects() {
           </h3>
           <p className="text-slate-500 text-sm">Subjects linked to categories (e.g. GK, Math, English)</p>
         </div>
-        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-          <Plus className="w-4 h-4 mr-1" /> Add Subject
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Plus className="w-4 h-4 mr-1" /> Add Subject
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setBulkOpen(true)}
+            className="border-slate-700 text-slate-200 hover:bg-slate-800"
+          >
+            <Layers className="w-4 h-4 mr-1" /> Bulk Add
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -233,6 +282,63 @@ export default function Subjects() {
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               {editingId ? 'Update' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Add Dialog */}
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Add Subjects</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-slate-500">
+                Paste a JSON array of subject objects below.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkText(BULK_SAMPLE)}
+                className="border-slate-700 text-slate-300 h-8"
+              >
+                Load Sample
+              </Button>
+            </div>
+            <Textarea
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              rows={15}
+              placeholder='[{"name":"Quantitative Aptitude","categoryId":"...","order":1}]'
+              className="bg-slate-800 border-slate-700 font-mono text-xs"
+            />
+            <p className="text-xs text-slate-500">
+              Fields: <span className="text-slate-400">name</span>,{' '}
+              <span className="text-slate-400">description</span>,{' '}
+              <span className="text-slate-400">icon</span> (emoji),{' '}
+              <span className="text-slate-400">categoryId</span> (existing category id),{' '}
+              <span className="text-slate-400">order</span> (number),{' '}
+              <span className="text-slate-400">isActive</span> (boolean)
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(false)}
+              className="border-slate-700 text-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkImport}
+              disabled={bulkSaving || !bulkText.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {bulkSaving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Validate & Import
             </Button>
           </DialogFooter>
         </DialogContent>

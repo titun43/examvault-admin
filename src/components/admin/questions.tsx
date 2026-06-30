@@ -11,6 +11,7 @@ import {
   serverTimestamp,
   query,
   where,
+  writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAppStore } from '@/lib/store';
@@ -24,7 +25,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Question {
@@ -55,7 +56,46 @@ export default function Questions() {
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkText, setBulkText] = useState('');
+  const [bulkSaving, setBulkSaving] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
+
+  const BULK_SAMPLE = '[{"testId":"<paste existing test id>","question":"What is 2+2?","options":["3","4","5","6"],"correctAnswer":1,"explanation":"2+2=4","difficulty":"easy","marks":1},{"testId":"<paste existing test id>","question":"Capital of India?","options":["Mumbai","Delhi","Kolkata","Chennai"],"correctAnswer":1,"explanation":"New Delhi is the capital","difficulty":"easy","marks":1}]';
+
+  const handleBulkImport = async () => {
+    let parsed: any;
+    try {
+      parsed = JSON.parse(bulkText);
+    } catch (e: any) {
+      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+      return;
+    }
+    if (!Array.isArray(parsed)) {
+      toast.error('JSON must be an array of items');
+      return;
+    }
+    setBulkSaving(true);
+    try {
+      const batch = writeBatch(db);
+      const colRef = collection(db, 'questions');
+      parsed.forEach((item) => {
+        const ref = doc(colRef);
+        const payload = { ...item };
+        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+        batch.set(ref, payload);
+      });
+      await batch.commit();
+      toast.success(`Imported ${parsed.length} items successfully`);
+      setBulkOpen(false);
+      setBulkText('');
+    } catch (err: any) {
+      toast.error(err?.message || 'Bulk import failed');
+    } finally {
+      setBulkSaving(false);
+    }
+  };
 
   useEffect(() => {
     if (!selectedTestId) { setLoading(false); return; }
@@ -172,9 +212,18 @@ export default function Questions() {
             <p className="text-slate-500 text-sm truncate">for: {selectedTestTitle}</p>
           </div>
         </div>
-        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0">
-          <Plus className="w-4 h-4 mr-1" /> Add Question
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0">
+            <Plus className="w-4 h-4 mr-1" /> Add Question
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setBulkOpen(true)}
+            className="border-slate-700 text-slate-200 hover:bg-slate-800 shrink-0"
+          >
+            <Layers className="w-4 h-4 mr-1" /> Bulk Add
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -282,6 +331,64 @@ export default function Questions() {
             <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
               {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               {editingId ? 'Update' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Bulk Add Dialog */}
+      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Bulk Add Questions</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="flex items-center justify-between gap-2">
+              <p className="text-xs text-slate-500">
+                Paste a JSON array of question objects below.
+              </p>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setBulkText(BULK_SAMPLE)}
+                className="border-slate-700 text-slate-300 h-8"
+              >
+                Load Sample
+              </Button>
+            </div>
+            <Textarea
+              value={bulkText}
+              onChange={(e) => setBulkText(e.target.value)}
+              rows={15}
+              placeholder='[{"testId":"...","question":"...","options":["A","B","C","D"],"correctAnswer":1}]'
+              className="bg-slate-800 border-slate-700 font-mono text-xs"
+            />
+            <p className="text-xs text-slate-500">
+              Fields: <span className="text-slate-400">testId</span> (existing test id),{' '}
+              <span className="text-slate-400">question</span> (string),{' '}
+              <span className="text-slate-400">options</span> (array of 4 strings),{' '}
+              <span className="text-slate-400">correctAnswer</span> (0-based index),{' '}
+              <span className="text-slate-400">explanation</span> (string),{' '}
+              <span className="text-slate-400">difficulty</span> (easy | medium | hard),{' '}
+              <span className="text-slate-400">marks</span> (number)
+            </p>
+          </div>
+          <DialogFooter>
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(false)}
+              className="border-slate-700 text-slate-300"
+            >
+              Cancel
+            </Button>
+            <Button
+              onClick={handleBulkImport}
+              disabled={bulkSaving || !bulkText.trim()}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {bulkSaving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Validate & Import
             </Button>
           </DialogFooter>
         </DialogContent>

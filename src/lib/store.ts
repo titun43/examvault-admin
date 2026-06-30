@@ -11,7 +11,8 @@ export type AdminSection =
   | 'upcoming-exams'
   | 'banners'
   | 'current-affairs'
-  | 'users';
+  | 'users'
+  | 'payments';
 
 interface AppState {
   currentSection: AdminSection;

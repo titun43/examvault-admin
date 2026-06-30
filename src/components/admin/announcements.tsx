@@ -1,0 +1,502 @@
+'use client';
+
+import { useEffect, useState, useRef } from 'react';
+import {
+  collection,
+  onSnapshot,
+  addDoc,
+  updateDoc,
+  deleteDoc,
+  doc,
+  serverTimestamp,
+} from 'firebase/firestore';
+import { db } from '@/lib/firebase';
+import { uploadImage, toDateTimeInputValue, formatDateTime, timestampToDate } from '@/lib/admin-firestore';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent } from '@/components/ui/card';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
+import { Badge } from '@/components/ui/badge';
+import { Switch } from '@/components/ui/switch';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  Loader2,
+  Newspaper,
+  Image as ImageIcon,
+  X,
+  Pin,
+  Eye,
+  EyeOff,
+  Link2,
+  Clock,
+} from 'lucide-react';
+import { toast } from 'sonner';
+
+type AnnouncementType = 'info' | 'success' | 'warning' | 'error' | 'promo';
+
+interface Announcement {
+  id: string;
+  title: string;
+  message?: string;
+  type?: AnnouncementType;
+  imageUrl?: string;
+  link?: string;
+  linkLabel?: string;
+  isPinned?: boolean;
+  isPublished?: boolean;
+  order?: number;
+  expiresAt?: any;
+  createdAt?: any;
+  updatedAt?: any;
+}
+
+const TYPE_STYLES: Record<AnnouncementType, { badge: string; dot: string; label: string }> = {
+  info: { badge: 'bg-blue-950/60 text-blue-400 border-blue-800/50', dot: 'bg-blue-400', label: 'Info' },
+  success: { badge: 'bg-emerald-950/60 text-emerald-400 border-emerald-800/50', dot: 'bg-emerald-400', label: 'Success' },
+  warning: { badge: 'bg-amber-950/60 text-amber-400 border-amber-800/50', dot: 'bg-amber-400', label: 'Warning' },
+  error: { badge: 'bg-red-950/60 text-red-400 border-red-800/50', dot: 'bg-red-400', label: 'Error' },
+  promo: { badge: 'bg-purple-950/60 text-purple-400 border-purple-800/50', dot: 'bg-purple-400', label: 'Promo' },
+};
+
+const emptyForm = {
+  title: '',
+  message: '',
+  type: 'info' as AnnouncementType,
+  imageUrl: '',
+  link: '',
+  linkLabel: '',
+  isPinned: false,
+  isPublished: true,
+  order: 0,
+  expiresAt: '',
+};
+
+export default function Announcements() {
+  const [items, setItems] = useState<Announcement[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [dialogOpen, setDialogOpen] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [form, setForm] = useState(emptyForm);
+  const [saving, setSaving] = useState(false);
+  const [uploading, setUploading] = useState(false);
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const unsub = onSnapshot(
+      collection(db, 'announcements'),
+      (snap) => {
+        const list = snap.docs
+          .map((d) => ({ id: d.id, ...d.data() }) as Announcement)
+          .sort((a, b) => {
+            // Pinned first, then by order, then by createdAt desc
+            if (!!a.isPinned !== !!b.isPinned) return a.isPinned ? -1 : 1;
+            const ordA = a.order || 0;
+            const ordB = b.order || 0;
+            if (ordA !== ordB) return ordA - ordB;
+            const tA = a.createdAt ? timestampToDate(a.createdAt)?.getTime() || 0 : 0;
+            const tB = b.createdAt ? timestampToDate(b.createdAt)?.getTime() || 0 : 0;
+            return tB - tA;
+          });
+        setItems(list);
+        setLoading(false);
+      },
+      () => setLoading(false),
+    );
+    return () => unsub();
+  }, []);
+
+  const openAdd = () => {
+    setForm(emptyForm);
+    setEditingId(null);
+    setDialogOpen(true);
+  };
+
+  const openEdit = (item: Announcement) => {
+    setForm({
+      title: item.title || '',
+      message: item.message || '',
+      type: (item.type as AnnouncementType) || 'info',
+      imageUrl: item.imageUrl || '',
+      link: item.link || '',
+      linkLabel: item.linkLabel || '',
+      isPinned: !!item.isPinned,
+      isPublished: item.isPublished !== false,
+      order: item.order || 0,
+      expiresAt: item.expiresAt ? toDateTimeInputValue(item.expiresAt) : '',
+    });
+    setEditingId(item.id);
+    setDialogOpen(true);
+  };
+
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const url = await uploadImage('announcement_images', file);
+      setForm((f) => ({ ...f, imageUrl: url }));
+      toast.success('Image uploaded');
+    } catch {
+      toast.error('Image upload failed');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSave = async () => {
+    if (!form.title.trim()) {
+      toast.error('Title is required');
+      return;
+    }
+    if (!form.message.trim()) {
+      toast.error('Message is required');
+      return;
+    }
+    setSaving(true);
+    try {
+      const data: Record<string, any> = {
+        title: form.title.trim(),
+        message: form.message.trim(),
+        type: form.type,
+        imageUrl: form.imageUrl || null,
+        link: form.link.trim() || null,
+        linkLabel: form.linkLabel.trim() || null,
+        isPinned: !!form.isPinned,
+        isPublished: !!form.isPublished,
+        order: Number(form.order) || 0,
+        expiresAt: form.expiresAt ? new Date(form.expiresAt) : null,
+      };
+      if (editingId) {
+        await updateDoc(doc(db, 'announcements', editingId), {
+          ...data,
+          updatedAt: serverTimestamp(),
+        });
+        toast.success('Announcement updated');
+      } else {
+        await addDoc(collection(db, 'announcements'), {
+          ...data,
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        toast.success('Announcement added');
+      }
+      setDialogOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'Save failed');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!deleteId) return;
+    try {
+      await deleteDoc(doc(db, 'announcements', deleteId));
+      toast.success('Announcement deleted');
+      setDeleteId(null);
+    } catch (err: any) {
+      toast.error(err?.message || 'Delete failed');
+    }
+  };
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+            <Newspaper className="w-5 h-5 text-emerald-400" /> Announcements
+          </h3>
+          <p className="text-slate-500 text-sm">Notifications & updates shown to users</p>
+        </div>
+        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+          <Plus className="w-4 h-4 mr-1" /> Add Announcement
+        </Button>
+      </div>
+
+      {loading ? (
+        <div className="flex justify-center py-20">
+          <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
+        </div>
+      ) : items.length === 0 ? (
+        <Card className="bg-slate-900 border-slate-800 border-dashed">
+          <CardContent className="py-16 text-center">
+            <Newspaper className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+            <p className="text-slate-500">No announcements yet. Add your first one!</p>
+          </CardContent>
+        </Card>
+      ) : (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {items.map((item) => {
+            const type = (item.type || 'info') as AnnouncementType;
+            const style = TYPE_STYLES[type];
+            const isExpired =
+              item.expiresAt &&
+              timestampToDate(item.expiresAt) &&
+              timestampToDate(item.expiresAt)!.getTime() < Date.now();
+            return (
+              <Card
+                key={item.id}
+                className="bg-slate-900 border-slate-800 hover:border-slate-700 transition-colors group"
+              >
+                <CardContent className="p-4">
+                  <div className="flex items-start gap-3">
+                    {item.imageUrl ? (
+                      <img
+                        src={item.imageUrl}
+                        alt={item.title}
+                        className="w-14 h-14 rounded-lg object-cover shrink-0"
+                      />
+                    ) : (
+                      <div className="w-14 h-14 rounded-lg bg-slate-800 flex items-center justify-center shrink-0">
+                        <Newspaper className="w-6 h-6 text-slate-600" />
+                      </div>
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="text-white font-medium truncate">{item.title}</h4>
+                        {item.isPinned && (
+                          <Badge variant="outline" className="bg-amber-950/40 text-amber-400 border-amber-800/50 shrink-0">
+                            <Pin className="w-3 h-3 mr-1" /> Pinned
+                          </Badge>
+                        )}
+                      </div>
+                      <p className="text-slate-500 text-xs mt-1 line-clamp-2">{item.message}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap mt-2">
+                        <Badge variant="outline" className={style.badge}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${style.dot} mr-1`} />
+                          {style.label}
+                        </Badge>
+                        {item.isPublished ? (
+                          <Badge variant="outline" className="bg-emerald-950/40 text-emerald-400 border-emerald-800/50">
+                            <Eye className="w-3 h-3 mr-1" /> Published
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="bg-slate-800 text-slate-400 border-slate-700">
+                            <EyeOff className="w-3 h-3 mr-1" /> Draft
+                          </Badge>
+                        )}
+                        {isExpired && (
+                          <Badge variant="outline" className="bg-red-950/40 text-red-400 border-red-800/50">
+                            <Clock className="w-3 h-3 mr-1" /> Expired
+                          </Badge>
+                        )}
+                        {item.link && (
+                          <Badge variant="outline" className="bg-slate-800 text-slate-400 border-slate-700">
+                            <Link2 className="w-3 h-3 mr-1" /> Link
+                          </Badge>
+                        )}
+                      </div>
+                      {item.expiresAt && (
+                        <p className="text-slate-600 text-[10px] mt-1.5">
+                          Expires: {formatDateTime(item.expiresAt)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="h-8 border-slate-700 text-slate-300 hover:bg-slate-800"
+                      onClick={() => openEdit(item)}
+                    >
+                      <Pencil className="w-3 h-3 mr-1" /> Edit
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      className="h-8 text-red-400 hover:bg-red-950/40"
+                      onClick={() => setDeleteId(item.id)}
+                    >
+                      <Trash2 className="w-3 h-3 mr-1" /> Delete
+                    </Button>
+                  </div>
+                </CardContent>
+              </Card>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Add/Edit Dialog */}
+      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
+          <DialogHeader>
+            <DialogTitle>{editingId ? 'Edit Announcement' : 'Add Announcement'}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+            <div className="space-y-2">
+              <Label>Title *</Label>
+              <Input
+                value={form.title}
+                onChange={(e) => setForm({ ...form, title: e.target.value })}
+                placeholder="e.g. New test series added!"
+                className="bg-slate-800 border-slate-700"
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Message *</Label>
+              <Textarea
+                value={form.message}
+                onChange={(e) => setForm({ ...form, message: e.target.value })}
+                placeholder="Announcement body..."
+                className="bg-slate-800 border-slate-700"
+                rows={3}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label>Type</Label>
+              <Select
+                value={form.type}
+                onValueChange={(v) => setForm({ ...form, type: v as AnnouncementType })}
+              >
+                <SelectTrigger className="bg-slate-800 border-slate-700">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-slate-800 border-slate-700">
+                  <SelectItem value="info">Info</SelectItem>
+                  <SelectItem value="success">Success</SelectItem>
+                  <SelectItem value="warning">Warning</SelectItem>
+                  <SelectItem value="error">Error</SelectItem>
+                  <SelectItem value="promo">Promo</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label>Image</Label>
+              <div className="flex items-center gap-3">
+                {form.imageUrl && (
+                  <div className="relative">
+                    <img src={form.imageUrl} alt="preview" className="w-16 h-16 rounded-lg object-cover" />
+                    <button
+                      onClick={() => setForm({ ...form, imageUrl: '' })}
+                      className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-white"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
+                  </div>
+                )}
+                <input ref={fileRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => fileRef.current?.click()}
+                  disabled={uploading}
+                  className="border-slate-700 text-slate-300"
+                >
+                  {uploading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ImageIcon className="w-4 h-4 mr-1" />}
+                  {uploading ? 'Uploading...' : 'Upload'}
+                </Button>
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Link URL</Label>
+                <Input
+                  value={form.link}
+                  onChange={(e) => setForm({ ...form, link: e.target.value })}
+                  placeholder="https://..."
+                  className="bg-slate-800 border-slate-700"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Link Label</Label>
+                <Input
+                  value={form.linkLabel}
+                  onChange={(e) => setForm({ ...form, linkLabel: e.target.value })}
+                  placeholder="Apply Now"
+                  className="bg-slate-800 border-slate-700"
+                />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Order</Label>
+                <Input
+                  type="number"
+                  value={form.order}
+                  onChange={(e) => setForm({ ...form, order: Number(e.target.value) })}
+                  className="bg-slate-800 border-slate-700"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label>Expires At</Label>
+                <Input
+                  type="datetime-local"
+                  value={form.expiresAt}
+                  onChange={(e) => setForm({ ...form, expiresAt: e.target.value })}
+                  className="bg-slate-800 border-slate-700"
+                />
+              </div>
+            </div>
+            <div className="flex items-center justify-between gap-3 pt-1">
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={form.isPinned}
+                  onCheckedChange={(v) => setForm({ ...form, isPinned: v })}
+                />
+                <Label className="cursor-pointer">Pinned at top</Label>
+              </div>
+              <div className="flex items-center gap-2">
+                <Switch
+                  checked={form.isPublished}
+                  onCheckedChange={(v) => setForm({ ...form, isPublished: v })}
+                />
+                <Label className="cursor-pointer">Published</Label>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-700 text-slate-300">
+              Cancel
+            </Button>
+            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+              {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              {editingId ? 'Update' : 'Add'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Delete confirmation */}
+      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this announcement?</AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This action cannot be undone. The announcement will be removed from all user apps immediately.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </div>
+  );
+}

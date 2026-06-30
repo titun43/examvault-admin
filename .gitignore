@@ -1,0 +1,129 @@
+# =============================================================================
+# ExamVault Admin Panel - .gitignore
+# =============================================================================
+
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Testing
+coverage/
+
+# Next.js build
+.next/
+out/
+build/
+dist/
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Misc
+.DS_Store
+*.pem
+Thumbs.db
+
+# Debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+bun-debug.log*
+dev.log
+server.log
+*.log
+
+# Local env files
+.env
+.env*.local
+
+# Vercel
+.vercel
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+# =============================================================================
+# EXCLUDE everything NOT part of the admin panel web app
+# =============================================================================
+
+# Build artifacts (APK/AAB hosted for download — NOT part of admin web)
+public/*.apk
+public/*.aab
+public/examvault-flutter.zip
+
+# Screenshots / temp files at root
+screenshot*.png
+tool-results/
+cookies.txt
+keep-alive.sh
+start.sh
+start-dev.sh
+upload/
+agent-ctx/
+download/
+
+# Old Flutter source (kept locally for reference, NOT part of admin web)
+nextexam-flutter/
+
+# Project meta (local-only)
+CHECKPOINT.md
+worklog.md
+
+# Sandbox infra (NOT part of admin web)
+.zscripts/
+Caddyfile
+mini-services/
+examples/
+skills/
+db/
+
+# Prisma (admin panel uses Firebase Firestore, NOT Prisma)
+prisma/
+
+# Old API routes from previous Prisma-based app (replaced by Firestore client SDK)
+# (these directories are kept locally but excluded from the admin repo)
+src/app/api/
+
+# Old components from previous user-facing web app (replaced by admin panel)
+src/components/footer.tsx
+src/components/header.tsx
+src/components/sidebar.tsx
+src/components/bottom-nav.tsx
+src/components/auth-modal.tsx
+src/components/admin-login-view.tsx
+src/components/admin-panel.tsx
+src/components/home-view.tsx
+src/components/practice-view.tsx
+src/components/test-list-view.tsx
+src/components/take-test-view.tsx
+src/components/result-view.tsx
+src/components/leaderboard-view.tsx
+src/components/profile-view.tsx
+src/components/premium-view.tsx
+src/components/bookmarks-view.tsx
+src/components/notifications-view.tsx
+src/components/current-affairs-view.tsx
+src/components/subject-list-view.tsx
+src/components/exams-view.tsx
+src/components/daily-quiz-view.tsx
+src/components/settings-view.tsx
+
+# Old lib files (Prisma-based, replaced by Firebase)
+src/lib/db.ts
+src/lib/auth.ts
+src/lib/providers.tsx

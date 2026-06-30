@@ -123,7 +123,7 @@ src/components/exams-view.tsx
 src/components/daily-quiz-view.tsx
 src/components/settings-view.tsx
 
-# Old lib files (Prisma-based, replaced by Firebase)
+# Old lib files (Prisma-based, NOT used by admin panel — replaced by Firebase)
+# NOTE: providers.tsx IS used (React Query + ThemeProvider) so it is NOT excluded.
 src/lib/db.ts
 src/lib/auth.ts
-src/lib/providers.tsx

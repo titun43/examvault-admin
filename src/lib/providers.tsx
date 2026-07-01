@@ -19,7 +19,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider attribute="class" defaultTheme="light" enableSystem>
+      {/* Admin panel is hardcoded dark (bg-slate-900 everywhere). Force the dark
+          theme on <html> so CSS variables resolve to dark values and all inherited
+          text/buttons/inputs render correctly. Without this, defaultTheme="light"
+          leaves <html> without the `dark` class → --foreground = black → invisible
+          text on the dark slate backgrounds. */}
+      <ThemeProvider attribute="class" defaultTheme="dark" forcedTheme="dark" enableSystem={false}>
         {children}
       </ThemeProvider>
     </QueryClientProvider>

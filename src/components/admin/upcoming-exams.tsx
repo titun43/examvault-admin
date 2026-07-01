@@ -58,8 +58,10 @@ import {
   Building2,
   BookOpen,
   Layers,
+  Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { downloadJson } from '@/lib/download';
 
 interface UpcomingExam {
   id: string;
@@ -715,15 +717,26 @@ export default function UpcomingExams() {
               <p className="text-xs text-slate-500">
                 Paste a JSON array of upcoming exam objects below.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setBulkText(BULK_SAMPLE)}
-                className="border-slate-700 text-slate-300 h-8"
-              >
-                Load Sample
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadJson('upcoming-exams-template', JSON.parse(BULK_SAMPLE))}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkText(BULK_SAMPLE)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  Load Sample
+                </Button>
+              </div>
             </div>
             <Textarea
               value={bulkText}

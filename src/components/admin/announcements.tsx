@@ -53,8 +53,10 @@ import {
   Link2,
   Clock,
   Layers,
+  Download,
 } from 'lucide-react';
 import { toast } from 'sonner';
+import { downloadJson } from '@/lib/download';
 
 type AnnouncementType = 'info' | 'success' | 'warning' | 'error' | 'promo';
 
@@ -638,15 +640,26 @@ export default function Announcements() {
               <p className="text-xs text-slate-500">
                 Paste a JSON array of announcement objects below.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setBulkText(BULK_SAMPLE)}
-                className="border-slate-700 text-slate-300 h-8"
-              >
-                Load Sample
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadJson('announcements-template', JSON.parse(BULK_SAMPLE))}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkText(BULK_SAMPLE)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  Load Sample
+                </Button>
+              </div>
             </div>
             <Textarea
               value={bulkText}

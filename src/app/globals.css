@@ -118,6 +118,10 @@
   }
   body {
     @apply bg-background text-foreground;
+    /* Admin panel is always dark. Setting color-scheme: dark makes native form
+       controls (datetime-local, date, time, color, scrollbar) render with dark
+       widget chrome and light text instead of the default light/white UI. */
+    color-scheme: dark;
   }
 }
 

@@ -30,9 +30,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
+import { downloadJson } from '@/lib/download';
 
 interface Category {
   id: string;
@@ -500,15 +501,26 @@ export default function Categories() {
               <p className="text-xs text-slate-500">
                 Paste a JSON array of category objects below.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setBulkText(BULK_SAMPLE)}
-                className="border-slate-700 text-slate-300 h-8"
-              >
-                Load Sample
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadJson('categories-template', JSON.parse(BULK_SAMPLE))}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkText(BULK_SAMPLE)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  Load Sample
+                </Button>
+              </div>
             </div>
             <Textarea
               value={bulkText}

@@ -26,8 +26,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers, Download } from 'lucide-react';
 import { toast } from 'sonner';
+import { downloadJson } from '@/lib/download';
 
 interface Question {
   id: string;
@@ -449,15 +450,26 @@ export default function Questions() {
               <p className="text-xs text-slate-500">
                 Paste a JSON array of question objects below.
               </p>
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={() => setBulkText(BULK_SAMPLE)}
-                className="border-slate-700 text-slate-300 h-8"
-              >
-                Load Sample
-              </Button>
+              <div className="flex items-center gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadJson('questions-template', JSON.parse(BULK_SAMPLE))}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setBulkText(BULK_SAMPLE)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  Load Sample
+                </Button>
+              </div>
             </div>
             <Textarea
               value={bulkText}

@@ -6,17 +6,29 @@ import {
   onSnapshot,
   updateDoc,
   doc,
+  deleteDoc,
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { formatDateTime, timestampToDate, toDateTimeInputValue } from '@/lib/admin-firestore';
+import { formatDateTime, timestampToDate, toDateTimeInputValue, deleteItems } from '@/lib/admin-firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import {
   Select,
   SelectContent,
@@ -46,6 +58,8 @@ import {
   Activity,
   Gift,
   CalendarClock,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -129,6 +143,13 @@ export default function Users() {
   const [grantUserName, setGrantUserName] = useState<string>('');
   const [grantMonths, setGrantMonths] = useState<number>(1);
   const [granting, setGranting] = useState(false);
+  // Bulk delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Single delete state
+  const [deleteId, setDeleteId] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -159,6 +180,86 @@ export default function Users() {
       (u.phoneNumber || '').toLowerCase().includes(q)
     );
   });
+
+  // ---- Bulk selection helpers ----
+  const filteredIds = filtered.map((u) => u.id);
+  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredIds.forEach((id) => next.delete(id));
+      } else {
+        filteredIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      const ids = Array.from(selectedIds);
+      // Block bulk deletion of admin accounts to avoid accidental lockout.
+      const adminsInSelection = items.filter(
+        (u) => ids.includes(u.id) && u.role === 'admin',
+      );
+      if (adminsInSelection.length > 0) {
+        toast.error(
+          `Cannot delete ${adminsInSelection.length} admin account(s). Remove the admin role first or deselect them.`,
+        );
+        setBulkDeleteOpen(false);
+        return;
+      }
+      await deleteItems('users', ids);
+      toast.success(`${ids.length} user${ids.length === 1 ? '' : 's'} deleted`);
+      setBulkDeleteOpen(false);
+      clearSelection();
+    } catch (err: any) {
+      toast.error(err?.message || 'Bulk delete failed');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
+  const handleSingleDelete = async () => {
+    if (!deleteId) return;
+    setDeleting(true);
+    try {
+      const user = items.find((u) => u.id === deleteId);
+      if (user?.role === 'admin') {
+        toast.error('Cannot delete an admin account. Remove the admin role first.');
+        setDeleteId(null);
+        return;
+      }
+      await deleteDoc(doc(db, 'users', deleteId));
+      toast.success('User deleted');
+      setDeleteId(null);
+      setSelectedIds((prev) => {
+        const next = new Set(prev);
+        next.delete(deleteId);
+        return next;
+      });
+    } catch (err: any) {
+      toast.error(err?.message || 'Delete failed');
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const openEdit = (user: AppUser) => {
     setForm({
@@ -282,15 +383,41 @@ export default function Users() {
         <StatCard label="Active" value={activeUsers} icon={Activity} color="bg-cyan-950/60 text-cyan-400" />
       </div>
 
-      {/* Search */}
-      <div className="relative">
-        <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
-        <Input
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          placeholder="Search by name, email or phone..."
-          className="bg-slate-900 border-slate-800 pl-10"
-        />
+      {/* Search + Bulk actions bar */}
+      <div className="flex flex-col sm:flex-row gap-2 items-stretch sm:items-center">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Search by name, email or phone..."
+            className="bg-slate-900 border-slate-800 pl-10"
+          />
+        </div>
+        {selectedIds.size > 0 && (
+          <div className="flex items-center gap-2 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-1.5">
+            <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+              {selectedIds.size} selected
+            </Badge>
+            <Button
+              size="sm"
+              variant="destructive"
+              className="h-8 bg-red-600 hover:bg-red-700"
+              onClick={() => setBulkDeleteOpen(true)}
+            >
+              <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+            </Button>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="h-8 text-slate-400 hover:bg-slate-800"
+              onClick={clearSelection}
+              title="Clear selection"
+            >
+              <X className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        )}
       </div>
 
       {loading ? (
@@ -313,6 +440,13 @@ export default function Users() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-800 hover:bg-transparent">
+                    <TableHead className="text-slate-400 w-[44px]">
+                      <Checkbox
+                        checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all users"
+                      />
+                    </TableHead>
                     <TableHead className="text-slate-400">User</TableHead>
                     <TableHead className="text-slate-400 hidden md:table-cell">Phone</TableHead>
                     <TableHead className="text-slate-400">Role</TableHead>
@@ -323,8 +457,17 @@ export default function Users() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {filtered.map((user) => (
-                    <TableRow key={user.id} className="border-slate-800 hover:bg-slate-800/40">
+                  {filtered.map((user) => {
+                    const isSelected = selectedIds.has(user.id);
+                    return (
+                    <TableRow key={user.id} className={`border-slate-800 hover:bg-slate-800/40 ${isSelected ? 'bg-red-950/20' : ''}`}>
+                      <TableCell>
+                        <Checkbox
+                          checked={isSelected}
+                          onCheckedChange={() => toggleSelectOne(user.id)}
+                          aria-label={`Select ${user.name || user.email || 'user'}`}
+                        />
+                      </TableCell>
                       <TableCell>
                         <div className="flex items-center gap-3">
                           {user.photoUrl ? (
@@ -413,10 +556,21 @@ export default function Users() {
                           >
                             <Pencil className="w-3 h-3" />
                           </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-8 text-red-400 hover:bg-red-950/40"
+                            onClick={() => setDeleteId(user.id)}
+                            title="Delete user"
+                            disabled={user.role === 'admin'}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </Button>
                         </div>
                       </TableCell>
                     </TableRow>
-                  ))}
+                    );
+                  })}
                 </TableBody>
               </Table>
             </div>
@@ -506,6 +660,58 @@ export default function Users() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+
+      {/* Single Delete Confirmation */}
+      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" /> Delete this user?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This will permanently remove the user account record from Firestore. This action cannot be undone.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSingleDelete}
+              disabled={deleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {deleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} user{selectedIds.size === 1 ? '' : 's'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This will permanently delete {selectedIds.size} user record{selectedIds.size === 1 ? '' : 's'} from Firestore.
+              Admin accounts in the selection will be skipped (you must remove their admin role first).
+              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Delete {selectedIds.size} user{selectedIds.size === 1 ? '' : 's'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Grant Premium Dialog */}
       <Dialog open={grantOpen} onOpenChange={setGrantOpen}>

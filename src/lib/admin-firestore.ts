@@ -10,6 +10,7 @@ import {
   setDoc,
   updateDoc,
   deleteDoc,
+  writeBatch,
   getDocs,
   query,
   orderBy,
@@ -124,6 +125,23 @@ export async function deleteItem(
   id: string,
 ): Promise<void> {
   await deleteDoc(doc(db, collectionName, id));
+}
+
+// Bulk delete multiple documents from a collection in a single Firestore writeBatch.
+// Firestore writeBatch limit is 500 ops per batch — this automatically chunks
+// larger requests so callers can pass any number of ids safely.
+export async function deleteItems(
+  collectionName: string,
+  ids: string[],
+): Promise<void> {
+  if (!ids.length) return;
+  const BATCH_SIZE = 450; // safe margin under the 500-op Firestore limit
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const chunk = ids.slice(i, i + BATCH_SIZE);
+    const batch = writeBatch(db);
+    chunk.forEach((id) => batch.delete(doc(db, collectionName, id)));
+    await batch.commit();
+  }
 }
 
 // ==================== TIMESTAMP CONVERSION ====================

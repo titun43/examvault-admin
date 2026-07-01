@@ -6,7 +6,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
-import { Loader2, GraduationCap, ShieldCheck, AlertCircle } from 'lucide-react';
+import { Loader2, GraduationCap, ShieldCheck, AlertCircle, Smartphone, Download } from 'lucide-react';
 
 export default function AdminLogin() {
   const { login } = useAdminAuth();
@@ -114,6 +114,20 @@ export default function AdminLogin() {
         <p className="text-center text-slate-500 text-xs mt-6">
           ExamVault Admin &middot; Content syncs to Flutter user app in real-time
         </p>
+
+        {/* APK download — available without login so the owner can grab the latest signed build */}
+        <a
+          href="/examvault-1.19.0.apk"
+          download
+          className="mt-4 group flex items-center justify-center gap-3 w-full h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-medium shadow-lg shadow-emerald-900/40 transition-all hover:shadow-emerald-700/40"
+        >
+          <Smartphone className="w-5 h-5 shrink-0" />
+          <div className="flex flex-col items-start leading-tight">
+            <span className="text-sm font-semibold">Download ExamVault APK</span>
+            <span className="text-[11px] text-emerald-100/80">v1.19.0+23 &middot; ~35 MB &middot; signed release</span>
+          </div>
+          <Download className="w-4 h-4 shrink-0 opacity-80 group-hover:opacity-100 group-hover:translate-y-0.5 transition" />
+        </a>
       </div>
     </div>
   );

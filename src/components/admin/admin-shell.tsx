@@ -26,6 +26,8 @@ import {
   Bell,
   Gem,
   Search,
+  Download,
+  Smartphone,
 } from 'lucide-react';
 
 interface NavItem {
@@ -264,6 +266,18 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
           </div>
 
           <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+            {/* APK build download badge — links to the freshly built release APK in /public */}
+            <a
+              href="/examvault-1.19.0.apk"
+              download
+              className="group inline-flex items-center gap-2 h-9 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium shadow-lg shadow-emerald-900/40 transition-colors"
+              title="Download the latest signed release APK (v1.19.0+23, ~35 MB)"
+            >
+              <Smartphone className="w-4 h-4 shrink-0" />
+              <span className="hidden md:inline">Download APK</span>
+              <span className="md:hidden">APK</span>
+              <span className="hidden lg:inline text-emerald-100/80 text-xs">v1.19.0</span>
+            </a>
             <div className="hidden sm:flex flex-col items-end">
               <p className="text-white text-sm font-medium leading-tight">{user?.email}</p>
               <p className="text-emerald-400 text-xs">Administrator</p>

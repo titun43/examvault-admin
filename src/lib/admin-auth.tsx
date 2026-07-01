@@ -84,9 +84,15 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      // Bootstrap: for the canonical admin email, auto-create the admins doc
-      // (Firestore rules allow any signed-in user to CREATE their own admins doc)
-      if (fbUser.email?.toLowerCase() === 'admin@examvault.com') {
+      // Bootstrap: for a canonical admin email, auto-create the admins doc
+      // (Firestore rules allow any signed-in user to CREATE their own admins doc).
+      // Accept the primary admin address and the owner's address (from app_config)
+      // so the owner can also sign in as admin without a manual admins doc write.
+      const canonicalAdminEmails = [
+        'admin@examvault.com',
+        'lkstudeoandcomputering@gmail.com',
+      ];
+      if (fbUser.email && canonicalAdminEmails.includes(fbUser.email.toLowerCase())) {
         try {
           const adminDocRef = doc(db, 'admins', fbUser.uid);
           await setDoc(adminDocRef, {

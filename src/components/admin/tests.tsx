@@ -43,6 +43,7 @@ interface Test {
   year?: number;
   examSession?: string;
   isPremium: boolean;
+  price: number;
   questionCount?: number;
   attemptCount?: number;
 }
@@ -64,7 +65,7 @@ const TYPE_LABELS: Record<string, string> = {
 const emptyForm = {
   subjectId: '', title: '', slug: '', type: 'mock', duration: 60, totalMarks: 100, passingMarks: 40,
   isPublished: true, difficulty: 'medium', negativeMarking: false, negativeMarks: 0.25,
-  instructions: '', year: new Date().getFullYear(), examSession: '', isPremium: false,
+  instructions: '', year: new Date().getFullYear(), examSession: '', isPremium: false, price: 0,
 };
 
 interface TestsProps {
@@ -93,7 +94,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
   const fixedLabel = fixedType ? (TYPE_LABELS[fixedType] || fixedType) : null;
   const visibleItems = fixedType ? items.filter((t) => t.type === fixedType) : items;
 
-  const BULK_SAMPLE = '[{"title":"Mock Test 1","subjectId":"<paste existing subject id>","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0},{"title":"Mock Test 2","subjectId":"<paste existing subject id>","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25}]';
+  const BULK_SAMPLE = '[{"title":"Mock Test 1","subjectId":"<paste existing subject id>","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0,"price":0},{"title":"Mock Test 2","subjectId":"<paste existing subject id>","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25,"price":29}]';
 
   const handleBulkImport = async () => {
     let parsed: any;
@@ -159,7 +160,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
       isPublished: item.isPublished, difficulty: item.difficulty || 'medium',
       negativeMarking: item.negativeMarking, negativeMarks: item.negativeMarks || 0.25,
       instructions: item.instructions || '', year: item.year || new Date().getFullYear(),
-      examSession: item.examSession || '', isPremium: item.isPremium,
+      examSession: item.examSession || '', isPremium: item.isPremium, price: item.price ?? 0,
     });
     setEditingId(item.id);
     setDialogOpen(true);
@@ -185,6 +186,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
         negativeMarks: Number(form.negativeMarks) || 0,
         instructions: form.instructions || null,
         isPremium: form.isPremium,
+        price: Number(form.price) || 0,
       };
       if ((fixedType || form.type) === 'previousYear') {
         data.year = Number(form.year) || null;
@@ -273,6 +275,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
                     {!fixedType && <th className="text-left p-4 font-medium">Type</th>}
                     <th className="text-center p-4 font-medium">Duration</th>
                     <th className="text-center p-4 font-medium">Qs</th>
+                    <th className="text-center p-4 font-medium">Price</th>
                     <th className="text-center p-4 font-medium">Status</th>
                     <th className="text-right p-4 font-medium">Actions</th>
                   </tr>
@@ -295,6 +298,13 @@ export default function Tests({ fixedType }: TestsProps = {}) {
                       )}
                       <td className="p-4 text-center text-slate-400">{item.duration}m</td>
                       <td className="p-4 text-center text-slate-400">{item.questionCount || 0}</td>
+                      <td className="p-4 text-center">
+                        {item.price && item.price > 0 ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-emerald-300 bg-emerald-950/60 border border-emerald-800">₹{item.price}</span>
+                        ) : (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-slate-500 bg-slate-800/60 border border-slate-700">FREE</span>
+                        )}
+                      </td>
                       <td className="p-4">
                         <div className="flex items-center justify-center gap-1.5">
                           {item.isPublished ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-600" />}
@@ -375,6 +385,11 @@ export default function Tests({ fixedType }: TestsProps = {}) {
               <div className="space-y-2"><Label>Duration (min)</Label><Input type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
               <div className="space-y-2"><Label>Total Marks</Label><Input type="number" value={form.totalMarks} onChange={(e) => setForm({ ...form, totalMarks: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
               <div className="space-y-2"><Label>Passing Marks</Label><Input type="number" value={form.passingMarks} onChange={(e) => setForm({ ...form, passingMarks: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
+            </div>
+            <div className="space-y-2">
+              <Label>Price (INR)</Label>
+              <Input type="number" min={0} step={1} value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className="bg-slate-800 border-slate-700" />
+              <p className="text-xs text-slate-500">0 = free. Non-zero enables pay-per-test purchase.</p>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
@@ -464,7 +479,8 @@ export default function Tests({ fixedType }: TestsProps = {}) {
               <span className="text-slate-400">isPublished</span> (boolean),{' '}
               <span className="text-slate-400">isPremium</span> (boolean),{' '}
               <span className="text-slate-400">negativeMarking</span> (boolean),{' '}
-              <span className="text-slate-400">negativeMarks</span> (number)
+              <span className="text-slate-400">negativeMarks</span> (number),{' '}
+              <span className="text-slate-400">price</span> (number, INR; 0 = free)
             </p>
           </div>
           <DialogFooter>

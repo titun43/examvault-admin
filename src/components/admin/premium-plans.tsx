@@ -169,7 +169,14 @@ export default function PremiumPlans() {
       }
       setDialogOpen(false);
     } catch (err: any) {
-      toast.error(err?.message || 'Save failed');
+      const msg = err?.message || '';
+      // Detect Firestore permission-denied errors and show a helpful message
+      // explaining that the Firestore rules need to be deployed.
+      if (msg.includes('permission') || msg.includes('insufficient') || msg.includes('PERMISSION_DENIED')) {
+        toast.error('Permission denied. Deploy the Firestore rules: run "firebase deploy --only firestore:rules,storage" in the examvault-work folder (requires firebase login).');
+      } else {
+        toast.error(msg || 'Save failed');
+      }
     } finally {
       setSaving(false);
     }

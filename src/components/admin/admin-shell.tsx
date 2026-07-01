@@ -21,6 +21,7 @@ import {
   LogOut,
   Menu,
   Cloud,
+  CalendarDays,
 } from 'lucide-react';
 
 interface NavItem {
@@ -47,6 +48,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'categories', label: 'Categories', icon: FolderTree },
       { id: 'subjects', label: 'Subjects', icon: BookOpen },
       { id: 'tests', label: 'Tests', icon: FileText },
+      { id: 'daily-quiz', label: 'Daily Quiz', icon: CalendarDays },
       { id: 'previous-papers', label: 'Previous Papers', icon: ClipboardList },
       { id: 'questions', label: 'Questions', icon: FileQuestion },
     ],

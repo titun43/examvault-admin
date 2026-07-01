@@ -67,7 +67,14 @@ const emptyForm = {
   instructions: '', year: new Date().getFullYear(), examSession: '', isPremium: false,
 };
 
-export default function Tests() {
+interface TestsProps {
+  /** When set, locks the list to this test type and pre-fills the Add form
+   *  with it. Used by the dedicated "Daily Quiz" nav section so admins can
+   *  manage daily quizzes without touching other test types. */
+  fixedType?: string;
+}
+
+export default function Tests({ fixedType }: TestsProps = {}) {
   const { setCurrentSection, setSelectedTest } = useAppStore();
   const [items, setItems] = useState<Test[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
@@ -81,6 +88,10 @@ export default function Tests() {
   const [bulkOpen, setBulkOpen] = useState(false);
   const [bulkText, setBulkText] = useState('');
   const [bulkSaving, setBulkSaving] = useState(false);
+
+  // When fixedType is set, derive a filtered view + friendly labels.
+  const fixedLabel = fixedType ? (TYPE_LABELS[fixedType] || fixedType) : null;
+  const visibleItems = fixedType ? items.filter((t) => t.type === fixedType) : items;
 
   const BULK_SAMPLE = '[{"title":"Mock Test 1","subjectId":"<paste existing subject id>","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0},{"title":"Mock Test 2","subjectId":"<paste existing subject id>","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25}]';
 
@@ -136,7 +147,11 @@ export default function Tests() {
     return categories.find((c) => c.id === sub.categoryId)?.name || '—';
   };
 
-  const openAdd = () => { setForm(emptyForm); setEditingId(null); setDialogOpen(true); };
+  const openAdd = () => {
+    setForm({ ...emptyForm, type: fixedType || 'mock' });
+    setEditingId(null);
+    setDialogOpen(true);
+  };
   const openEdit = (item: Test) => {
     setForm({
       subjectId: item.subjectId, title: item.title, slug: item.slug, type: item.type || 'mock',
@@ -159,7 +174,8 @@ export default function Tests() {
         subjectId: form.subjectId,
         title: form.title.trim(),
         slug: form.slug ? slugify(form.slug) : slugify(form.title),
-        type: form.type,
+        // Force the fixed type when in fixedType mode (Daily Quiz section)
+        type: fixedType || form.type,
         duration: Number(form.duration) || 60,
         totalMarks: Number(form.totalMarks) || 100,
         passingMarks: Number(form.passingMarks) || 40,
@@ -170,7 +186,7 @@ export default function Tests() {
         instructions: form.instructions || null,
         isPremium: form.isPremium,
       };
-      if (form.type === 'previousYear') {
+      if ((fixedType || form.type) === 'previousYear') {
         data.year = Number(form.year) || null;
         data.examSession = form.examSession || null;
       }
@@ -208,31 +224,41 @@ export default function Tests() {
       <div className="flex items-center justify-between gap-3">
         <div>
           <h3 className="text-white font-semibold text-lg flex items-center gap-2">
-            <FileText className="w-5 h-5 text-emerald-400" /> Tests
+            <FileText className="w-5 h-5 text-emerald-400" /> {fixedLabel || 'Tests'}
           </h3>
-          <p className="text-slate-500 text-sm">Mock tests, daily quizzes, practice sets</p>
+          <p className="text-slate-500 text-sm">
+            {fixedType
+              ? `Manage ${fixedLabel} tests — published ones appear in the user app's ${fixedLabel} screen.`
+              : 'Mock tests, daily quizzes, practice sets'}
+          </p>
         </div>
         <div className="flex items-center gap-2">
           <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-            <Plus className="w-4 h-4 mr-1" /> Add Test
+            <Plus className="w-4 h-4 mr-1" /> {fixedType ? `Add ${fixedLabel}` : 'Add Test'}
           </Button>
-          <Button
-            variant="outline"
-            onClick={() => setBulkOpen(true)}
-            className="border-slate-700 text-slate-200 hover:bg-slate-800"
-          >
-            <Layers className="w-4 h-4 mr-1" /> Bulk Add
-          </Button>
+          {!fixedType && (
+            <Button
+              variant="outline"
+              onClick={() => setBulkOpen(true)}
+              className="border-slate-700 text-slate-200 hover:bg-slate-800"
+            >
+              <Layers className="w-4 h-4 mr-1" /> Bulk Add
+            </Button>
+          )}
         </div>
       </div>
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-emerald-500 animate-spin" /></div>
-      ) : items.length === 0 ? (
+      ) : visibleItems.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <FileText className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-            <p className="text-slate-500">No tests yet. Add your first one!</p>
+            <p className="text-slate-500">
+              {fixedType
+                ? `No ${fixedLabel} tests yet. Add your first one!`
+                : 'No tests yet. Add your first one!'}
+            </p>
           </CardContent>
         </Card>
       ) : (
@@ -244,7 +270,7 @@ export default function Tests() {
                   <tr className="border-b border-slate-800 text-slate-500 text-xs uppercase">
                     <th className="text-left p-4 font-medium">Title</th>
                     <th className="text-left p-4 font-medium">Subject / Category</th>
-                    <th className="text-left p-4 font-medium">Type</th>
+                    {!fixedType && <th className="text-left p-4 font-medium">Type</th>}
                     <th className="text-center p-4 font-medium">Duration</th>
                     <th className="text-center p-4 font-medium">Qs</th>
                     <th className="text-center p-4 font-medium">Status</th>
@@ -252,7 +278,7 @@ export default function Tests() {
                   </tr>
                 </thead>
                 <tbody>
-                  {items.map((item) => (
+                  {visibleItems.map((item) => (
                     <tr key={item.id} className="border-b border-slate-800/50 hover:bg-slate-800/30 group">
                       <td className="p-4">
                         <p className="text-white font-medium">{item.title}</p>
@@ -262,9 +288,11 @@ export default function Tests() {
                         <p className="text-slate-300">{subjectName(item.subjectId)}</p>
                         <p className="text-slate-600 text-xs">{categoryName(item.subjectId)}</p>
                       </td>
-                      <td className="p-4">
-                        <Badge variant="outline" className={TYPE_COLORS[item.type] || TYPE_COLORS.mock}>{TYPE_LABELS[item.type] || item.type}</Badge>
-                      </td>
+                      {!fixedType && (
+                        <td className="p-4">
+                          <Badge variant="outline" className={TYPE_COLORS[item.type] || TYPE_COLORS.mock}>{TYPE_LABELS[item.type] || item.type}</Badge>
+                        </td>
+                      )}
                       <td className="p-4 text-center text-slate-400">{item.duration}m</td>
                       <td className="p-4 text-center text-slate-400">{item.questionCount || 0}</td>
                       <td className="p-4">
@@ -297,13 +325,17 @@ export default function Tests() {
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
-          <DialogHeader><DialogTitle>{editingId ? 'Edit Test' : 'Add Test'}</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>
+              {editingId ? 'Edit Test' : fixedType ? `Add ${fixedLabel}` : 'Add Test'}
+            </DialogTitle>
+          </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Title *</Label>
               <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value, slug: form.slug || slugify(e.target.value) })} placeholder="e.g. RRB NTPC Mock Test 1" className="bg-slate-800 border-slate-700" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
+            <div className={`grid gap-3 ${fixedType ? 'grid-cols-1' : 'grid-cols-2'}`}>
               <div className="space-y-2">
                 <Label>Subject *</Label>
                 <Select value={form.subjectId} onValueChange={(v) => setForm({ ...form, subjectId: v })}>
@@ -313,19 +345,31 @@ export default function Tests() {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
-                <Label>Type</Label>
-                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
-                  <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
-                  <SelectContent className="bg-slate-800 border-slate-700">
-                    <SelectItem value="mock">Mock Test</SelectItem>
-                    <SelectItem value="previousYear">Previous Year</SelectItem>
-                    <SelectItem value="dailyQuiz">Daily Quiz</SelectItem>
-                    <SelectItem value="practice">Practice</SelectItem>
-                    <SelectItem value="subjectwise">Subject-wise</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {!fixedType && (
+                <div className="space-y-2">
+                  <Label>Type</Label>
+                  <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+                    <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
+                    <SelectContent className="bg-slate-800 border-slate-700">
+                      <SelectItem value="mock">Mock Test</SelectItem>
+                      <SelectItem value="previousYear">Previous Year</SelectItem>
+                      <SelectItem value="dailyQuiz">Daily Quiz</SelectItem>
+                      <SelectItem value="practice">Practice</SelectItem>
+                      <SelectItem value="subjectwise">Subject-wise</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
+              {fixedType && (
+                <div className="space-y-2">
+                  <Label>Type</Label>
+                  <Input
+                    value={fixedLabel || fixedType}
+                    disabled
+                    className="bg-slate-800 border-slate-700 text-slate-400"
+                  />
+                </div>
+              )}
             </div>
             <div className="grid grid-cols-3 gap-3">
               <div className="space-y-2"><Label>Duration (min)</Label><Input type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>

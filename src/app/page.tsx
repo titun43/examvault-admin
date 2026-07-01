@@ -13,6 +13,7 @@ import { Loader2 } from 'lucide-react';
 const Categories = dynamic(() => import('@/components/admin/categories'), { ssr: false });
 const Subjects = dynamic(() => import('@/components/admin/subjects'), { ssr: false });
 const Tests = dynamic(() => import('@/components/admin/tests'), { ssr: false });
+const DailyQuiz = dynamic(() => import('@/components/admin/daily-quiz'), { ssr: false });
 const PreviousPapers = dynamic(() => import('@/components/admin/previous-papers'), { ssr: false });
 const Questions = dynamic(() => import('@/components/admin/questions'), { ssr: false });
 const Announcements = dynamic(() => import('@/components/admin/announcements'), { ssr: false });
@@ -30,6 +31,7 @@ function AdminContent() {
     case 'categories': return <Categories />;
     case 'subjects': return <Subjects />;
     case 'tests': return <Tests />;
+    case 'daily-quiz': return <DailyQuiz />;
     case 'previous-papers': return <PreviousPapers />;
     case 'questions': return <Questions />;
     case 'announcements': return <Announcements />;

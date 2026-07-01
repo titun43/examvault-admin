@@ -5,6 +5,7 @@ export type AdminSection =
   | 'categories'
   | 'subjects'
   | 'tests'
+  | 'daily-quiz'
   | 'previous-papers'
   | 'questions'
   | 'announcements'

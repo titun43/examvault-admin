@@ -127,3 +127,6 @@ src/components/settings-view.tsx
 # NOTE: providers.tsx IS used (React Query + ThemeProvider) so it is NOT excluded.
 src/lib/db.ts
 src/lib/auth.ts
+
+# Local worklog (session continuity, not for GitHub)
+WORKLOG.md

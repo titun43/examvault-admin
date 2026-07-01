@@ -1,9 +1,10 @@
 'use client';
 
-import { useEffect } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAdminAuth } from '@/lib/admin-auth';
 import { useAppStore, AdminSection } from '@/lib/store';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Sheet, SheetContent, SheetTrigger } from '@/components/ui/sheet';
 import {
   GraduationCap,
@@ -22,6 +23,9 @@ import {
   Menu,
   Cloud,
   CalendarDays,
+  Bell,
+  Gem,
+  Search,
 } from 'lucide-react';
 
 interface NavItem {
@@ -57,6 +61,7 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Engagement',
     items: [
       { id: 'announcements', label: 'Announcements', icon: Newspaper },
+      { id: 'notifications', label: 'Notifications', icon: Bell },
       { id: 'upcoming-exams', label: 'Upcoming Exams', icon: CalendarClock },
       { id: 'banners', label: 'Banners', icon: Image },
       { id: 'current-affairs', label: 'Current Affairs', icon: Newspaper },
@@ -67,6 +72,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'users', label: 'Users', icon: Users },
       { id: 'payments', label: 'Payments', icon: CreditCard },
+      { id: 'premium-plans', label: 'Premium Plans', icon: Gem },
     ],
   },
 ];
@@ -137,12 +143,48 @@ function SidebarContent() {
 
 export default function AdminShell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAdminAuth();
-  const { sidebarOpen, setSidebarOpen, currentSection } = useAppStore();
+  const { sidebarOpen, setSidebarOpen, currentSection, setCurrentSection } = useAppStore();
 
   // Find current section label for header
   const currentLabel = NAV_GROUPS
     .flatMap((g) => g.items)
     .find((i) => i.id === currentSection)?.label || 'Dashboard';
+
+  // Quick-nav search state
+  const [search, setSearch] = useState('');
+  const [searchFocused, setSearchFocused] = useState(false);
+  const searchWrapRef = useRef<HTMLDivElement>(null);
+
+  const allNavItems = useMemo(
+    () => NAV_GROUPS.flatMap((g) => g.items),
+    [],
+  );
+
+  const searchResults = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    if (!q) return allNavItems;
+    return allNavItems.filter((i) => i.label.toLowerCase().includes(q));
+  }, [search, allNavItems]);
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      if (!searchWrapRef.current) return;
+      if (!searchWrapRef.current.contains(e.target as Node)) {
+        setSearchFocused(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, []);
+
+  const pickResult = (id: AdminSection) => {
+    setCurrentSection(id);
+    setSearch('');
+    setSearchFocused(false);
+  };
+
+  const showDropdown = searchFocused && search.trim().length > 0;
 
   return (
     <div className="min-h-screen flex bg-slate-950">
@@ -162,22 +204,66 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
       <div className="flex-1 lg:ml-64 flex flex-col min-h-screen">
         {/* Header */}
         <header className="sticky top-0 z-30 flex items-center justify-between gap-3 px-4 sm:px-6 py-3 bg-slate-900/80 backdrop-blur-xl border-b border-slate-800">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-1 min-w-0">
             <Button
               variant="ghost"
               size="icon"
-              className="lg:hidden text-slate-400 hover:text-white hover:bg-slate-800"
+              className="lg:hidden text-slate-400 hover:text-white hover:bg-slate-800 shrink-0"
               onClick={() => setSidebarOpen(true)}
             >
               <Menu className="w-5 h-5" />
             </Button>
-            <div>
+            <div className="shrink-0">
               <h2 className="text-white font-semibold text-base sm:text-lg leading-tight">{currentLabel}</h2>
               <p className="text-slate-500 text-xs hidden sm:block">Manage your app content</p>
             </div>
+
+            {/* Quick-nav search (desktop/tablet only) */}
+            <div ref={searchWrapRef} className="hidden sm:flex relative ml-2 max-w-xs flex-1 min-w-0">
+              <div className="relative w-full">
+                <Search className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                <Input
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                  onFocus={() => setSearchFocused(true)}
+                  placeholder="Search sections..."
+                  className="pl-9 h-9 bg-slate-800/60 border-slate-700 text-slate-200 placeholder:text-slate-500"
+                />
+              </div>
+              {showDropdown && (
+                <div className="absolute top-full left-0 right-0 mt-1 bg-slate-900 border border-slate-700 rounded-lg shadow-2xl z-50 max-h-72 overflow-y-auto">
+                  {searchResults.length === 0 ? (
+                    <div className="px-4 py-3 text-sm text-slate-500">No matching sections</div>
+                  ) : (
+                    searchResults.map((item) => {
+                      const Icon = item.icon;
+                      const active = currentSection === item.id;
+                      return (
+                        <button
+                          key={item.id}
+                          type="button"
+                          onMouseDown={(e) => {
+                            e.preventDefault();
+                            pickResult(item.id);
+                          }}
+                          className={`w-full flex items-center gap-3 px-4 py-2.5 text-sm transition-colors text-left ${
+                            active
+                              ? 'bg-emerald-950/40 text-emerald-300'
+                              : 'text-slate-200 hover:bg-slate-800'
+                          }`}
+                        >
+                          <Icon className={`w-4 h-4 shrink-0 ${active ? 'text-emerald-400' : 'text-slate-400'}`} />
+                          <span className="truncate">{item.label}</span>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              )}
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 sm:gap-3">
+          <div className="flex items-center gap-2 sm:gap-3 shrink-0">
             <div className="hidden sm:flex flex-col items-end">
               <p className="text-white text-sm font-medium leading-tight">{user?.email}</p>
               <p className="text-emerald-400 text-xs">Administrator</p>

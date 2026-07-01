@@ -13,7 +13,9 @@ export type AdminSection =
   | 'banners'
   | 'current-affairs'
   | 'users'
-  | 'payments';
+  | 'payments'
+  | 'notifications'
+  | 'premium-plans';
 
 interface AppState {
   currentSection: AdminSection;

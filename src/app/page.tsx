@@ -22,6 +22,8 @@ const Banners = dynamic(() => import('@/components/admin/banners'), { ssr: false
 const CurrentAffairs = dynamic(() => import('@/components/admin/current-affairs'), { ssr: false });
 const Users = dynamic(() => import('@/components/admin/users'), { ssr: false });
 const Payments = dynamic(() => import('@/components/admin/payments'), { ssr: false });
+const Notifications = dynamic(() => import('@/components/admin/notifications'), { ssr: false });
+const PremiumPlans = dynamic(() => import('@/components/admin/premium-plans'), { ssr: false });
 
 function AdminContent() {
   const { currentSection } = useAppStore();
@@ -40,6 +42,8 @@ function AdminContent() {
     case 'current-affairs': return <CurrentAffairs />;
     case 'users': return <Users />;
     case 'payments': return <Payments />;
+    case 'notifications': return <Notifications />;
+    case 'premium-plans': return <PremiumPlans />;
     default: return <Dashboard />;
   }
 }

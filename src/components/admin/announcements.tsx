@@ -54,9 +54,10 @@ import {
   Clock,
   Layers,
   Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { downloadJson } from '@/lib/download';
+import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
 type AnnouncementType = 'info' | 'success' | 'warning' | 'error' | 'promo';
 
@@ -117,16 +118,52 @@ export default function Announcements() {
 
   const BULK_SAMPLE = '[{"title":"Welcome!","message":"Welcome to ExamVault","type":"info","isPinned":false,"isPublished":true,"order":1},{"title":"New Tests Added","message":"Check out new mock tests","type":"success","isPinned":true,"isPublished":true,"order":2}]';
 
+  const CSV_HEADERS = ['title', 'message', 'type', 'link', 'linkLabel', 'order', 'isPinned', 'isPublished'];
+  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+    ['Welcome!', 'Welcome to ExamVault', 'info', '', '', 1, false, true],
+    ['New Tests Added', 'Check out new mock tests', 'success', 'https://example.com', 'Open', 2, true, true],
+  ];
+
   const handleBulkImport = async () => {
     let parsed: any;
-    try {
-      parsed = JSON.parse(bulkText);
-    } catch (e: any) {
-      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+    const text = bulkText.trim();
+    if (!text) {
+      toast.error('Please paste JSON or CSV data first');
       return;
     }
+    // Try JSON first
+    let isCsv = false;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      // Not JSON — try CSV
+      try {
+        const rows = parseCsv(text);
+        if (rows.length < 2) {
+          toast.error('CSV must have a header row and at least 1 data row');
+          return;
+        }
+        const headers = rows[0].map((h) => h.trim());
+        parsed = rows
+          .slice(1)
+          .filter((r) => r.some((c) => c.trim() !== ''))
+          .map((r) => {
+            const obj: any = {};
+            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+            // Cast known fields
+            if ('order' in obj) obj.order = Number(obj.order) || 0;
+            if ('isPinned' in obj) obj.isPinned = String(obj.isPinned).toLowerCase() === 'true';
+            if ('isPublished' in obj) obj.isPublished = String(obj.isPublished).toLowerCase() === 'true';
+            return obj;
+          });
+        isCsv = true;
+      } catch (e: any) {
+        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+        return;
+      }
+    }
     if (!Array.isArray(parsed)) {
-      toast.error('JSON must be an array of items');
+      toast.error('Input must be a JSON array or a CSV with a header row');
       return;
     }
     setBulkSaving(true);
@@ -142,7 +179,7 @@ export default function Announcements() {
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully`);
+      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -638,7 +675,7 @@ export default function Announcements() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-slate-500">
-                Paste a JSON array of announcement objects below.
+                Paste a JSON array of announcement objects below, or paste CSV rows (first row = column headers).
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -649,6 +686,15 @@ export default function Announcements() {
                   className="border-slate-700 text-slate-300 h-8"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadCsv('announcements-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
                 </Button>
                 <Button
                   type="button"

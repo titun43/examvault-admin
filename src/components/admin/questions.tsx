@@ -26,9 +26,9 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers, Download, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
-import { downloadJson } from '@/lib/download';
+import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
 interface Question {
   id: string;
@@ -69,16 +69,63 @@ export default function Questions() {
 
   const BULK_SAMPLE = '[{"testId":"<paste existing test id>","question":"What is 2+2?","options":["3","4","5","6"],"correctAnswer":1,"explanation":"2+2=4","difficulty":"easy","marks":1},{"testId":"<paste existing test id>","question":"Capital of India?","options":["Mumbai","Delhi","Kolkata","Chennai"],"correctAnswer":1,"explanation":"New Delhi is the capital","difficulty":"easy","marks":1}]';
 
+  const CSV_HEADERS = ['question', 'option1', 'option2', 'option3', 'option4', 'correctAnswerIndex', 'explanation', 'subjectTopic', 'marks', 'isPremium'];
+  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+    ['What is 2+2?', '3', '4', '5', '6', 1, '2+2=4', 'Math', 1, false],
+    ['Capital of India?', 'Mumbai', 'Delhi', 'Kolkata', 'Chennai', 1, 'New Delhi is the capital', 'GK', 1, false],
+  ];
+
   const handleBulkImport = async () => {
     let parsed: any;
-    try {
-      parsed = JSON.parse(bulkText);
-    } catch (e: any) {
-      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+    const text = bulkText.trim();
+    if (!text) {
+      toast.error('Please paste JSON or CSV data first');
       return;
     }
+    let isCsv = false;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      try {
+        const rows = parseCsv(text);
+        if (rows.length < 2) {
+          toast.error('CSV must have a header row and at least 1 data row');
+          return;
+        }
+        const headers = rows[0].map((h) => h.trim());
+        parsed = rows
+          .slice(1)
+          .filter((r) => r.some((c) => c.trim() !== ''))
+          .map((r) => {
+            const obj: any = {};
+            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+            // Transform CSV-only columns into the Firestore object shape
+            const opt1 = obj.option1 ?? '';
+            const opt2 = obj.option2 ?? '';
+            const opt3 = obj.option3 ?? '';
+            const opt4 = obj.option4 ?? '';
+            obj.options = [opt1, opt2, opt3, opt4];
+            delete obj.option1;
+            delete obj.option2;
+            delete obj.option3;
+            delete obj.option4;
+            if ('correctAnswerIndex' in obj) {
+              obj.correctAnswerIndex = Number(obj.correctAnswerIndex) || 0;
+            }
+            if ('marks' in obj) obj.marks = Number(obj.marks) || 0;
+            if ('isPremium' in obj) obj.isPremium = String(obj.isPremium).toLowerCase() === 'true';
+            // Attach to currently selected test (CSV doesn't carry testId)
+            if (selectedTestId && !obj.testId) obj.testId = selectedTestId;
+            return obj;
+          });
+        isCsv = true;
+      } catch (e: any) {
+        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+        return;
+      }
+    }
     if (!Array.isArray(parsed)) {
-      toast.error('JSON must be an array of items');
+      toast.error('Input must be a JSON array or a CSV with a header row');
       return;
     }
     setBulkSaving(true);
@@ -93,7 +140,7 @@ export default function Questions() {
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully`);
+      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -448,7 +495,7 @@ export default function Questions() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-slate-500">
-                Paste a JSON array of question objects below.
+                Paste a JSON array of question objects below, or paste CSV rows (first row = column headers).
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -459,6 +506,15 @@ export default function Questions() {
                   className="border-slate-700 text-slate-300 h-8"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadCsv('questions-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
                 </Button>
                 <Button
                   type="button"

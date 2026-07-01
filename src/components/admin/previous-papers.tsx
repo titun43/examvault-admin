@@ -26,7 +26,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, ClipboardList, FileQuestion, Crown, X } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, ClipboardList, FileQuestion, Crown, X, Info } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Test {
@@ -362,7 +362,15 @@ export default function PreviousPapers() {
               </div>
               <div className="space-y-2"><Label>Exam Session</Label><Input value={form.examSession} onChange={(e) => setForm({ ...form, examSession: e.target.value })} placeholder="e.g. CBT-1 Shift-2" className="bg-slate-800 border-slate-700" /></div>
             </div>
-            <div className="space-y-2"><Label>Negative Marks (per wrong)</Label><Input type="number" step="0.25" value={form.negativeMarks} onChange={(e) => setForm({ ...form, negativeMarks: Number(e.target.value) })} disabled={!form.negativeMarking} className="bg-slate-800 border-slate-700 disabled:opacity-40" /></div>
+            <div className="space-y-2">
+              <Label>Negative Marks (per wrong)</Label>
+              <Input type="number" step="0.25" value={form.negativeMarks} onChange={(e) => setForm({ ...form, negativeMarks: Number(e.target.value) })} disabled={!form.negativeMarking} className="bg-slate-800 border-slate-700 disabled:opacity-60 disabled:cursor-not-allowed" />
+              {!form.negativeMarking && (
+                <p className="text-xs text-amber-400/80 flex items-center gap-1">
+                  <Info className="w-3 h-3" /> Turn on "Negative Marking" below to set the deduction value.
+                </p>
+              )}
+            </div>
             <div className="space-y-2"><Label>Instructions</Label><Textarea value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} rows={2} className="bg-slate-800 border-slate-700" /></div>
             <div className="flex items-center gap-6 flex-wrap">
               <div className="flex items-center gap-2"><Switch checked={form.isPublished} onCheckedChange={(v) => setForm({ ...form, isPublished: v })} /><Label className="cursor-pointer">Published</Label></div>

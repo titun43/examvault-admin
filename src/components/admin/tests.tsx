@@ -25,9 +25,9 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet } from 'lucide-react';
 import { toast } from 'sonner';
-import { downloadJson } from '@/lib/download';
+import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
 interface Test {
   id: string;
@@ -103,16 +103,51 @@ export default function Tests({ fixedType }: TestsProps = {}) {
 
   const BULK_SAMPLE = '[{"title":"Mock Test 1","subjectId":"<paste existing subject id>","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0,"price":0},{"title":"Mock Test 2","subjectId":"<paste existing subject id>","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25,"price":29}]';
 
+  const CSV_HEADERS = ['title', 'description', 'duration', 'totalMarks', 'passingMarks', 'difficulty', 'type', 'subjectId', 'categoryId', 'isPremium', 'isPublished'];
+  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+    ['Mock Test 1', 'General mock test', 60, 100, 40, 'medium', 'mock', '<paste existing subject id>', '', false, true],
+    ['Mock Test 2', 'Advanced mock test', 90, 150, 60, 'hard', 'mock', '<paste existing subject id>', '', true, true],
+  ];
+
   const handleBulkImport = async () => {
     let parsed: any;
-    try {
-      parsed = JSON.parse(bulkText);
-    } catch (e: any) {
-      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+    const text = bulkText.trim();
+    if (!text) {
+      toast.error('Please paste JSON or CSV data first');
       return;
     }
+    let isCsv = false;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      try {
+        const rows = parseCsv(text);
+        if (rows.length < 2) {
+          toast.error('CSV must have a header row and at least 1 data row');
+          return;
+        }
+        const headers = rows[0].map((h) => h.trim());
+        parsed = rows
+          .slice(1)
+          .filter((r) => r.some((c) => c.trim() !== ''))
+          .map((r) => {
+            const obj: any = {};
+            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+            if ('duration' in obj) obj.duration = Number(obj.duration) || 0;
+            if ('totalMarks' in obj) obj.totalMarks = Number(obj.totalMarks) || 0;
+            if ('passingMarks' in obj) obj.passingMarks = Number(obj.passingMarks) || 0;
+            if ('isPremium' in obj) obj.isPremium = String(obj.isPremium).toLowerCase() === 'true';
+            if ('isPublished' in obj) obj.isPublished = String(obj.isPublished).toLowerCase() === 'true';
+            return obj;
+          });
+        isCsv = true;
+      } catch (e: any) {
+        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+        return;
+      }
+    }
     if (!Array.isArray(parsed)) {
-      toast.error('JSON must be an array of items');
+      toast.error('Input must be a JSON array or a CSV with a header row');
       return;
     }
     setBulkSaving(true);
@@ -127,7 +162,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully`);
+      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -470,8 +505,11 @@ export default function Tests({ fixedType }: TestsProps = {}) {
                   <Input
                     value={fixedLabel || fixedType}
                     disabled
-                    className="bg-slate-800 border-slate-700 text-slate-400"
+                    className="bg-slate-800 border-slate-700 text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed"
                   />
+                  <p className="text-xs text-amber-400/80 flex items-center gap-1">
+                    <Info className="w-3 h-3" /> Type is fixed for this section and cannot be changed.
+                  </p>
                 </div>
               )}
             </div>
@@ -497,7 +535,15 @@ export default function Tests({ fixedType }: TestsProps = {}) {
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2"><Label>Negative Marks (per wrong)</Label><Input type="number" step="0.25" value={form.negativeMarks} onChange={(e) => setForm({ ...form, negativeMarks: Number(e.target.value) })} disabled={!form.negativeMarking} className="bg-slate-800 border-slate-700 disabled:opacity-40" /></div>
+              <div className="space-y-2">
+                <Label>Negative Marks (per wrong)</Label>
+                <Input type="number" step="0.25" value={form.negativeMarks} onChange={(e) => setForm({ ...form, negativeMarks: Number(e.target.value) })} disabled={!form.negativeMarking} className="bg-slate-800 border-slate-700 disabled:opacity-60 disabled:cursor-not-allowed" />
+                {!form.negativeMarking && (
+                  <p className="text-xs text-amber-400/80 flex items-center gap-1">
+                    <Info className="w-3 h-3" /> Turn on "Negative Marking" below to set the deduction value.
+                  </p>
+                )}
+              </div>
             </div>
             {form.type === 'previousYear' && (
               <div className="grid grid-cols-2 gap-3">
@@ -543,7 +589,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-slate-500">
-                Paste a JSON array of test objects below.
+                Paste a JSON array of test objects below, or paste CSV rows (first row = column headers).
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -554,6 +600,15 @@ export default function Tests({ fixedType }: TestsProps = {}) {
                   className="border-slate-700 text-slate-300 h-8"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadCsv('tests-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
                 </Button>
                 <Button
                   type="button"

@@ -59,9 +59,10 @@ import {
   BookOpen,
   Layers,
   Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { downloadJson } from '@/lib/download';
+import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
 interface UpcomingExam {
   id: string;
@@ -138,16 +139,48 @@ export default function UpcomingExams() {
 
   const BULK_SAMPLE = '[{"name":"SSC CGL 2024","organization":"Staff Selection Commission","examDate":"2024-12-15T00:00:00.000Z","applicationStartDate":"2024-10-01T00:00:00.000Z","applicationEndDate":"2024-10-31T00:00:00.000Z","description":"Combined Graduate Level","isPublished":true,"order":1},{"name":"IBPS PO 2024","organization":"IBPS","examDate":"2024-11-20T00:00:00.000Z","description":"Probationary Officer exam","isPublished":true,"order":2}]';
 
+  const CSV_HEADERS = ['name', 'organization', 'categoryId', 'examDate', 'applicationStartDate', 'applicationEndDate', 'notificationUrl', 'syllabusUrl', 'description', 'order', 'isPublished'];
+  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+    ['SSC CGL 2024', 'Staff Selection Commission', '', '2024-12-15', '2024-10-01', '2024-10-31', '', '', 'Combined Graduate Level', 1, true],
+    ['IBPS PO 2024', 'IBPS', '', '2024-11-20', '', '', '', '', 'Probationary Officer exam', 2, true],
+  ];
+
   const handleBulkImport = async () => {
     let parsed: any;
-    try {
-      parsed = JSON.parse(bulkText);
-    } catch (e: any) {
-      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+    const text = bulkText.trim();
+    if (!text) {
+      toast.error('Please paste JSON or CSV data first');
       return;
     }
+    let isCsv = false;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      try {
+        const rows = parseCsv(text);
+        if (rows.length < 2) {
+          toast.error('CSV must have a header row and at least 1 data row');
+          return;
+        }
+        const headers = rows[0].map((h) => h.trim());
+        parsed = rows
+          .slice(1)
+          .filter((r) => r.some((c) => c.trim() !== ''))
+          .map((r) => {
+            const obj: any = {};
+            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+            if ('order' in obj) obj.order = Number(obj.order) || 0;
+            if ('isPublished' in obj) obj.isPublished = String(obj.isPublished).toLowerCase() === 'true';
+            return obj;
+          });
+        isCsv = true;
+      } catch (e: any) {
+        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+        return;
+      }
+    }
     if (!Array.isArray(parsed)) {
-      toast.error('JSON must be an array of items');
+      toast.error('Input must be a JSON array or a CSV with a header row');
       return;
     }
     setBulkSaving(true);
@@ -159,14 +192,14 @@ export default function UpcomingExams() {
         const payload = { ...item };
         // Convert ISO date strings to Date objects if present
         ['examDate', 'applicationStartDate', 'applicationEndDate'].forEach((key) => {
-          if (typeof payload[key] === 'string') payload[key] = new Date(payload[key]);
+          if (typeof payload[key] === 'string' && payload[key] !== '') payload[key] = new Date(payload[key]);
         });
         if (!payload.createdAt) payload.createdAt = serverTimestamp();
         if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully`);
+      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -715,7 +748,7 @@ export default function UpcomingExams() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-slate-500">
-                Paste a JSON array of upcoming exam objects below.
+                Paste a JSON array of upcoming exam objects below, or paste CSV rows (first row = column headers).
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -726,6 +759,15 @@ export default function UpcomingExams() {
                   className="border-slate-700 text-slate-300 h-8"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadCsv('upcoming-exams-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
                 </Button>
                 <Button
                   type="button"

@@ -30,10 +30,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download, FileSpreadsheet } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
-import { downloadJson } from '@/lib/download';
+import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
 interface Category {
   id: string;
@@ -73,16 +73,50 @@ export default function Categories() {
 
   const BULK_SAMPLE = '[{"name":"SSC","description":"Staff Selection Commission exams","icon":"📋","color":"#10b981","order":1,"isActive":true},{"name":"Banking","description":"Bank PO/Clerk exams","icon":"🏦","color":"#f59e0b","order":2,"isActive":true}]';
 
+  const CSV_HEADERS = ['name', 'description', 'icon', 'color', 'order', 'isPremium', 'premiumPrice', 'isActive'];
+  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+    ['SSC', 'Staff Selection Commission exams', '📋', '#10b981', 1, false, 0, true],
+    ['Banking', 'Bank PO/Clerk exams', '🏦', '#f59e0b', 2, true, 99, true],
+  ];
+
   const handleBulkImport = async () => {
     let parsed: any;
-    try {
-      parsed = JSON.parse(bulkText);
-    } catch (e: any) {
-      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+    const text = bulkText.trim();
+    if (!text) {
+      toast.error('Please paste JSON or CSV data first');
       return;
     }
+    let isCsv = false;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      try {
+        const rows = parseCsv(text);
+        if (rows.length < 2) {
+          toast.error('CSV must have a header row and at least 1 data row');
+          return;
+        }
+        const headers = rows[0].map((h) => h.trim());
+        parsed = rows
+          .slice(1)
+          .filter((r) => r.some((c) => c.trim() !== ''))
+          .map((r) => {
+            const obj: any = {};
+            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+            if ('order' in obj) obj.order = Number(obj.order) || 0;
+            if ('premiumPrice' in obj) obj.premiumPrice = Number(obj.premiumPrice) || 0;
+            if ('isPremium' in obj) obj.isPremium = String(obj.isPremium).toLowerCase() === 'true';
+            if ('isActive' in obj) obj.isActive = String(obj.isActive).toLowerCase() === 'true';
+            return obj;
+          });
+        isCsv = true;
+      } catch (e: any) {
+        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+        return;
+      }
+    }
     if (!Array.isArray(parsed)) {
-      toast.error('JSON must be an array of items');
+      toast.error('Input must be a JSON array or a CSV with a header row');
       return;
     }
     setBulkSaving(true);
@@ -97,7 +131,7 @@ export default function Categories() {
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully`);
+      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -499,7 +533,7 @@ export default function Categories() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-slate-500">
-                Paste a JSON array of category objects below.
+                Paste a JSON array of category objects below, or paste CSV rows (first row = column headers).
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -510,6 +544,15 @@ export default function Categories() {
                   className="border-slate-700 text-slate-300 h-8"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadCsv('categories-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
                 </Button>
                 <Button
                   type="button"

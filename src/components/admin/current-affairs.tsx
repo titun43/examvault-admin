@@ -67,9 +67,10 @@ import {
   Upload,
   Layers,
   Download,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { toast } from 'sonner';
-import { downloadJson } from '@/lib/download';
+import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
 interface CurrentAffair {
   id: string;
@@ -144,16 +145,51 @@ export default function CurrentAffairs() {
 
   const BULK_SAMPLE = '[{"date":"2024-01-15T00:00:00.000Z","title":"Sample News 1","summary":"Brief summary","content":"Full content here","source":"Newspaper","category":"National","isImportant":false,"tags":["india","politics"]},{"date":"2024-01-14T00:00:00.000Z","title":"Sample News 2","summary":"Brief summary 2","content":"Full content 2","source":"TV","category":"Sports","isImportant":true,"tags":["cricket"]}]';
 
+  const CSV_HEADERS = ['date', 'source', 'title', 'summary', 'content', 'category', 'tags', 'isImportant'];
+  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+    ['2024-01-15', 'Newspaper', 'Sample News 1', 'Brief summary', 'Full content here', 'National', 'india,politics', false],
+    ['2024-01-14', 'TV', 'Sample News 2', 'Brief summary 2', 'Full content 2', 'Sports', 'cricket', true],
+  ];
+
   const handleBulkImport = async () => {
     let parsed: any;
-    try {
-      parsed = JSON.parse(bulkText);
-    } catch (e: any) {
-      toast.error('Invalid JSON: ' + (e?.message || 'parse error'));
+    const text = bulkText.trim();
+    if (!text) {
+      toast.error('Please paste JSON or CSV data first');
       return;
     }
+    let isCsv = false;
+    try {
+      parsed = JSON.parse(text);
+    } catch {
+      try {
+        const rows = parseCsv(text);
+        if (rows.length < 2) {
+          toast.error('CSV must have a header row and at least 1 data row');
+          return;
+        }
+        const headers = rows[0].map((h) => h.trim());
+        parsed = rows
+          .slice(1)
+          .filter((r) => r.some((c) => c.trim() !== ''))
+          .map((r) => {
+            const obj: any = {};
+            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+            if ('isImportant' in obj) obj.isImportant = String(obj.isImportant).toLowerCase() === 'true';
+            // Convert comma-separated tags into an array
+            if ('tags' in obj && typeof obj.tags === 'string') {
+              obj.tags = obj.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+            }
+            return obj;
+          });
+        isCsv = true;
+      } catch (e: any) {
+        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+        return;
+      }
+    }
     if (!Array.isArray(parsed)) {
-      toast.error('JSON must be an array of items');
+      toast.error('Input must be a JSON array or a CSV with a header row');
       return;
     }
     setBulkSaving(true);
@@ -170,7 +206,7 @@ export default function CurrentAffairs() {
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully`);
+      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -736,7 +772,7 @@ export default function CurrentAffairs() {
           <div className="space-y-3">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-slate-500">
-                Paste a JSON array of current affair objects below.
+                Paste a JSON array of current affair objects below, or paste CSV rows (first row = column headers).
               </p>
               <div className="flex items-center gap-2">
                 <Button
@@ -747,6 +783,15 @@ export default function CurrentAffairs() {
                   className="border-slate-700 text-slate-300 h-8"
                 >
                   <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => downloadCsv('current-affairs-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+                  className="border-slate-700 text-slate-300 h-8"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
                 </Button>
                 <Button
                   type="button"

@@ -11,7 +11,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { uploadImage, toDateTimeInputValue, formatDateTime } from '@/lib/admin-firestore';
+import { uploadImage, toDateTimeInputValue, formatDateTime, deleteItems } from '@/lib/admin-firestore';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -79,6 +80,10 @@ export default function Banners() {
   const [uploading, setUploading] = useState(false);
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  // Bulk delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -187,6 +192,50 @@ export default function Banners() {
     }
   };
 
+  // ---- Bulk selection helpers ----
+  const filteredIds = items.map((b) => b.id);
+  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredIds.forEach((id) => next.delete(id));
+      } else {
+        filteredIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      const ids = Array.from(selectedIds);
+      await deleteItems('banners', ids);
+      toast.success(`${ids.length} banner${ids.length === 1 ? '' : 's'} deleted`);
+      setBulkDeleteOpen(false);
+      clearSelection();
+    } catch (err: any) {
+      toast.error(err?.message || 'Bulk delete failed');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -213,11 +262,51 @@ export default function Banners() {
           </CardContent>
         </Card>
       ) : (
+        <>
+        <div className="flex items-center gap-3 flex-wrap rounded-md border border-slate-800 bg-slate-900/50 px-3 py-2">
+          <div className="flex items-center gap-2">
+            <Checkbox
+              checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+              onCheckedChange={toggleSelectAll}
+              aria-label="Select all banners"
+            />
+            <span className="text-sm text-slate-400">
+              {allFilteredSelected ? 'All selected' : someFilteredSelected ? `${selectedIds.size} selected` : 'Select all'}
+            </span>
+          </div>
+          <div className="flex-1" />
+          {selectedIds.size > 0 && (
+            <div className="flex items-center gap-2">
+              <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+                {selectedIds.size} selected
+              </Badge>
+              <Button
+                size="sm"
+                variant="destructive"
+                className="h-8 bg-red-600 hover:bg-red-700"
+                onClick={() => setBulkDeleteOpen(true)}
+              >
+                <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                className="h-8 text-slate-400 hover:bg-slate-800"
+                onClick={clearSelection}
+                title="Clear selection"
+              >
+                <X className="w-3.5 h-3.5" />
+              </Button>
+            </div>
+          )}
+        </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {items.map((item) => (
+          {items.map((item) => {
+            const isSelected = selectedIds.has(item.id);
+            return (
             <Card
               key={item.id}
-              className="bg-slate-900 border-slate-800 hover:border-slate-700 transition-colors group overflow-hidden"
+              className={`hover:border-slate-700 transition-colors group overflow-hidden relative ${isSelected ? 'border-red-800 bg-red-950/20' : 'bg-slate-900 border-slate-800'}`}
             >
               <div className="relative aspect-video bg-slate-800">
                 {item.imageUrl ? (
@@ -231,6 +320,13 @@ export default function Banners() {
                     <ImageIcon className="w-10 h-10 text-slate-700" />
                   </div>
                 )}
+                <div className="absolute top-2 left-2 z-10 bg-slate-900/80 rounded backdrop-blur p-0.5">
+                  <Checkbox
+                    checked={isSelected}
+                    onCheckedChange={() => toggleSelectOne(item.id)}
+                    aria-label={`Select ${item.title}`}
+                  />
+                </div>
                 <div className="absolute top-2 right-2 flex gap-1.5">
                   {item.isActive ? (
                     <Badge variant="outline" className="bg-emerald-950/80 text-emerald-400 border-emerald-800/60 backdrop-blur">
@@ -283,8 +379,10 @@ export default function Banners() {
                 </div>
               </CardContent>
             </Card>
-          ))}
+            );
+          })}
         </div>
+        </>
       )}
 
       {/* Add/Edit Dialog */}
@@ -427,6 +525,33 @@ export default function Banners() {
             <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} banner{selectedIds.size === 1 ? '' : 's'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This will permanently delete {selectedIds.size} banner{selectedIds.size === 1 ? '' : 's'} from Firestore.
+              They will be removed from the home carousel immediately.
+              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Delete {selectedIds.size} banner{selectedIds.size === 1 ? '' : 's'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

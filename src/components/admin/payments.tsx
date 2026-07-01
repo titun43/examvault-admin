@@ -12,7 +12,8 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { formatDateTime, timestampToDate } from '@/lib/admin-firestore';
+import { formatDateTime, timestampToDate, deleteItems } from '@/lib/admin-firestore';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -62,6 +63,7 @@ import {
   IndianRupee,
   TrendingUp,
   RefreshCw,
+  X,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -141,6 +143,10 @@ export default function Payments() {
   const [deleteId, setDeleteId] = useState<string | null>(null);
   const [updatingStatusId, setUpdatingStatusId] = useState<string | null>(null);
   const [statusSaving, setStatusSaving] = useState(false);
+  // Bulk delete state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   useEffect(() => {
     let unsub: () => void = () => {};
@@ -244,6 +250,50 @@ export default function Payments() {
     }
   };
 
+  // ---- Bulk selection helpers ----
+  const filteredIds = filtered.map((p) => p.id);
+  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+
+  const toggleSelectAll = () => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (allFilteredSelected) {
+        filteredIds.forEach((id) => next.delete(id));
+      } else {
+        filteredIds.forEach((id) => next.add(id));
+      }
+      return next;
+    });
+  };
+
+  const toggleSelectOne = (id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const clearSelection = () => setSelectedIds(new Set());
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.size === 0) return;
+    setBulkDeleting(true);
+    try {
+      const ids = Array.from(selectedIds);
+      await deleteItems('payments', ids);
+      toast.success(`${ids.length} payment${ids.length === 1 ? '' : 's'} deleted`);
+      setBulkDeleteOpen(false);
+      clearSelection();
+    } catch (err: any) {
+      toast.error(err?.message || 'Bulk delete failed');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   const StatCard = ({
     label,
     value,
@@ -338,6 +388,31 @@ export default function Payments() {
         </Select>
       </div>
 
+      {selectedIds.size > 0 && (
+        <div className="flex items-center gap-2 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-1.5 flex-wrap">
+          <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+            {selectedIds.size} selected
+          </Badge>
+          <Button
+            size="sm"
+            variant="destructive"
+            className="h-8 bg-red-600 hover:bg-red-700"
+            onClick={() => setBulkDeleteOpen(true)}
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-8 text-slate-400 hover:bg-slate-800"
+            onClick={clearSelection}
+            title="Clear selection"
+          >
+            <X className="w-3.5 h-3.5" />
+          </Button>
+        </div>
+      )}
+
       {loading ? (
         <div className="flex justify-center py-20">
           <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
@@ -360,6 +435,13 @@ export default function Payments() {
               <Table>
                 <TableHeader>
                   <TableRow className="border-slate-800 hover:bg-transparent">
+                    <TableHead className="text-slate-400 w-[44px]">
+                      <Checkbox
+                        checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+                        onCheckedChange={toggleSelectAll}
+                        aria-label="Select all payments"
+                      />
+                    </TableHead>
                     <TableHead className="text-slate-400">Date</TableHead>
                     <TableHead className="text-slate-400">User</TableHead>
                     <TableHead className="text-slate-400 hidden md:table-cell">
@@ -379,11 +461,19 @@ export default function Payments() {
                   {filtered.map((p) => {
                     const status = (p.status || 'pending') as PaymentStatus;
                     const badge = STATUS_BADGES[status] || STATUS_BADGES.pending;
+                    const isSelected = selectedIds.has(p.id);
                     return (
                       <TableRow
                         key={p.id}
-                        className="border-slate-800 hover:bg-slate-800/40"
+                        className={`border-slate-800 hover:bg-slate-800/40 ${isSelected ? 'bg-red-950/20' : ''}`}
                       >
+                        <TableCell>
+                          <Checkbox
+                            checked={isSelected}
+                            onCheckedChange={() => toggleSelectOne(p.id)}
+                            aria-label={`Select payment ${p.id}`}
+                          />
+                        </TableCell>
                         <TableCell className="text-slate-300 text-xs whitespace-nowrap">
                           {formatDateTime(p.createdAt)}
                         </TableCell>
@@ -643,6 +733,32 @@ export default function Payments() {
               className="bg-red-600 hover:bg-red-700"
             >
               Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk Delete Confirmation */}
+      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} payment{selectedIds.size === 1 ? '' : 's'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This will permanently delete {selectedIds.size} payment record{selectedIds.size === 1 ? '' : 's'} from Firestore.
+              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleBulkDelete}
+              disabled={bulkDeleting}
+              className="bg-red-600 hover:bg-red-700 text-white"
+            >
+              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Delete {selectedIds.size} payment{selectedIds.size === 1 ? '' : 's'}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

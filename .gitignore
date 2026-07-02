@@ -92,12 +92,12 @@ examples/
 skills/
 db/
 
-# Prisma (admin panel uses Firebase Firestore, NOT Prisma)
-prisma/
+# Prisma: schema + migrations ARE committed (payment system uses Prisma).
+# Only the local SQLite database file is ignored.
+prisma/migrations/dev/
 
-# Old API routes from previous Prisma-based app (replaced by Firestore client SDK)
-# (these directories are kept locally but excluded from the admin repo)
-src/app/api/
+# NOTE: src/app/api/ is NO LONGER ignored — the payment system API routes
+# (create-order, verify, webhook, admin payments CRUD, etc.) live there.
 
 # Old components from previous user-facing web app (replaced by admin panel)
 src/components/footer.tsx
@@ -123,9 +123,8 @@ src/components/exams-view.tsx
 src/components/daily-quiz-view.tsx
 src/components/settings-view.tsx
 
-# Old lib files (Prisma-based, NOT used by admin panel — replaced by Firebase)
-# NOTE: providers.tsx IS used (React Query + ThemeProvider) so it is NOT excluded.
-src/lib/db.ts
+# Old lib file from previous setup (replaced by Firebase)
+# NOTE: src/lib/db.ts IS now used (Prisma client for the payment system).
 src/lib/auth.ts
 
 # Local worklog (session continuity, not for GitHub)

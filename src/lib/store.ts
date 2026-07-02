@@ -15,6 +15,7 @@ export type AdminSection =
   | 'users'
   | 'payments'
   | 'products'
+  | 'payment-settings'
   | 'notifications'
   | 'premium-plans';
 

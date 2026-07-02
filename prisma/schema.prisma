@@ -1,0 +1,399 @@
+// =============================================================================
+// ExamVault Payment System - Prisma Schema
+// =============================================================================
+// Relational payment data lives in SQLite (via Prisma) for transactional
+// integrity, idempotency, foreign keys, and audit logs.
+// Content (categories/subjects/tests/questions) continues to live in Firestore
+// and is referenced here by its Firestore doc ID (String).
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// =============================================================================
+// USERS (mirror of Firebase Auth users — minimal fields needed for payments)
+// =============================================================================
+model User {
+  id            String   @id @default(cuid())
+  firebaseUid   String   @unique
+  email         String?
+  phone         String?
+  displayName   String?
+  // Cached premium status — denormalized for fast access checks.
+  // The PaymentAccessService is the source of truth; this is updated on
+  // every successful subscription purchase / expiry.
+  isPremium     Boolean  @default(false)
+  premiumExpiry DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  orders              Order[]
+  payments            Payment[]
+  transactions        Transaction[]
+  subscriptions       PremiumSubscription[]
+  testPurchases       TestPurchase[]
+  subjectPackPurchases SubjectPackPurchase[]
+  examPackPurchases   ExamPackPurchase[]
+  paymentLogs         PaymentLog[]
+
+  @@index([email])
+  @@index([phone])
+}
+
+// =============================================================================
+// PRODUCTS — admin-managed purchasable items (subject packs, exam packs)
+// =============================================================================
+// Individual tests are priced on the Test itself (in Firestore). Premium plans
+// are managed in the premium_plans Firestore collection AND mirrored here for
+// relational joins. Subject Packs and Exam Packs are managed entirely here.
+// =============================================================================
+
+model Product {
+  id          String   @id @default(cuid())
+  type        ProductType // SUBJECT_PACK | EXAM_PACK
+  name        String
+  slug        String   @unique
+  description String?
+  // Firestore ref: the subject or exam (category) this pack unlocks.
+  // For SUBJECT_PACK -> points to a Firestore subjectId.
+  // For EXAM_PACK   -> points to a Firestore categoryId (exam).
+  refId       String
+  price       Int      // in paise (₹19 = 1900)
+  currency    String   @default("INR")
+  isActive    Boolean  @default(true)
+  // Optional: list of Firestore subjectIds this pack grants (for EXAM_PACK
+  // we denormalize the subject list so access checks are O(1)).
+  subjectIds  String   // JSON array string e.g. '["subj1","subj2"]'
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subjectPackPurchases SubjectPackPurchase[]
+  examPackPurchases   ExamPackPurchase[]
+
+  @@index([type, isActive])
+  @@index([refId])
+}
+
+enum ProductType {
+  SUBJECT_PACK
+  EXAM_PACK
+}
+
+// =============================================================================
+// ORDERS — intent to purchase (created before Razorpay checkout)
+// =============================================================================
+model Order {
+  id              String   @id @default(cuid())
+  // Public order reference shown to user & stored in Razorpay notes.
+  orderRef        String   @unique
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  productType     PurchaseType
+  productId       String   // Firestore testId / Product.id / premiumPlanId / categoryOrSubjectRef
+  productName     String
+
+  amount          Int      // paise
+  currency        String   @default("INR")
+  // Idempotency: client-generated UUID. Same key -> same order, no duplicate charge.
+  idempotencyKey  String   @unique
+
+  // Razorpay order id (created server-side via Razorpay Orders API).
+  razorpayOrderId String?  @unique
+
+  status          OrderStatus @default(CREATED)
+  expiresAt       DateTime? // Razorpay orders expire after ~1 hour
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  payments        Payment[]
+  transactions    Transaction[]
+  paymentLogs     PaymentLog[]
+
+  @@index([userId, status])
+  @@index([productType, productId])
+  @@index([status, createdAt])
+}
+
+enum PurchaseType {
+  TEST_PURCHASE
+  SUBJECT_PACK
+  EXAM_PACK
+  PREMIUM_SUBSCRIPTION
+}
+
+enum OrderStatus {
+  CREATED
+  ATTEMPTED
+  PAID
+  FAILED
+  EXPIRED
+  REFUNDED
+}
+
+// =============================================================================
+// PAYMENTS — Razorpay payment records (one order can have multiple attempts)
+// =============================================================================
+model Payment {
+  id                String   @id @default(cuid())
+  orderId           String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  razorpayPaymentId String?  @unique
+  razorpaySignature String?
+  razorpayOrderId   String?
+
+  amount            Int      // paise
+  currency          String   @default("INR")
+  fee               Int?
+  tax               Int?
+
+  method            String?  // upi | card | netbanking | wallet | emi
+  status            PaymentStatus @default(CREATED)
+  // If status = FAILED, populated with Razorpay error.
+  errorCode         String?
+  errorMessage      String?
+
+  // Verification
+  signatureVerified Boolean  @default(false)
+  webhookVerified   Boolean  @default(false)
+  verifiedAt        DateTime?
+
+  capturedAt        DateTime?
+  refundedAt        DateTime?
+  refundAmount      Int      @default(0)
+
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  transactions      Transaction[]
+  paymentLogs       PaymentLog[]
+
+  @@index([userId, status])
+  @@index([status, createdAt])
+  @@index([razorpayPaymentId])
+}
+
+enum PaymentStatus {
+  CREATED
+  AUTHORIZED
+  CAPTURED
+  FAILED
+  REFUNDED
+  PENDING
+}
+
+// =============================================================================
+// TRANSACTIONS — the canonical "did money move" ledger (1:1 with captured payments)
+// =============================================================================
+model Transaction {
+  id                String   @id @default(cuid())
+  paymentId         String
+  payment           Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  orderId           String
+  order             Order    @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  userId            String
+  user              User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  type              TransactionType
+  amount            Int      // paise
+  razorpayPaymentId String?
+  razorpayRefundId  String?
+
+  status            TransactionStatus
+  description       String?
+
+  createdAt         DateTime @default(now())
+
+  @@index([userId, type])
+  @@index([status])
+}
+
+enum TransactionType {
+  PAYMENT
+  REFUND
+}
+
+enum TransactionStatus {
+  SUCCESS
+  PENDING
+  FAILED
+}
+
+// =============================================================================
+// ENTITLEMENTS — one row per unlocked item (the access layer reads these)
+// =============================================================================
+
+// Premium subscription (Monthly / Quarterly / Yearly)
+model PremiumSubscription {
+  id              String   @id @default(cuid())
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  planId          String   // Firestore premium_plan id or plan slug
+  planName        String
+  planTier        String   // monthly | quarterly | yearly
+  durationMonths  Int
+
+  amount          Int      // paise actually paid
+  currency        String   @default("INR")
+
+  paymentId       String?  // link to originating payment
+  orderId         String?
+
+  status          SubscriptionStatus @default(ACTIVE)
+  startDate       DateTime @default(now())
+  endDate         DateTime
+  cancelledAt     DateTime?
+  cancelReason    String?
+
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([userId, status])
+  @@index([status, endDate])
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+}
+
+// Individual test purchase (lifetime access)
+model TestPurchase {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  testId      String   // Firestore test id
+  testTitle   String
+  amount      Int      // paise paid
+  currency    String   @default("INR")
+
+  paymentId   String?
+  orderId     String?
+
+  // Lifetime access — no expiry. Admin can revoke by deleting this row.
+  isActive    Boolean  @default(true)
+  revokedAt   DateTime?
+  revokeReason String?
+
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, testId])
+  @@index([userId, isActive])
+}
+
+// Subject pack purchase — unlocks all premium tests in one subject
+model SubjectPackPurchase {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id])
+  subjectId   String   // Firestore subject id
+  packName    String
+  amount      Int
+  currency    String   @default("INR")
+
+  paymentId   String?
+  orderId     String?
+
+  isActive    Boolean  @default(true)
+  revokedAt   DateTime?
+  revokeReason String?
+
+  createdAt   DateTime @default(now())
+
+  @@unique([userId, subjectId])
+  @@index([userId, isActive])
+}
+
+// Exam pack purchase — unlocks all subjects (and their tests) in one exam
+model ExamPackPurchase {
+  id           String   @id @default(cuid())
+  userId       String
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  productId    String
+  product      Product  @relation(fields: [productId], references: [id])
+  categoryId   String   // Firestore category (exam) id
+  packName     String
+  amount       Int
+  currency     String   @default("INR")
+
+  paymentId    String?
+  orderId      String?
+
+  isActive     Boolean  @default(true)
+  revokedAt    DateTime?
+  revokeReason String?
+
+  createdAt    DateTime @default(now())
+
+  @@unique([userId, categoryId])
+  @@index([userId, isActive])
+}
+
+// =============================================================================
+// AUDIT LOG — append-only log of every payment-system event
+// =============================================================================
+model PaymentLog {
+  id          String   @id @default(cuid())
+  paymentId   String?
+  payment     Payment? @relation(fields: [paymentId], references: [id], onDelete: SetNull)
+  orderId     String?
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  userId      String?
+  user        User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  event       String   // ORDER_CREATED, PAYMENT_SUCCESS, WEBHOOK_RECEIVED, REFUND_ISSUED, etc.
+  level       LogLevel @default(INFO)
+  message     String
+  payload     String   // JSON string of event details
+
+  ip          String?
+  userAgent   String?
+
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt])
+  @@index([event, createdAt])
+  @@index([orderId])
+  @@index([paymentId])
+}
+
+enum LogLevel {
+  INFO
+  WARN
+  ERROR
+  AUDIT
+}
+
+// =============================================================================
+// PAYMENT SETTINGS — admin-managed key/value store for payment configuration
+// =============================================================================
+// Stores the Razorpay webhook secret (admin-entered via the Payment Settings
+// page). The API key_id and key_secret remain in .env.local for security
+// (they are server-only and never sent to the browser). The webhook secret
+// is admin-editable because it changes when the admin recreates a webhook
+// in the Razorpay dashboard.
+// =============================================================================
+model PaymentSetting {
+  id        String   @id @default(cuid())
+  key       String   @unique
+  value     String
+  updatedAt DateTime @updatedAt
+  updatedBy String?
+}

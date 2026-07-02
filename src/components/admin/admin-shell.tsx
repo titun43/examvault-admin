@@ -20,6 +20,7 @@ import {
   Users,
   CreditCard,
   Package,
+  Settings,
   LogOut,
   Menu,
   Cloud,
@@ -77,6 +78,7 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'payments', label: 'Payments', icon: CreditCard },
       { id: 'products', label: 'Products', icon: Package },
       { id: 'premium-plans', label: 'Premium Plans', icon: Gem },
+      { id: 'payment-settings', label: 'Payment Settings', icon: Settings },
     ],
   },
 ];
@@ -271,10 +273,10 @@ export default function AdminShell({ children }: { children: React.ReactNode }) 
             {/* APK build download badge — direct download of the latest signed
                 release APK hosted on this admin panel. */}
             <a
-              href="/examvault-1.22.1.apk"
+              href="/examvault-1.23.0.apk"
               download
               className="group inline-flex items-center gap-2 h-9 px-3 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-medium shadow-lg shadow-emerald-900/40 transition-colors"
-              title="Download the latest signed release APK (v1.22.1+27)"
+              title="Download the latest signed release APK (v1.23.0+28)"
             >
               <Smartphone className="w-4 h-4 shrink-0" />
               <span className="hidden md:inline">Download APK</span>

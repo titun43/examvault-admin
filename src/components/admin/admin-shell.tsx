@@ -19,6 +19,7 @@ import {
   Newspaper,
   Users,
   CreditCard,
+  Package,
   LogOut,
   Menu,
   Cloud,
@@ -74,6 +75,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { id: 'users', label: 'Users', icon: Users },
       { id: 'payments', label: 'Payments', icon: CreditCard },
+      { id: 'products', label: 'Products', icon: Package },
       { id: 'premium-plans', label: 'Premium Plans', icon: Gem },
     ],
   },

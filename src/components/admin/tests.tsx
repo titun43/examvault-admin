@@ -25,7 +25,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet, IndianRupee } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
@@ -518,11 +518,6 @@ export default function Tests({ fixedType }: TestsProps = {}) {
               <div className="space-y-2"><Label>Total Marks</Label><Input type="number" value={form.totalMarks} onChange={(e) => setForm({ ...form, totalMarks: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
               <div className="space-y-2"><Label>Passing Marks</Label><Input type="number" value={form.passingMarks} onChange={(e) => setForm({ ...form, passingMarks: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
             </div>
-            <div className="space-y-2">
-              <Label>Price (INR)</Label>
-              <Input type="number" min={0} step={1} value={form.price} onChange={(e) => setForm({ ...form, price: Number(e.target.value) })} className="bg-slate-800 border-slate-700" />
-              <p className="text-xs text-slate-500">0 = free. Non-zero enables pay-per-test purchase.</p>
-            </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">
                 <Label>Difficulty</Label>
@@ -564,10 +559,47 @@ export default function Tests({ fixedType }: TestsProps = {}) {
                 <Switch checked={form.negativeMarking} onCheckedChange={(v) => setForm({ ...form, negativeMarking: v })} />
                 <Label className="cursor-pointer">Negative Marking</Label>
               </div>
-              <div className="flex items-center gap-2">
-                <Switch checked={form.isPremium} onCheckedChange={(v) => setForm({ ...form, isPremium: v })} />
-                <Label className="cursor-pointer flex items-center gap-1"><Crown className="w-3.5 h-3.5 text-amber-400" /> Premium</Label>
+            </div>
+            {/* Premium + Price box — mirrors the category premium layout.
+                When Premium is ON, a Price input appears below the toggle so
+                the admin always sets an amount for premium tests. This fixes
+                the "Buy for ₹0" bug in the user app (premium test with no
+                price showed a broken buy button). */}
+            <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 space-y-3">
+              <div className="flex items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <Crown className="w-4 h-4 text-amber-400" />
+                  <Label className="cursor-pointer font-semibold text-white">Premium Test</Label>
+                </div>
+                <Switch
+                  checked={form.isPremium}
+                  onCheckedChange={(v) => setForm({ ...form, isPremium: v })}
+                />
               </div>
+              <p className="text-xs text-slate-500">
+                Premium tests require a subscription OR a one-time per-test payment. Set a price below so non-premium users can buy it individually.
+              </p>
+              {(form.isPremium || form.price > 0) && (
+                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-700">
+                  <div className="space-y-2">
+                    <Label className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> Price (₹)</Label>
+                    <Input
+                      type="number"
+                      min={0}
+                      step={1}
+                      value={form.price}
+                      onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+                      placeholder="29"
+                      className="bg-slate-800 border-slate-700"
+                    />
+                  </div>
+                  <div className="space-y-2 flex flex-col justify-end">
+                    <p className="text-xs text-amber-400/80 flex items-center gap-1">
+                      <Info className="w-3 h-3" /> {form.isPremium ? '0 = premium-only (users must subscribe). Non-zero = buy individually OR subscribe.' : 'Non-zero enables pay-per-test purchase without premium.'}
+                    </p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
           <DialogFooter>

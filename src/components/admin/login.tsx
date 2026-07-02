@@ -115,18 +115,17 @@ export default function AdminLogin() {
           ExamVault Admin &middot; Content syncs to Flutter user app in real-time
         </p>
 
-        {/* APK download — opens the GitHub Actions page in a new tab so the
-            owner can grab the latest signed release APK without logging in. */}
+        {/* APK download — direct download of the latest signed release APK
+            hosted on this admin panel itself (no GitHub login needed). */}
         <a
-          href="https://github.com/titun43/examvault/actions/workflows/build.yml"
-          target="_blank"
-          rel="noopener noreferrer"
+          href="/examvault-1.22.1.apk"
+          download
           className="mt-4 group flex items-center justify-center gap-3 w-full h-12 rounded-xl bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-500 hover:to-green-500 text-white font-medium shadow-lg shadow-emerald-900/40 transition-all hover:shadow-emerald-700/40"
         >
           <Smartphone className="w-5 h-5 shrink-0" />
           <div className="flex flex-col items-start leading-tight">
             <span className="text-sm font-semibold">Download ExamVault APK</span>
-            <span className="text-[11px] text-emerald-100/80">latest signed release &middot; opens GitHub Actions</span>
+            <span className="text-[11px] text-emerald-100/80">v1.22.1+27 &middot; ~35 MB &middot; signed release</span>
           </div>
           <Download className="w-4 h-4 shrink-0 opacity-80 group-hover:opacity-100 group-hover:translate-y-0.5 transition" />
         </a>

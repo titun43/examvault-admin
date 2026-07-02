@@ -25,7 +25,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet, IndianRupee } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet, IndianRupee, Unlock } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
@@ -96,6 +96,10 @@ export default function Tests({ fixedType }: TestsProps = {}) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Bulk "make free" state — resets isPremium=false, price=0.
+  const [bulkFreeOpen, setBulkFreeOpen] = useState(false);
+  const [bulkFreeAllOpen, setBulkFreeAllOpen] = useState(false);
+  const [bulkFreeing, setBulkFreeing] = useState(false);
 
   // When fixedType is set, derive a filtered view + friendly labels.
   const fixedLabel = fixedType ? (TYPE_LABELS[fixedType] || fixedType) : null;
@@ -302,6 +306,33 @@ export default function Tests({ fixedType }: TestsProps = {}) {
     }
   };
 
+  // Reset tests to free (isPremium=false, price=0) in a single Firestore batch.
+  // all=true -> every test; all=false -> only selected tests.
+  const handleBulkMakeFree = async (all: boolean) => {
+    const ids = all ? items.map((t) => t.id) : Array.from(selectedIds);
+    if (ids.length === 0) {
+      toast.error('No tests to update');
+      return;
+    }
+    setBulkFreeing(true);
+    try {
+      const batch = writeBatch(db);
+      for (const id of ids) {
+        const ref = doc(db, 'tests', id);
+        batch.update(ref, { isPremium: false, price: 0 });
+      }
+      await batch.commit();
+      toast.success(`${ids.length} test${ids.length === 1 ? '' : 's'} reset to free`);
+      setBulkFreeOpen(false);
+      setBulkFreeAllOpen(false);
+      if (!all) clearSelection();
+    } catch (err: any) {
+      toast.error(err?.message || 'Failed to reset tests');
+    } finally {
+      setBulkFreeing(false);
+    }
+  };
+
   const manageQuestions = (test: Test) => {
     setSelectedTest(test.id, test.title);
     setCurrentSection('questions');
@@ -366,12 +397,39 @@ export default function Tests({ fixedType }: TestsProps = {}) {
             </Button>
             <Button
               size="sm"
+              variant="outline"
+              className="h-8 border-emerald-700 text-emerald-300 hover:bg-emerald-950/40"
+              onClick={() => setBulkFreeOpen(true)}
+              title="Reset selected tests to free (isPremium=false, price=0)"
+            >
+              <Unlock className="w-3.5 h-3.5 mr-1" /> Make Selected Free
+            </Button>
+            <Button
+              size="sm"
               variant="ghost"
               className="h-8 text-slate-400 hover:bg-slate-800"
               onClick={clearSelection}
               title="Clear selection"
             >
               <X className="w-3.5 h-3.5" />
+            </Button>
+          </div>
+        )}
+        {/* Always-available "Make ALL tests free" banner */}
+        {items.length > 0 && (
+          <div className="flex items-center gap-2 rounded-md border border-amber-900/50 bg-amber-950/20 px-3 py-1.5 flex-wrap">
+            <Info className="w-3.5 h-3.5 text-amber-400" />
+            <span className="text-xs text-amber-200/80">
+              {items.filter((t) => t.isPremium || t.price > 0).length} of {items.length} tests are currently paid/premium.
+            </span>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-8 border-amber-700 text-amber-300 hover:bg-amber-950/40"
+              onClick={() => setBulkFreeAllOpen(true)}
+              title="Reset ALL tests to free (isPremium=false, price=0)"
+            >
+              <Unlock className="w-3.5 h-3.5 mr-1" /> Make ALL Tests Free
             </Button>
           </div>
         )}
@@ -730,6 +788,61 @@ export default function Tests({ fixedType }: TestsProps = {}) {
             >
               {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               Delete {selectedIds.size} test{selectedIds.size === 1 ? '' : 's'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Bulk "Make Selected Free" confirmation */}
+      <AlertDialog open={bulkFreeOpen} onOpenChange={setBulkFreeOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Unlock className="w-5 h-5 text-emerald-400" /> Reset {selectedIds.size} test{selectedIds.size === 1 ? '' : 's'} to free?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This sets <b>isPremium = false</b> and <b>price = 0</b> on the selected test{selectedIds.size === 1 ? '' : 's'} in Firestore.
+              Users will be able to attempt them without paying or subscribing.
+              <span className="block mt-2 text-emerald-300 font-medium">You can re-enable premium/pricing later by editing each test.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleBulkMakeFree(false)}
+              disabled={bulkFreeing}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {bulkFreeing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Make {selectedIds.size} test{selectedIds.size === 1 ? '' : 's'} free
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* "Make ALL tests free" confirmation */}
+      <AlertDialog open={bulkFreeAllOpen} onOpenChange={setBulkFreeAllOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Unlock className="w-5 h-5 text-amber-400" /> Make ALL {items.length} tests free?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This will reset <b>isPremium = false</b> and <b>price = 0</b> on <b>every test</b> in Firestore
+              ({items.length} total, {items.filter((t) => t.isPremium || t.price > 0).length} currently paid/premium).
+              All users will be able to attempt every test without paying.
+              <span className="block mt-2 text-amber-300 font-medium">Use this if tests are incorrectly showing "Go Premium" in the user app.</span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => handleBulkMakeFree(true)}
+              disabled={bulkFreeing}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {bulkFreeing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Make all {items.length} tests free
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

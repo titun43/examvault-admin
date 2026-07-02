@@ -33,6 +33,7 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { useAdminToken } from '@/lib/admin-token';
+import AdminTokenGate from './admin-token-gate';
 
 interface SettingsData {
   razorpayKeyId: string;
@@ -57,6 +58,14 @@ interface SettingsData {
 }
 
 export default function PaymentSettingsPage() {
+  return (
+    <AdminTokenGate title="Payment Settings">
+      <PaymentSettingsInner />
+    </AdminTokenGate>
+  );
+}
+
+function PaymentSettingsInner() {
   const { token } = useAdminToken();
   const [data, setData] = useState<SettingsData | null>(null);
   const [loading, setLoading] = useState(true);

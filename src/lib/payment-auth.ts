@@ -65,8 +65,17 @@ export async function requireUser(
     try {
       const verified = await verifyFirebaseToken(bearer);
       return { ok: true, user: verified };
-    } catch {
-      // fall through to gateway header
+    } catch (e) {
+      // Token was provided but verification failed (expired, revoked, invalid).
+      // Return a clear 401 so the client knows to re-authenticate.
+      const msg = e instanceof Error ? e.message : 'Token verification failed';
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'Invalid or expired session', detail: msg },
+          { status: 401 },
+        ),
+      };
     }
   }
 
@@ -85,8 +94,15 @@ export async function requireUser(
   };
 }
 
+// Firebase API key for the ExamVault project (examvaultnew). Same value as in
+// src/lib/firebase.ts. Kept here as a fallback so the payment API works on
+// Vercel even when NEXT_PUBLIC_FIREBASE_API_KEY is not set as an env var.
+const FIREBASE_API_KEY_FALLBACK = 'AIzaSyBKEUGs9r7Q71q7vCIh3Pz_mletXQCok6E';
+
 async function verifyFirebaseToken(token: string): Promise<AuthenticatedUser> {
-  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY;
+  // Prefer the env var if set; fall back to the hardcoded key (matches
+  // firebase.ts) so the payment API works out-of-the-box on Vercel.
+  const apiKey = process.env.NEXT_PUBLIC_FIREBASE_API_KEY || FIREBASE_API_KEY_FALLBACK;
   if (!apiKey) throw new Error('Firebase API key missing');
   // Firebase identitytoolkit: verify a custom token / ID token by posting it
   // and reading the response. This is the lightweight approach without the

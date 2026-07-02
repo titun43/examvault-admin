@@ -48,9 +48,13 @@ export async function GET(req: NextRequest) {
       categoryId,
     });
 
-    // Best-effort audit log (DEBUG-level)
-    try {
-      await db.paymentLog.create({
+    // Best-effort audit log (DEBUG-level). Fire-and-forget — do NOT await this
+    // DB write. Awaiting it adds 50-200ms to every access check (the access
+    // check itself is a DB READ; the log is a DB WRITE which is much slower).
+    // The log is wrapped in .catch() so a logging failure never affects the
+    // access decision.
+    db.paymentLog
+      .create({
         data: {
           userId: prismaUserId,
           event: 'ACCESS_CHECK',
@@ -68,16 +72,17 @@ export async function GET(req: NextRequest) {
           }),
           ...clientMeta,
         },
+      })
+      .catch(() => {
+        // swallow — access check must succeed even if logging fails
       });
-    } catch {
-      // swallow — access check must succeed even if logging fails
-    }
 
     return NextResponse.json(decision);
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    try {
-      await db.paymentLog.create({
+    // Fire-and-forget error log (same rationale as above).
+    db.paymentLog
+      .create({
         data: {
           event: 'ACCESS_CHECK_ERROR',
           level: 'ERROR',
@@ -85,10 +90,10 @@ export async function GET(req: NextRequest) {
           payload: JSON.stringify({ error: message }),
           ...clientMeta,
         },
+      })
+      .catch(() => {
+        // swallow
       });
-    } catch {
-      // swallow
-    }
     return NextResponse.json(
       { error: 'Access check failed' },
       { status: 500 },

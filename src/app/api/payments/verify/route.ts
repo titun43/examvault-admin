@@ -311,8 +311,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    try {
-      await db.paymentLog.create({
+    // Fire-and-forget error log — do NOT await (speeds up error response).
+    db.paymentLog
+      .create({
         data: {
           event: 'VERIFY_FAILED',
           level: 'ERROR',
@@ -320,10 +321,10 @@ export async function POST(req: NextRequest) {
           payload: JSON.stringify({ error: message }),
           ...clientMeta,
         },
+      })
+      .catch(() => {
+        // swallow
       });
-    } catch {
-      // swallow
-    }
     return NextResponse.json(
       { error: 'Payment verification failed' },
       { status: 500 },

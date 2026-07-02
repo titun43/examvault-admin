@@ -260,9 +260,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Unknown error';
-    // Best-effort log
-    try {
-      await db.paymentLog.create({
+    // Fire-and-forget error log — do NOT await (speeds up error response).
+    db.paymentLog
+      .create({
         data: {
           event: 'ORDER_CREATE_FAILED',
           level: 'ERROR',
@@ -270,10 +270,10 @@ export async function POST(req: NextRequest) {
           payload: JSON.stringify({ error: message }),
           ...clientMeta,
         },
+      })
+      .catch(() => {
+        // swallow logging failure
       });
-    } catch {
-      // swallow logging failure
-    }
     return NextResponse.json(
       { error: 'Failed to create order' },
       { status: 500 },

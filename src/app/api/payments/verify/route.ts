@@ -22,6 +22,7 @@ import {
 } from '@/lib/razorpay-server';
 import { requireUser, upsertUser } from '@/lib/payment-auth';
 import { grantEntitlement } from '@/lib/payment-access';
+import { resolveOrderMeta, type OrderMeta } from '@/lib/order-meta';
 import { getClientMeta } from '../_lib';
 
 interface VerifyBody {
@@ -29,15 +30,6 @@ interface VerifyBody {
   razorpayPaymentId: string;
   razorpayOrderId: string;
   razorpaySignature: string;
-}
-
-interface OrderMeta {
-  planId?: string;
-  planName?: string;
-  planTier?: string;
-  durationMonths?: number;
-  subjectId?: string;
-  categoryId?: string;
 }
 
 export async function POST(req: NextRequest) {
@@ -158,6 +150,7 @@ export async function POST(req: NextRequest) {
           method: string | null;
           fee: number;
           tax: number;
+          amount: number;
         }
       | null = null;
     try {
@@ -168,11 +161,61 @@ export async function POST(req: NextRequest) {
         method: fetched.method,
         fee: fetched.fee,
         tax: fetched.tax,
+        amount: fetched.amount,
       };
     } catch {
       // Don't fail the verification solely because Razorpay fetch failed;
       // signature already verified. We just skip the extra check.
       rzpPayment = null;
+    }
+
+    // ---- Amount cross-check (tamper defense) ----
+    // The Razorpay order binds the amount the user must pay, but we double-check
+    // that the CAPTURED payment amount matches our Order.amount. Any mismatch is
+    // a serious anomaly (possible tampering or a Razorpay bug) — refuse to grant
+    // and mark FAILED so the admin can investigate + refund manually.
+    if (rzpPayment && rzpPayment.amount !== order.amount) {
+      await db.$transaction(async (tx) => {
+        const payment = await tx.payment.create({
+          data: {
+            orderId: order.id,
+            userId: prismaUserId,
+            razorpayPaymentId,
+            razorpaySignature,
+            razorpayOrderId,
+            amount: order.amount,
+            currency: order.currency,
+            status: 'FAILED',
+            errorCode: 'AMOUNT_MISMATCH',
+            errorMessage: `Captured ${rzpPayment!.amount} != order ${order.amount}`,
+            signatureVerified: true,
+          },
+        });
+        await tx.order.update({
+          where: { id: order.id },
+          data: { status: 'FAILED' },
+        });
+        await tx.paymentLog.create({
+          data: {
+            paymentId: payment.id,
+            orderId: order.id,
+            userId: prismaUserId,
+            event: 'AMOUNT_MISMATCH',
+            level: 'ERROR',
+            message: `Captured amount ${rzpPayment!.amount} paise != order amount ${order.amount} paise — possible tampering. Payment refused + marked FAILED for manual refund.`,
+            payload: JSON.stringify({
+              razorpayPaymentId,
+              capturedAmount: rzpPayment!.amount,
+              orderAmount: order.amount,
+            }),
+            ...clientMeta,
+          },
+        });
+      });
+      return NextResponse.json(
+        { error: 'Payment amount mismatch. Please contact support.' },
+        { status: 400 },
+      );
     }
 
     if (rzpPayment && rzpPayment.status !== 'captured') {
@@ -221,7 +264,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ---- Resolve the create-order meta (stored in ORDER_CREATED log payload) ----
-    const meta = await resolveOrderMeta(order.id);
+    const meta: OrderMeta | undefined = await resolveOrderMeta(order.id);
 
     // ---- Success: mark PAID + grant entitlement, in a transaction ----
     const now = new Date();
@@ -332,47 +375,4 @@ export async function POST(req: NextRequest) {
   }
 }
 
-/**
- * Resolve the create-order `meta` (subjectId / categoryId / plan metadata)
- * from the ORDER_CREATED PaymentLog row written by create-order. Returns
- * `undefined` if no meta was stored (e.g. for TEST_PURCHASE). For
- * SUBJECT_PACK / EXAM_PACK, falls back to using productId as subjectId /
- * categoryId when no meta was stored.
- */
-async function resolveOrderMeta(orderId: string): Promise<OrderMeta | undefined> {
-  const log = await db.paymentLog.findFirst({
-    where: { orderId, event: 'ORDER_CREATED' },
-    orderBy: { createdAt: 'desc' },
-  });
-  let parsed: { meta?: OrderMeta; productType?: string; productId?: string } | null = null;
-  if (log?.payload) {
-    try {
-      parsed = JSON.parse(log.payload) as {
-        meta?: OrderMeta;
-        productType?: string;
-        productId?: string;
-      };
-    } catch {
-      parsed = null;
-    }
-  }
-  const meta = parsed?.meta;
-  // Fallbacks for legacy orders without stored meta
-  if (!meta) {
-    if (parsed?.productType === 'SUBJECT_PACK' && parsed.productId) {
-      return { subjectId: parsed.productId };
-    }
-    if (parsed?.productType === 'EXAM_PACK' && parsed.productId) {
-      return { categoryId: parsed.productId };
-    }
-    return undefined;
-  }
-  // Backfill missing subjectId/categoryId from productId for pack types
-  if (parsed?.productType === 'SUBJECT_PACK' && !meta.subjectId && parsed.productId) {
-    meta.subjectId = parsed.productId;
-  }
-  if (parsed?.productType === 'EXAM_PACK' && !meta.categoryId && parsed.productId) {
-    meta.categoryId = parsed.productId;
-  }
-  return meta;
-}
+

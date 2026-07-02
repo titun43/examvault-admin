@@ -4,6 +4,18 @@
 // Razorpay webhook receiver. NO auth (public — Razorpay calls this), but the
 // raw body signature is verified before any DB writes. Always returns 200
 // quickly so Razorpay does not retry.
+//
+// SAFETY NET (v2): The `payment.captured` handler is now the ULTIMATE
+// reliability backstop. Even if the app's /verify call never runs (app crash,
+// network death, user kills the app right after paying), the webhook:
+//   1. Looks up the Payment row by razorpayPaymentId. If missing, looks up the
+//      Order by razorpayOrderId and creates the Payment row itself.
+//   2. Marks the Order PAID + creates a Transaction row.
+//   3. Grants the entitlement idempotently (if not already granted) using the
+//      meta resolved from the ORDER_CREATED log.
+// This guarantees the user ALWAYS gets what they paid for, even when the app
+// is unreachable. grantEntitlement uses upserts, so concurrent /verify +
+// webhook runs are safe (no duplicate entitlements).
 // =============================================================================
 
 export const dynamic = 'force-dynamic';
@@ -12,6 +24,8 @@ export const runtime = 'nodejs';
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 import crypto from 'crypto';
+import { grantEntitlement } from '@/lib/payment-access';
+import { resolveOrderMeta } from '@/lib/order-meta';
 
 // Resolve webhook secret: DB (admin-set) takes precedence over env.
 async function getWebhookSecret(): Promise<string | null> {
@@ -33,40 +47,35 @@ function verifyWithSecret(rawBody: string, signature: string, secret: string): b
   return crypto.timingSafeEqual(a, b);
 }
 
+interface PaymentEntity {
+  id?: string;
+  order_id?: string | null;
+  status?: string;
+  amount?: number;
+  method?: string;
+  fee?: number;
+  tax?: number;
+  error_code?: string | null;
+  error_description?: string | null;
+  amount_refunded?: number;
+  refund_status?: string | null;
+}
+
+interface RefundEntity {
+  id?: string;
+  payment_id?: string;
+  status?: string;
+  amount?: number;
+}
+
 interface RazorpayWebhookEvent {
   entity?: string;
   event?: string;
   contains?: string[];
   payload?: {
-    payment?: {
-      entity?: {
-        id?: string;
-        order_id?: string | null;
-        status?: string;
-        amount?: number;
-        method?: string;
-        fee?: number;
-        tax?: number;
-        error_code?: string | null;
-        error_description?: string | null;
-        amount_refunded?: number;
-        refund_status?: string | null;
-      };
-    };
-    refund?: {
-      entity?: {
-        id?: string;
-        payment_id?: string;
-        status?: string;
-        amount?: number;
-      };
-    };
-    order?: {
-      entity?: {
-        id?: string;
-        status?: string;
-      };
-    };
+    payment?: { entity?: PaymentEntity };
+    refund?: { entity?: RefundEntity };
+    order?: { entity?: { id?: string; status?: string } };
   };
 }
 
@@ -174,61 +183,282 @@ export async function POST(req: NextRequest) {
 // Event handlers
 // ----------------------------------------------------------------------------
 
-async function handlePaymentCaptured(
-  p: RazorpayWebhookEvent['payload'] extends undefined
-    ? undefined
-    : NonNullable<NonNullable<RazorpayWebhookEvent['payload']>['payment']>['entity'],
-) {
+/**
+ * SAFETY NET handler for `payment.captured`.
+ *
+ * Guarantees the user ALWAYS gets their entitlement when Razorpay captures a
+ * payment, regardless of whether the app's /verify call succeeds. Three paths:
+ *
+ *   A) Payment row exists + already webhookVerified → idempotent ack.
+ *   B) Payment row exists + NOT yet verified → mark captured + webhookVerified,
+ *      then grant the entitlement if not already granted (race with /verify).
+ *   C) Payment row MISSING (webhook arrived before /verify, or /verify failed)
+ *      → look up the Order by razorpayOrderId, create the Payment + Transaction
+ *      rows, mark the Order PAID, and grant the entitlement. THIS IS THE KEY
+ *      FIX: previously the webhook just logged "unknown payment" and the user
+ *      paid without receiving anything if /verify never completed.
+ */
+async function handlePaymentCaptured(p?: PaymentEntity) {
   if (!p?.id) return;
+
+  // ---- Path A/B: Payment row already exists (verify ran first, or a retry) ----
   const payment = await db.payment.findUnique({
     where: { razorpayPaymentId: p.id },
   });
-  if (!payment) {
-    // Razorpay may have sent the webhook before our verify endpoint wrote
-    // the Payment row. Log and ack.
+
+  if (payment) {
+    // Path A: already processed by a previous webhook delivery — idempotent.
+    if (payment.webhookVerified) return;
+
+    // Path B: mark captured + webhookVerified.
+    await db.payment.update({
+      where: { id: payment.id },
+      data: {
+        webhookVerified: true,
+        status: 'CAPTURED',
+        capturedAt: payment.capturedAt ?? new Date(),
+        method: p.method ?? payment.method,
+        fee: p.fee ?? payment.fee,
+        tax: p.tax ?? payment.tax,
+      },
+    });
+    await db.paymentLog.create({
+      data: {
+        paymentId: payment.id,
+        orderId: payment.orderId,
+        userId: payment.userId,
+        event: 'WEBHOOK_PAYMENT_CAPTURED',
+        level: 'AUDIT',
+        message: `Webhook confirmed capture for ${p.id}`,
+        payload: JSON.stringify({ razorpayPaymentId: p.id, method: p.method }),
+      },
+    });
+
+    // Ensure the entitlement is granted (idempotent — safe even if /verify
+    // already granted it). This covers the race where /verify marked the
+    // Payment row but crashed before calling grantEntitlement.
+    await ensureEntitlementGranted(payment.orderId, payment.id, payment.userId);
+    return;
+  }
+
+  // ---- Path C: Payment row MISSING — the webhook arrived before /verify
+  //      (or /verify failed). Look up the Order by razorpayOrderId and act as
+  //      the safety net. ----
+  if (!p.order_id) {
+    // No order_id to look up — can't do anything. Log and ack.
     await db.paymentLog.create({
       data: {
         event: 'WEBHOOK_PAYMENT_CAPTURED',
-        level: 'INFO',
-        message: `Webhook received for unknown payment ${p.id}`,
-        payload: JSON.stringify({ razorpayPaymentId: p.id, orderId: p.order_id }),
+        level: 'WARN',
+        message: `Webhook payment.captured for payment ${p.id} with no order_id — cannot resolve order.`,
+        payload: JSON.stringify({ razorpayPaymentId: p.id }),
       },
     });
     return;
   }
-  if (payment.webhookVerified) {
-    // Already processed — idempotent ack
+
+  const order = await db.order.findFirst({
+    where: { razorpayOrderId: p.order_id },
+  });
+  if (!order) {
+    // Unknown order — log and ack (Razorpay will not retry since we return 200).
+    await db.paymentLog.create({
+      data: {
+        event: 'WEBHOOK_PAYMENT_CAPTURED',
+        level: 'WARN',
+        message: `Webhook payment.captured for unknown order ${p.order_id} (payment ${p.id})`,
+        payload: JSON.stringify({ razorpayPaymentId: p.id, razorpayOrderId: p.order_id }),
+      },
+    });
     return;
   }
-  await db.payment.update({
-    where: { id: payment.id },
-    data: {
-      webhookVerified: true,
-      status: 'CAPTURED',
-      capturedAt: payment.capturedAt ?? new Date(),
-      method: p.method ?? payment.method,
-      fee: p.fee ?? payment.fee,
-      tax: p.tax ?? payment.tax,
-    },
-  });
-  await db.paymentLog.create({
-    data: {
-      paymentId: payment.id,
-      orderId: payment.orderId,
-      userId: payment.userId,
-      event: 'WEBHOOK_PAYMENT_CAPTURED',
-      level: 'AUDIT',
-      message: `Webhook confirmed capture for ${p.id}`,
-      payload: JSON.stringify({ razorpayPaymentId: p.id, method: p.method }),
-    },
-  });
+
+  // If the order is already PAID, /verify already processed it. Just create a
+  // Payment row for record-keeping (idempotent) and ack.
+  if (order.status === 'PAID') {
+    try {
+      await db.payment.create({
+        data: {
+          orderId: order.id,
+          userId: order.userId,
+          razorpayPaymentId: p.id,
+          razorpayOrderId: p.order_id,
+          amount: order.amount,
+          currency: order.currency,
+          status: 'CAPTURED',
+          method: p.method ?? null,
+          fee: p.fee ?? null,
+          tax: p.tax ?? null,
+          signatureVerified: false, // webhook can't verify the client signature
+          webhookVerified: true,
+          verifiedAt: new Date(),
+          capturedAt: new Date(),
+        },
+      });
+    } catch (e) {
+      // P2002 = unique constraint (Payment row created by a concurrent /verify).
+      // Safe to ignore — the row exists, which is all we need.
+    }
+    await ensureEntitlementGranted(order.id, undefined, order.userId);
+    return;
+  }
+
+  // ---- SAFETY NET: order is NOT yet PAID. The app's /verify never completed.
+  //      Mark the order PAID, create Payment + Transaction, and grant the
+  //      entitlement. This is the fix for "user paid but got nothing". ----
+  const now = new Date();
+  let newPaymentId: string | undefined;
+  try {
+    const result = await db.$transaction(async (tx) => {
+      await tx.order.update({
+        where: { id: order.id },
+        data: { status: 'PAID' },
+      });
+      const newPayment = await tx.payment.create({
+        data: {
+          orderId: order.id,
+          userId: order.userId,
+          razorpayPaymentId: p.id!,
+          razorpayOrderId: p.order_id!,
+          amount: order.amount,
+          currency: order.currency,
+          status: 'CAPTURED',
+          method: p.method ?? null,
+          fee: p.fee ?? null,
+          tax: p.tax ?? null,
+          signatureVerified: false,
+          webhookVerified: true,
+          verifiedAt: now,
+          capturedAt: now,
+        },
+      });
+      await tx.transaction.create({
+        data: {
+          paymentId: newPayment.id,
+          orderId: order.id,
+          userId: order.userId,
+          type: 'PAYMENT',
+          amount: order.amount,
+          razorpayPaymentId: p.id!,
+          status: 'SUCCESS',
+          description: `Payment for ${order.productName} (via webhook safety net)`,
+        },
+      });
+      await tx.paymentLog.create({
+        data: {
+          paymentId: newPayment.id,
+          orderId: order.id,
+          userId: order.userId,
+          event: 'WEBHOOK_SAFETY_NET_CAPTURED',
+          level: 'AUDIT',
+          message: `Webhook safety net marked order PAID + captured payment ${p.id} (verify did not run).`,
+          payload: JSON.stringify({
+            razorpayPaymentId: p.id,
+            razorpayOrderId: p.order_id,
+            amount: order.amount,
+            method: p.method ?? null,
+          }),
+        },
+      });
+      return { paymentId: newPayment.id };
+    });
+    newPaymentId = result.paymentId;
+  } catch (e) {
+    // P2002 = a concurrent /verify created the Payment row first. In that case
+    // /verify is handling the grant; we just ack the webhook.
+    const code = (e as { code?: string })?.code;
+    if (code === 'P2002') {
+      await db.paymentLog
+        .create({
+          data: {
+            orderId: order.id,
+            userId: order.userId,
+            event: 'WEBHOOK_SAFETY_NET_RACE',
+            level: 'INFO',
+            message: `Webhook safety net: Payment row already exists (concurrent verify) for ${p.id}. Skipping.`,
+            payload: JSON.stringify({ razorpayPaymentId: p.id }),
+          },
+        })
+        .catch(() => {});
+      // Still ensure entitlement — the verify path may have been interrupted.
+      await ensureEntitlementGranted(order.id, undefined, order.userId);
+      return;
+    }
+    // Re-throw unexpected errors to the outer catch (which logs + 200s).
+    throw e;
+  }
+
+  // Grant the entitlement (idempotent). This is the actual "unlock".
+  await ensureEntitlementGranted(order.id, newPaymentId, order.userId);
 }
 
-async function handlePaymentAuthorized(
-  p: RazorpayWebhookEvent['payload'] extends undefined
-    ? undefined
-    : NonNullable<NonNullable<RazorpayWebhookEvent['payload']>['payment']>['entity'],
-) {
+/**
+ * Idempotently ensure the entitlement for an order is granted. Reads the order
+ * + its stored meta, then calls grantEntitlement (which uses upserts). Safe to
+ * call multiple times — the ENTITLEMENT_GRANTED log + upserts prevent duplicates.
+ */
+async function ensureEntitlementGranted(
+  orderId: string,
+  paymentId: string | undefined,
+  userId: string,
+): Promise<void> {
+  try {
+    // Quick check: already granted?
+    const existing = await db.paymentLog.findFirst({
+      where: { orderId, event: 'ENTITLEMENT_GRANTED' },
+      select: { id: true },
+    });
+    if (existing) return; // idempotent — nothing to do
+
+    const order = await db.order.findUnique({ where: { id: orderId } });
+    if (!order) return;
+    if (order.status !== 'PAID') return; // defensive — only grant for PAID orders
+
+    // Resolve the paymentId if not provided (e.g. the "order already PAID" path
+    // where /verify created the Payment row). grantEntitlement links the
+    // entitlement to this payment for audit.
+    let resolvedPaymentId = paymentId;
+    if (!resolvedPaymentId) {
+      const captured = await db.payment.findFirst({
+        where: { orderId, status: 'CAPTURED' },
+        orderBy: { capturedAt: 'desc' },
+        select: { id: true },
+      });
+      resolvedPaymentId = captured?.id ?? '';
+    }
+
+    const meta = await resolveOrderMeta(orderId);
+    await grantEntitlement(
+      userId,
+      order.productType,
+      order.productId,
+      order.productName,
+      order.amount,
+      resolvedPaymentId,
+      orderId,
+      meta,
+    );
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Unknown error';
+    await db.paymentLog
+      .create({
+        data: {
+          orderId,
+          userId,
+          event: 'WEBHOOK_GRANT_FAILED',
+          level: 'ERROR',
+          message: `Webhook safety net failed to grant entitlement for order ${orderId}: ${message}`,
+          payload: JSON.stringify({ error: message, orderId, paymentId }),
+        },
+      })
+      .catch(() => {});
+    // Do NOT re-throw — the webhook must still ack 200 to Razorpay. The
+    // entitlement grant can be retried by a subsequent webhook delivery or by
+    // the user re-opening the app (which calls /verify or /order-status).
+  }
+}
+
+async function handlePaymentAuthorized(p?: PaymentEntity) {
   if (!p?.id) return;
   const payment = await db.payment.findUnique({
     where: { razorpayPaymentId: p.id },
@@ -254,11 +484,7 @@ async function handlePaymentAuthorized(
   });
 }
 
-async function handlePaymentFailed(
-  p: RazorpayWebhookEvent['payload'] extends undefined
-    ? undefined
-    : NonNullable<NonNullable<RazorpayWebhookEvent['payload']>['payment']>['entity'],
-) {
+async function handlePaymentFailed(p?: PaymentEntity) {
   if (!p?.id) return;
   const payment = await db.payment.findUnique({
     where: { razorpayPaymentId: p.id },
@@ -313,19 +539,9 @@ async function handlePaymentFailed(
 }
 
 async function handleRefund(
-  refund:
-    | (
-        RazorpayWebhookEvent['payload'] extends undefined
-          ? undefined
-          : NonNullable<NonNullable<RazorpayWebhookEvent['payload']>['refund']>['entity']
-      ),
-  payment:
-    | (
-        RazorpayWebhookEvent['payload'] extends undefined
-          ? undefined
-          : NonNullable<NonNullable<RazorpayWebhookEvent['payload']>['payment']>['entity']
-      ),
-  eventType: string,
+  refund?: RefundEntity,
+  payment?: PaymentEntity,
+  eventType?: string,
 ) {
   const razorpayPaymentId = refund?.payment_id ?? payment?.id;
   if (!razorpayPaymentId) return;

@@ -4,6 +4,14 @@
 // Creates a Razorpay order for a product purchase. Idempotent on the client
 // `idempotencyKey`: a duplicate request for a PAID/CREATED/ATTEMPTED order
 // returns the existing Razorpay order id; a FAILED/EXPIRED order is recreated.
+//
+// SECURITY (v2): The order amount is resolved SERVER-SIDE via `resolvePrice`.
+// For SUBJECT_PACK / EXAM_PACK, the price is read from the Prisma Product
+// table and the client-sent amount is IGNORED entirely (prevents price
+// tampering). For TEST_PURCHASE / PREMIUM_SUBSCRIPTION, the client amount is
+// used but bounds-validated + audited (Firestore prices aren't readable
+// server-side here). A PRICE_MISMATCH warning is logged whenever the client
+// amount differs from the server-authoritative price.
 // =============================================================================
 
 export const dynamic = 'force-dynamic';
@@ -11,11 +19,9 @@ export const runtime = 'nodejs';
 
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
-import {
-  createRazorpayOrder,
-  rupeesToPaise,
-} from '@/lib/razorpay-server';
+import { createRazorpayOrder } from '@/lib/razorpay-server';
 import { requireUser, upsertUser } from '@/lib/payment-auth';
+import { resolvePrice } from '@/lib/price-resolver';
 import { PurchaseType } from '@prisma/client';
 import { generateOrderRef, getClientMeta } from '../_lib';
 
@@ -29,7 +35,7 @@ interface CreateOrderBody {
   productType: ProductTypeBody;
   productId: string;
   productName: string;
-  amount: number; // rupees
+  amount: number; // rupees (client hint — IGNORED for packs)
   idempotencyKey: string;
   meta?: {
     planId?: string;
@@ -63,7 +69,7 @@ export async function POST(req: NextRequest) {
     const { productType, productId, productName, amount, idempotencyKey, meta } =
       body;
 
-    // ---- Validate ----
+    // ---- Validate presence ----
     if (
       !productType ||
       !productId ||
@@ -89,8 +95,6 @@ export async function POST(req: NextRequest) {
         { status: 400 },
       );
     }
-
-    const amountPaise = rupeesToPaise(amount);
 
     // ---- Idempotency check ----
     const existing = await db.order.findUnique({
@@ -140,10 +144,26 @@ export async function POST(req: NextRequest) {
         });
       }
 
-      // FAILED or EXPIRED — recreate the Razorpay order on the existing row
+      // FAILED or EXPIRED — recreate the Razorpay order on the existing row.
+      // Resolve the price server-side first (security).
+      const priceRes = await resolvePrice(
+        productType as PurchaseType,
+        productId,
+        productName,
+        amount,
+        meta as Record<string, unknown> | undefined,
+      );
+      if (!priceRes.ok || !priceRes.resolved) {
+        return NextResponse.json(
+          { error: priceRes.error ?? 'Could not resolve price' },
+          { status: 400 },
+        );
+      }
+      const resolved = priceRes.resolved;
+
       const orderRef = generateOrderRef();
       const rzpOrder = await createRazorpayOrder({
-        amount: amountPaise,
+        amount: resolved.amountPaise,
         receipt: orderRef,
         notes: {
           userId: prismaUserId,
@@ -158,7 +178,8 @@ export async function POST(req: NextRequest) {
         data: {
           orderRef,
           razorpayOrderId: rzpOrder.id,
-          amount: amountPaise,
+          amount: resolved.amountPaise,
+          productName: resolved.productName,
           status: 'CREATED',
           expiresAt: new Date(Date.now() + 60 * 60 * 1000),
         },
@@ -174,13 +195,37 @@ export async function POST(req: NextRequest) {
           payload: JSON.stringify({
             productType,
             productId,
-            amount: amountPaise,
+            productName: resolved.productName,
+            amount: resolved.amountPaise,
+            clientAmountRupees: amount,
+            priceSource: resolved.source,
+            priceMismatch: priceRes.mismatch ?? null,
             razorpayOrderId: rzpOrder.id,
             previousStatus: existing.status,
+            meta: resolved.meta,
           }),
           ...clientMeta,
         },
       });
+      // If the client tried to pay a different amount than the server price,
+      // log a separate WARNING so it's visible in the audit trail.
+      if (priceRes.mismatch) {
+        await db.paymentLog
+          .create({
+            data: {
+              orderId: updated.id,
+              userId: prismaUserId,
+              event: 'PRICE_MISMATCH',
+              level: 'WARN',
+              message: `Client amount ₹${(priceRes.mismatch.clientPaise / 100).toFixed(2)} != server price ₹${(priceRes.mismatch.serverPaise / 100).toFixed(2)} — used server price.`,
+              payload: JSON.stringify(priceRes.mismatch),
+              ...clientMeta,
+            },
+          })
+          .catch(() => {
+            // swallow — logging only
+          });
+      }
 
       return NextResponse.json({
         orderId: updated.id,
@@ -197,7 +242,23 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // ---- Fresh order ----
+    // ---- Fresh order: resolve price SERVER-SIDE (security) ----
+    const priceRes = await resolvePrice(
+      productType as PurchaseType,
+      productId,
+      productName,
+      amount,
+      meta as Record<string, unknown> | undefined,
+    );
+    if (!priceRes.ok || !priceRes.resolved) {
+      return NextResponse.json(
+        { error: priceRes.error ?? 'Could not resolve price' },
+        { status: 400 },
+      );
+    }
+    const resolved = priceRes.resolved;
+    const amountPaise = resolved.amountPaise;
+
     const orderRef = generateOrderRef();
     const rzpOrder = await createRazorpayOrder({
       amount: amountPaise,
@@ -216,7 +277,7 @@ export async function POST(req: NextRequest) {
         userId: prismaUserId,
         productType: productType as PurchaseType,
         productId,
-        productName,
+        productName: resolved.productName,
         amount: amountPaise,
         currency: 'INR',
         idempotencyKey,
@@ -236,14 +297,34 @@ export async function POST(req: NextRequest) {
         payload: JSON.stringify({
           productType,
           productId,
-          productName,
+          productName: resolved.productName,
           amount: amountPaise,
+          clientAmountRupees: amount,
+          priceSource: resolved.source,
+          priceMismatch: priceRes.mismatch ?? null,
           razorpayOrderId: rzpOrder.id,
-          meta: meta ?? null,
+          meta: resolved.meta,
         }),
         ...clientMeta,
       },
     });
+    if (priceRes.mismatch) {
+      await db.paymentLog
+        .create({
+          data: {
+            orderId: order.id,
+            userId: prismaUserId,
+            event: 'PRICE_MISMATCH',
+            level: 'WARN',
+            message: `Client amount ₹${(priceRes.mismatch.clientPaise / 100).toFixed(2)} != server price ₹${(priceRes.mismatch.serverPaise / 100).toFixed(2)} — used server price.`,
+            payload: JSON.stringify(priceRes.mismatch),
+            ...clientMeta,
+          },
+        })
+        .catch(() => {
+          // swallow — logging only
+        });
+    }
 
     return NextResponse.json({
       orderId: order.id,

@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
     const envWebhookSecret = process.env.RAZORPAY_WEBHOOK_SECRET ?? '';
 
     // Determine app URL for the webhook endpoint
-    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://preview.z.ai';
+    const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? 'https://examvault-admin.vercel.app';
     const webhookUrl = `${appUrl}/api/payments/webhook`;
 
     // Recent webhook delivery logs (last 20 WEBHOOK_* events)

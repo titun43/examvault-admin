@@ -152,7 +152,41 @@ DATABASE_URL=file:/home/z/my-project/db/custom.db
 
 ### Session: 2026-07-03 (current)
 
-**Done:**
+**Pending investigation — "Premium button shows no plans" (saved before user testing):**
+
+> User report: Flutter app-এ category-তে click করে "Premium" button-এ click করলে plan list দেখাচ্ছে না ("No Plans Available"). Category premium toggle + EXAM_PACK auto-sync fix কাজ করেছে (verified আগের session-এ), কিন্তু Go Premium flow আলাদা।
+
+**Two SEPARATE purchase flows (DO NOT confuse):**
+1. **"Unlock this exam" (EXAM_PACK)** → category unlock, Razorpay direct payment, price server-authoritative from Prisma `Product` table. ✅ WORKING (auto-sync fix `5b58d48`).
+2. **"Go Premium" (PREMIUM_SUBSCRIPTION)** → premium screen, plan list shown, price client-validated (bounds ₹1–₹10,000). ❌ "No Plans Available" bug.
+
+**Architecture (how premium_plans flow works):**
+- Admin writes plans to Firestore `premium_plans` collection via **client-side Firebase SDK** (`src/lib/firebase.ts`) in `src/components/admin/premium-plans.tsx` (`addDoc`/`updateDoc`).
+- Flutter app reads `premium_plans` directly from Firestore (its own Firebase SDK) — NO admin API endpoint involved.
+- Plan schema fields: `name`, `price` (>0, Razorpay min ₹1), `durationMonths`, `durationLabel`, `planId` (optional placeholder for future Razorpay Subscription Plans), `description`, `features[]`, `isPopular`, `isActive`, `order`.
+- Flutter filters by `isActive === true` (boolean). If `isActive` missing or stored as string, filter fails → "No Plans Available".
+
+**Most likely root causes (ranked, to verify after user tests):**
+- **[A] No plans exist in Firestore `premium_plans` collection** — admin may have toggled category premium but never created any premium plan in the Premium Plans admin page. → Check admin panel → Premium Plans section → are there any cards?
+- **[B] Plans exist but `isActive: false`** — admin created plans but the toggle got turned off, or the default wasn't true. → Check each plan card in admin — green "Active" badge vs grey "Inactive".
+- **[C] Firestore security rules block the read** — `premium_plans` collection rules may require auth, or may not allow read for non-admin users. → Check `firestore.rules` in `examvault` repo (or wherever deployed). Should allow `allow read: if true;` or `if request.auth != null;` for this collection.
+- **[D] Flutter query filter mismatch** — Flutter may query `where('isActive', '==', true)` but field stored as string "true" or missing. → Check Flutter `premium_plans` read code (likely in `lib/services/` or `lib/screens/premium_screen.dart`).
+- **[E] Flutter pointing to wrong Firestore project** — if Flutter app uses a different Firebase project than admin panel, plans written in admin won't be visible. → Compare `google-services.json` / `firebase_options.dart` project ID vs admin's `src/lib/firebase.ts` config.
+
+**After user tests, ask which admin screen state they see:**
+- "Premium Plans page-এ কোনো plan আছে? থাকলে Active না Inactive?"
+- "Flutter app-এ premium screen-এ error দেখায় নাকি শুধু empty list?"
+
+**Files involved:**
+- Admin write: `src/components/admin/premium-plans.tsx` (client SDK direct Firestore write)
+- Admin Firestore config: `src/lib/firebase.ts`
+- Price resolver (server): `src/lib/price-resolver.ts` — PREMIUM_SUBSCRIPTION branch (lines 119–145) uses client amount, bounds-checked.
+- Create order: `src/app/api/payments/create-order/route.ts`
+- Grant entitlement: `src/app/api/payments/verify/route.ts`
+- Access check: `src/app/api/payments/access-check/route.ts`
+- Flutter read: (in `examvault` repo, not this repo) — `lib/screens/premium_screen.dart` or similar + `lib/services/` Firestore queries.
+
+**Done (this session, before premium-plans investigation):**
 1. Diagnosed "Missing or invalid fields" payment error → plan price was 0. Added price > 0 validation in `premium-plans.tsx` + detailed error in `create-order/route.ts`.
 2. Ran `bun run db:push` (was never run before — schema/env mismatch).
 3. Fixed git push auth — admin repo had expired token `ghp_5HxE...`, copied working token `ghp_P6ht...` from `/home/z/work/examvault` repo.
@@ -270,6 +304,16 @@ curl -s "http://localhost:3000/api/admin/dashboard/stats" \
 
 ### 🔴 Payment Flow — Pending (from session 2026-07-03)
 
+- [ ] **P0 — "Go Premium" shows "No Plans Available" in Flutter (BLOCKING)**
+  - Symptom: Flutter app → category → "Premium" button → premium screen → "No Plans Available".
+  - This is the **PREMIUM_SUBSCRIPTION** flow, NOT the EXAM_PACK flow (which is fixed).
+  - See full diagnostic in section 7 above ("Pending investigation — Premium button shows no plans").
+  - Resume steps after user tests:
+    1. Ask user: admin Premium Plans page-এ plan আছে কিনা? Active না Inactive?
+    2. If no plans → user creates one in admin (price > 0, isActive on).
+    3. If plans exist + active → check Firestore rules + Flutter query + Firebase project ID match.
+    4. If still broken → read Flutter `premium_screen.dart` + Firestore rules file to debug.
+
 - [ ] **P1 — TEST_PURCHASE server-side price validation (admin repo)**
   - Problem: `src/lib/price-resolver.ts` TEST_PURCHASE branch trusts client-supplied `amount` (only bounds-checked ₹1–₹10,000). A malicious client could buy a free test for ₹1 or a premium plan far below its Firestore price.
   - Fix: Install `firebase-admin` SDK + set `FIREBASE_SERVICE_ACCOUNT` env var. Add a Firestore read in `resolvePrice` for TEST_PURCHASE + PREMIUM_SUBSCRIPTION to verify the client amount matches the Firestore `tests.price` / `premium_plans.price`.
@@ -319,4 +363,4 @@ Whenever you (the AI) do something significant:
 
 ---
 
-*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (payment flow investigation + EXAM_PACK auto-sync fix)*
+*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (saved "Go Premium no plans" diagnostic before user testing — resume from section 7 "Pending investigation" + section 11 P0 item)*

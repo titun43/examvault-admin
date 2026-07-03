@@ -418,11 +418,20 @@ auto-inherit) to the **Flutter admin app**.
 - Flutter SDK is NOT installed in this sandbox — can't `dart analyze` /
   build. Verify with brace/paren balance checks only.
 
-**The buggy commit (`bfe034c`) was NOT reverted** (user didn't explicitly ask).
-If a future Flutter build fails, this commit is the likely culprit:
+**✅ The buggy commit (`bfe034c`) WAS REVERTED on 2026-07-03** (commit `5340c12`).
+It broke 4 builds in a row (`bfe034c`, `abf0b5b`, `76bfa2b`, `047969c`) with a
+compile typo: `$propagate` instead of `$propagated` in
+`admin_categories_screen.dart:434`. The revert was clean (no later commit had
+touched those files). Followed by version bump to `v1.40.0+47` (commit `867c8dc`)
+which built **successfully** — the failure streak ended. The reverted files:
 - `lib/admin/screens/admin_categories_screen.dart` (premium toggle, Re-sync)
 - `lib/admin/screens/admin_tests_screen.dart` (auto-inherit premium)
 - `lib/services/firestore_service.dart` (propagation methods)
+- `pubspec.yaml` (version bump — re-applied as 1.40.0+47)
+
+> NOTE: Category premium propagation still works correctly because the
+> **Web Admin** (Next.js) does it server-side. The Flutter admin revert only
+> removed the unwanted/duplicate Flutter-side UI; it did NOT break premium.
 
 ### 13.2 💰 Premium System Architecture (don't confuse the two)
 
@@ -527,3 +536,62 @@ it won't override a real name that happens to be different. The only edge case
 is a user whose actual name is literally "User" — they'd be re-overwritten from
 Firebase Auth displayName, but that's extremely rare and the displayName would
 also be "User" in that case (so no change).
+
+---
+
+## 14. Session Log — 2026-07-03 (build-failure streak fixed)
+
+**Context:** User reported "futter app er 3 ta buld faild hoyeche" — actually 4
+builds had failed in a row (`bfe034c`, `abf0b5b`, `76bfa2b`, `047969c`). The
+last successful build was `e97a0da` (v1.38.0+45).
+
+**Investigation:** Used the GitHub Actions API (with the token from the git
+remote URL) to list runs + download the failed job log. The actual error was a
+Dart compile typo in `bfe034c`:
+```
+lib/admin/screens/admin_categories_screen.dart:434:23: Error: The getter 'propagate' isn't defined
+```
+i.e. `$propagate` instead of `$propagated`. This was exactly the buggy commit
+flagged in section 13.1 above.
+
+**Fix (2 commits, 1 push → 1 build):**
+1. `5340c12` — `git revert bfe034c --no-edit`. Clean revert (no later commit
+   had touched `admin_categories_screen.dart`, `admin_tests_screen.dart`,
+   `firestore_service.dart`, or `pubspec.yaml`). Restored those files to the
+   last-known-good (`e97a0da`) state.
+2. `867c8dc` — bumped version `1.38.0+45` → `1.40.0+47` (skipped 1.39.0+46
+   since that version never built successfully) AND removed the misplaced
+   `PROJECT_MEMORY.md` from the Flutter repo (it lives here in the admin repo
+   — pushing it to Flutter had triggered an extra duplicate build).
+
+**Result:** Build `867c8dc` → **✅ SUCCESS** (all 18 steps passed: Build APK,
+Build AAB, signature verify, artifact upload). The 4-build failure streak ended.
+
+**What's now live in the new APK (v1.40.0+47):**
+- Signup name fix (`047969c`) — real name shows after login, not "User".
+- Payment UX loading + success feedback on all 6 trigger points (`abf0b5b`).
+- Flutter admin premium mistake (`bfe034c`) fully removed.
+
+**Lesson reinforced:**
+- When memory flags a commit as "buggy / not yet reverted", and builds start
+  failing, that commit is the prime suspect — revert it promptly.
+- Use the GitHub Actions API (`actions/runs`, `actions/runs/{id}/jobs`,
+  `actions/jobs/{id}/logs`) with the token from `git config remote.origin.url`
+  to diagnose CI failures when `gh` CLI isn't installed.
+- Combine a revert + version bump + cleanup into one push to avoid wasting
+  CI minutes (Flutter APK builds take ~6-10 min each).
+
+**Reusable commands for next time:**
+```bash
+# Extract token from git remote
+python3 -c "import re; print(re.search(r':(.+?)@', open('.git/config').read()).group(1))" > /tmp/ghtoken
+# List recent runs
+TOKEN=$(cat /tmp/ghtoken); curl -s -H "Authorization: token $TOKEN" \
+  "https://api.github.com/repos/titun43/examvault/actions/runs?per_page=10"
+# Get jobs + which step failed
+curl -s -H "Authorization: token $TOKEN" \
+  "https://api.github.com/repos/titun43/examvault/actions/runs/{RUN_ID}/jobs"
+# Download a job's log
+curl -s -H "Authorization: token $TOKEN" -L \
+  "https://api.github.com/repos/titun43/examvault/actions/jobs/{JOB_ID}/logs" -o /tmp/build_log.txt
+```

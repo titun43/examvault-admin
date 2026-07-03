@@ -241,7 +241,7 @@ DATABASE_URL=file:/home/z/my-project/db/custom.db
 **Known issues:**
 - ⚠️ `upload/rzp-key.csv live` is **still in git history** (revert removed from current tree only). User should regenerate Razorpay LIVE keys if those were real.
 - ⚠️ Local `.env.local` has placeholder `DATABASE_URL` — local sandbox admin pages won't load data until real Neon URL is pasted. Vercel works (user confirmed env vars set).
-- `.next/` was tracked in early commits (340+ files, including a 57MB .sst). Now gitignored, but history still has them. Optional: `git filter-repo` to clean.
+- `.next/` was tracked in early commits (340+ files, including a 57MB .sst). **Untracked from git index in `d07cc69`** (278 `.next/` files + `dev.log` removed from index via `git rm --cached`; files kept on disk, now properly ignored). Still in git history — optional `git filter-repo` to fully purge the old blobs.
 - ⚠️ **TEST_PURCHASE server-side price validation NOT done.** Requires firebase-admin SDK (not installed) to read Firestore test prices server-side. Currently mitigated only by [₹1, ₹10,000] bounds check. A malicious client could buy a free test for ₹1 or a premium plan far below its Firestore price.
 - ⚠️ **Subject Pack purchase is dead code in Flutter.** `startSubjectPackPurchase` exists in `razorpay_service.dart` but no UI calls it. Backend SUBJECT_PACK support is complete. UI re-enable requires admin to define subject-pack prices.
 - ⚠️ **Optimistic success fallback risk in Flutter.** If `/verify` fails after Razorpay success, app grants local access relying on webhook. If webhook misconfigured, cross-device access breaks.
@@ -776,3 +776,141 @@ premium/locked again.
 All 3 layers must be fixed for the exam-pack purchase flow to work
 end-to-end. Layers 1+2 fix the category (subject list opens). Layer 3
 fixes individual test access (test opens, not paywall).
+
+---
+
+## 17. Session Log — Splash animation + Guest mode + Git hygiene (session `web-f5c52b64...`, continued)
+
+> Three user requests in this segment: (1) replace the old splash book
+> animation with a page-opening logo animation, (2) make the app fully
+> browsable without an account (free tests open, premium requires login),
+> (3) push admin repo if anything pending + save full state to memory.
+
+### 17.1 ✅ Splash screen — old `_OpeningBook` removed, new book-logo opening animation (Flutter commit `b5eae8c`, v1.43.0+50)
+
+**User request (verbatim):** "app open er screen a je book er animation ta
+ache seta delete kore, upore jei examvault er upore je book er logo ache
+seta page khular animation baniye dao"
+
+**What changed (`lib/screens/splash_screen.dart`):**
+- **Removed** the old `_OpeningBook` looping widget (the standalone book
+  animation that played on the splash screen).
+- **New animation:** the book logo that sits ABOVE the "ExamVault" wordmark
+  now does a **one-shot opening-book intro**:
+  - The white panel + `menu_book` icon swings open like a real book cover,
+    rotating around the left spine (`rotateY`) with perspective.
+  - Two "pages" are revealed underneath (white panels with text-line
+    placeholders), giving the impression of an open book.
+  - Settles into the open state after the intro completes.
+- **Two animation controllers:**
+  - `_introController` — one-shot (forward only), drives the cover swing.
+  - `_breathingController` — loops infinitely AFTER the intro, applying a
+    gentle scale "breathing" effect so the open book stays alive but
+  doesn't replay the open animation.
+- The cover stays open after intro; only the scale breathes.
+
+**Why two controllers:** a single looping controller would replay the
+cover-swing every cycle (book closing and reopening), which looks wrong.
+The one-shot + breathing split keeps the book open and just subtly alive.
+
+### 17.2 ✅ Guest browsing mode — browse + free tests without login, premium requires login (Flutter commit `b5eae8c`, v1.43.0+50)
+
+**User request (verbatim):** "app ta khule jate account na khule total app
+total er sob dekhte pai, jeigulo free test sob ac temp dite pare, are
+jeigulo premium jei gulor jonno account khulte hobe, eirokom kore dao"
+
+**Architecture decision — guest = unauthenticated user:**
+- No new "guest" account type. A guest is simply a user with no Firebase
+  session. `AuthProvider.isGuest` getter returns `!isAuthenticated`.
+- `SplashScreen` routing: if `user == null` → navigate to `MainNavigation`
+  (guest mode) instead of `LoginScreen`. Sign-in is deferred until the
+  user hits a premium gate.
+
+**What works for guests (no login):**
+- Full app browsing — Home, All Categories, Category Detail, Subject
+  Detail, Test List all render with real data.
+- Taking **free tests** end-to-end — `test.isPaid == false` → fast-path
+  grants access immediately, no server call needed.
+- Profile tab visible but shows a "Guest Mode" card + Sign In button.
+
+**What requires login (premium gates):**
+- Taking **paid/premium tests** — every paywall screen now shows a
+  "Sign In to Unlock" CTA when the user is a guest (instead of the
+  Razorpay buy button, which needs an authenticated user id).
+- Buying exam packs, premium subscriptions, individual test purchases —
+  all require a Firebase uid for `ExamPackPurchase` / entitlement rows.
+
+**Files changed (Flutter):**
+- `lib/providers/auth_provider.dart` — added `isGuest` getter.
+- `lib/screens/splash_screen.dart` — guest routing to `MainNavigation`.
+- `lib/screens/main_navigation.dart` — Profile tab shows Guest Mode card
+  + Sign In button; user-specific menu items hidden for guests.
+- `lib/screens/home_screen.dart` — slim guest banner at top.
+- `lib/screens/category_detail_screen.dart`, `all_categories_screen.dart`,
+  `take_test_screen.dart` — paywalls show "Sign In to Unlock" CTA for
+  guests; Razorpay button only for authenticated users.
+- `lib/services/access_service.dart` — server `/access-check` call
+  **skipped** for guests (would 401 without a Firebase token). Guests
+  rely entirely on the local `test.isPaid` fast-path.
+
+**Important nuance — server access check for guests:**
+- The backend `/api/payments/access-check` endpoint requires a Firebase
+  ID token (Authorization header). A guest has no token → would get 401.
+- So `AccessService.checkTestAccess` short-circuits for guests: free
+  tests → granted locally; paid tests → denied (shows Sign-In CTA).
+- This is safe because a guest CANNOT have any entitlements (no uid to
+  attach purchases to). The only access path for guests is "free test".
+
+### 17.3 ✅ Git hygiene — admin repo untracked `.next/` build cache + `dev.log` (admin commit `d07cc69`, pushed)
+
+**Problem:** `.next/` (line 15) and `dev.log` (line 26) were in
+`.gitignore`, but 278 files under `.next/` + `dev.log` had been
+force-tracked in an old commit. Every dev-server run mutated them →
+spurious "modified .next/..." status → junk auto-cache commits
+(`cb7fe01`, `1725314` were two such junk commits that piled up unpushed).
+
+**Cleanup executed:**
+1. `git reset --mixed origin/main` — dropped the 2 junk commits (verified
+   safe: both touched ONLY `.next/*` + `dev.log`, zero source changes).
+2. `git rm -r --cached .next/` (278 files) + `git rm --cached dev.log` —
+   untracked all build artifacts (files KEPT on disk; only removed from
+   git index).
+3. Committed `d07cc69` "chore: stop tracking .next build cache and
+   dev.log".
+4. Pushed: `9ba82b1..d07cc69 main -> main`.
+
+**Result:** The recurring `.next`/`dev.log` auto-cache noise is now
+PERMANENTLY fixed. Future sessions will not see spurious "modified
+.next/..." entries or produce junk auto-cache commits.
+
+### 17.4 Repo sync state (verified clean at end of this segment)
+
+| Repo | Path | HEAD | origin/main | Ahead/Behind | Working tree |
+|------|------|------|-------------|--------------|--------------|
+| examvault-admin (Next.js) | `/home/z/my-project` | `d07cc69` | `d07cc69` | 0 / 0 | clean |
+| examvault (Flutter) | `/home/z/work/examvault` | `b5eae8c` | `b5eae8c` | 0 / 0 | clean |
+
+- Dev server running on port 3000 (PID 8470), serving HTTP 200s.
+- `worklog.md` (local, gitignored) contains the full task-by-task agent
+  work log (Tasks 1–6). `PROJECT_MEMORY.md` (this file, tracked) is the
+  canonical project memory.
+
+### 17.5 Pending reminders for the user (still actionable)
+
+- **Re-sync premium (one-time):** Legacy tests created BEFORE the
+  premium-propagation fix still have `isPremium=false` in Firestore.
+  Admin must tap "Re-sync premium" (available in BOTH the web admin
+  Categories page AND the Flutter admin AppBar) ONCE to repair all
+  existing data.
+- **Broken categories (premiumPrice=0):** Existing categories with
+  `isPremium=true` but `premiumPrice=0` must be re-edited — open the
+  category, enter a price (e.g. ₹99), save. The "Unlock this exam (₹X)"
+  button will then appear in the Flutter user app.
+- **Category Premium vs Premium Plans:** Two DIFFERENT systems. Category
+  premium (EXAM_PACK) = buy one category. Premium Plans
+  (PREMIUM_SUBSCRIPTION) = buy everything. Setting a price on a category
+  creates the EXAM_PACK Product. Premium Plans is optional.
+
+---
+
+*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — splash animation replaced, guest browsing mode added (Flutter `b5eae8c`), admin repo git hygiene fixed (`d07cc69` pushed). Both repos 0/0 sync, clean. Dev server running on port 3000.*

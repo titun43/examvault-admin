@@ -262,10 +262,41 @@ curl -s "http://localhost:3000/api/admin/dashboard/stats" \
 
 ## 11. Open Questions / Pending Work
 
+### 🔴 Payment Flow — Pending (from session 2026-07-03)
+
+- [ ] **P1 — TEST_PURCHASE server-side price validation (admin repo)**
+  - Problem: `src/lib/price-resolver.ts` TEST_PURCHASE branch trusts client-supplied `amount` (only bounds-checked ₹1–₹10,000). A malicious client could buy a free test for ₹1 or a premium plan far below its Firestore price.
+  - Fix: Install `firebase-admin` SDK + set `FIREBASE_SERVICE_ACCOUNT` env var. Add a Firestore read in `resolvePrice` for TEST_PURCHASE + PREMIUM_SUBSCRIPTION to verify the client amount matches the Firestore `tests.price` / `premium_plans.price`.
+  - Files to change: `src/lib/price-resolver.ts`, `package.json` (add firebase-admin), `.env.local` + Vercel env (service account JSON).
+  - Risk if not fixed: price tampering attack (low probability for current user base, but real for public app).
+
+- [ ] **P2 — Subject Pack purchase UI re-enable (Flutter repo `examvault`)**
+  - Problem: `lib/services/razorpay_service.dart` has `startSubjectPackPurchase` (line 304) but NO UI calls it. The bottom sheet at `test_list_screen.dart:415` has an explicit comment: "subject-pack prices are not yet admin-configurable — the hardcoded ₹99 placeholder was confusing users".
+  - Backend `SUBJECT_PACK` productType is fully supported (price-resolver + grantEntitlement + access-check all work).
+  - To enable: (a) admin UI needs a way to create SUBJECT_PACK Products (already exists in `src/components/admin/products.tsx` SUBJECT_PACK tab), (b) Flutter `test_list_screen.dart` bottom sheet needs the "Unlock subject pack" button re-added, calling `startSubjectPackPurchase`.
+  - Decision needed from user: do they want per-subject purchases, or only per-exam + per-test?
+
+- [ ] **P3 — Optimistic success fallback risk (Flutter repo `examvault`)**
+  - Problem: In `lib/services/razorpay_service.dart` `_verifyAndDispatch` (lines 593, 604, 614, 624), if both `/verify` API AND order-status polling fail after Razorpay `EVENT_PAYMENT_SUCCESS`, the app calls `onSuccess` anyway, granting LOCAL access (cache + Firestore `purchasedTests`/`isPremium`). Server-side `TestPurchase`/`PremiumSubscription` row is never created if the webhook also fails to fire.
+  - Consequence: User gets access on ONE device only. Cross-device / reinstall loses access until re-purchase.
+  - Fix options: (a) make webhook rock-solid (configure in Razorpay dashboard + test), (b) add a retry-verify background job in Flutter that polls `/verify` for 24h after a Razorpay success, (c) remove the optimistic fallback (worse UX but safer).
+  - User decision needed on which approach.
+
+- [ ] **P3 — Razorpay webhook configuration**
+  - Webhook URL needs to be configured in Razorpay dashboard pointing to `https://<vercel-domain>/api/payments/webhook`
+  - Without this, the "safety net" path C in `src/app/api/payments/webhook/route.ts` never fires. App relies solely on client-side `/verify` call.
+  - User needs to do this in Razorpay dashboard (not a code change).
+
+### 🟡 General — Pending
+
 - [ ] User needs to paste real Neon Postgres URL into `.env.local` for local sandbox to fully work
 - [ ] Optional: clean git history of `.next/` and `upload/rzp-key.csv live` via `git filter-repo`
-- [ ] Optional: build real Razorpay Subscription integration if user wants auto-renew
-- [ ] Razorpay webhook URL needs to be configured in Razorpay dashboard pointing to `https://<vercel-domain>/api/payments/webhook`
+- [ ] Optional: build real Razorpay Subscription integration if user wants auto-renew (currently one-time orders only; `planId` field on premium_plans is placeholder)
+
+### ✅ Payment Flow — Resolved this session
+
+- [x] ~~Category premium toggle did not auto-create EXAM_PACK Product~~ → FIXED via `POST /api/admin/products/sync-from-category` + `categories.tsx` integration (commit `5b58d48`).
+- [x] ~~Two sources of truth for category price (Firestore premiumPrice vs Prisma Product.price)~~ → FIXED by same sync endpoint. Prisma price now mirrors Firestore premiumPrice on every category save.
 
 ---
 
@@ -282,4 +313,4 @@ Whenever you (the AI) do something significant:
 
 ---
 
-*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee`*
+*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (payment flow investigation + EXAM_PACK auto-sync fix)*

@@ -152,6 +152,16 @@ DATABASE_URL=file:/home/z/my-project/db/custom.db
 
 ### Session: 2026-07-03 (current)
 
+**Fixed: Category premium toggle not actually gating tests (access bypass) (`f3c04c2`, pushed to `examvault-admin`):**
+- User report (verbatim): "amar admin all total akta cetegory ache are sekhane all test ache. ami jei category te premium lagiyechi thik ache but user app to sob jaigai lock thakar kotha, karon ami direct category te premium lagiyechi, kintu seta na hoye category sudhu lock are test a click kore test dite parche tahole premium er ki mane holo"
+- **Root cause:** Flutter `take_test_screen.dart` line 70-77 has a fast-path: `if (!widget.test.isPaid) { _accessGranted = true; return; }`. `isPaid` = `price > 0 || isPremium` (TestModel). Admin was toggling `category.isPremium=true`, but each test doc has its OWN `isPremium` field which stayed `false`. So `test.isPaid` was false → fast-path granted access → no paywall fired. The category-level premium flag only controls the "Unlock this exam" button visibility; the actual test-access gate is per-test `isPremium`.
+- **Fix (admin/categories.tsx):**
+  - `handleSave`: after writing the category doc, query all tests where `categoryId == categoryId` and batch-update their `isPremium` flag to match the category's new `isPremium` value. Toast reports how many tests were updated. Non-fatal on failure.
+  - `handleDelete`: before deleting a category, batch-set `isPremium=false` on all its tests so they don't stay locked behind a now-gone paywall.
+  - New imports: `getDocs`, `query`, `where` (writeBatch was already there).
+- **User action required after deploy:** Open the existing premium category in admin Categories page → click Save (no changes needed — just trigger handleSave). All tests in that category will get `isPremium=true` → Flutter fast-path will skip them → server access-check will run → paywall fires for non-entitled users. New categories: propagation is automatic.
+- **Why this design:** Could alternatively fix on Flutter side (check parent category premium in take_test_screen), but admin-side propagation is simpler — single source of truth stays on each test doc, no extra Firestore reads in the app, works offline after first sync.
+
 **Fixed: "Subscribe → payment failed missing field product" — empty `planId` rejected by backend (`62a9e93`, pushed to `examvault-admin`):**
 - User reported: "subscribe for click korle payment faild missing filed, product"
 - **Root cause:** Admin panel Premium Plans form has an optional "Razorpay Plan ID" field. When admin left it empty, Firestore `premium_plans.planId` was `''`. Flutter `startPayment` sends `planId` as `productId` to `/api/payments/create-order`. Backend validation `if (!productId) missing.push('productId')` rejected empty string → "Missing or invalid fields: productId" → user saw "payment failed missing field product".
@@ -378,4 +388,4 @@ Whenever you (the AI) do something significant:
 
 ---
 
-*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (fixed empty `planId` causing "missing field product" on premium subscribe — `62a9e93` pushed; both admin auto-fill + backend fallback)*
+*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (fixed category premium not gating tests — admin now propagates `isPremium` to all tests in the category on save/delete — `f3c04c2` pushed; user must re-save existing premium category once)*

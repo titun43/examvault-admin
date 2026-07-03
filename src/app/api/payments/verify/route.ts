@@ -97,83 +97,30 @@ export async function POST(req: NextRequest) {
       razorpaySignature,
     );
 
-    if (!sigOk) {
-      // Signature mismatch — record a FAILED Payment row for audit, but DO NOT
-      // mark the Order as FAILED. The Razorpay payment may still have been
-      // captured (money deducted) and the webhook will fire shortly to mark
-      // the order PAID + grant the entitlement. If we mark the Order FAILED
-      // here, the webhook's ensureEntitlementGranted() refuses to grant
-      // (it only grants for PAID orders), and the user never gets what they
-      // paid for — exactly the "buy korlam but test khulteche na" bug.
-      //
-      // By leaving the Order as CREATED, the webhook can:
-      //   - Find the FAILED Payment row (Path B)
-      //   - Flip it to CAPTURED + flip the Order to PAID
-      //   - Grant the entitlement idempotently
-      // And the app's order-status polling will see paid=true once the webhook
-      // processes it, recovering the flow without user intervention.
-      try {
-        const payment = await db.payment.create({
-          data: {
-            orderId: order.id,
-            userId: prismaUserId,
-            razorpayPaymentId,
-            razorpaySignature,
-            razorpayOrderId,
-            amount: order.amount,
-            currency: order.currency,
-            status: 'FAILED',
-            errorCode: 'SIGNATURE_VERIFY_FAILED',
-            errorMessage: 'Server-side signature verification failed',
-            signatureVerified: false,
-          },
-        });
-        await db.paymentLog.create({
-          data: {
-            paymentId: payment.id,
-            orderId: order.id,
-            userId: prismaUserId,
-            event: 'SIGNATURE_VERIFY_FAILED',
-            level: 'WARN',
-            message: `Signature verification failed for payment ${razorpayPaymentId}. Order left as ${order.status} so the webhook can still recover.`,
-            payload: JSON.stringify({
-              razorpayPaymentId,
-              razorpayOrderId,
-              orderStatusBefore: order.status,
-            }),
-            ...clientMeta,
-          },
-        });
-      } catch (e) {
-        // P2002 = unique constraint (Payment row already exists, e.g. a retry).
-        // Safe to ignore — the row exists for audit.
-        const code = (e as { code?: string })?.code;
-        if (code !== 'P2002') {
-          // Unexpected — log but don't fail the response (we still want to
-          // return 400 to the client so it falls back to order-status polling).
-          db.paymentLog
-            .create({
-              data: {
-                orderId: order.id,
-                userId: prismaUserId,
-                event: 'SIGNATURE_VERIFY_FAILED_LOG_ERROR',
-                level: 'ERROR',
-                message: `Failed to record SIGNATURE_VERIFY_FAILED audit row: ${e instanceof Error ? e.message : 'unknown'}`,
-                payload: JSON.stringify({ razorpayPaymentId, razorpayOrderId }),
-                ...clientMeta,
-              },
-            })
-            .catch(() => {});
-        }
-      }
-
-      return NextResponse.json(
-        { error: 'Signature verification failed. If money was deducted, it will be auto-verified within a few seconds — please check "My Purchases".' },
-        { status: 400 },
-      );
-    }
-
     // ---- Defense-in-depth: fetch payment from Razorpay ----
+    // We ALWAYS fetch the payment from Razorpay's API, regardless of whether
+    // the signature verified. This serves two purposes:
+    //
+    // 1. If the signature VERIFIED: cross-check the amount + captured status
+    //    (tamper defense — the signature only proves the payment_id+order_id
+    //    pair, not the amount or status).
+    //
+    // 2. If the signature FAILED: this is the SELF-SUFFICIENT RECOVERY PATH.
+    //    Instead of returning 400 and hoping the webhook will eventually grant
+    //    the entitlement (which requires the webhook secret to be correctly
+    //    configured — and if it isn't, the user pays but never gets access),
+    //    we check Razorpay's API directly. If Razorpay says the payment is
+    //    "captured" for OUR order_id with the correct amount, we grant the
+    //    entitlement RIGHT NOW. This is equally secure because:
+    //      a) We're using server-side Razorpay credentials (not client-supplied).
+    //      b) We verify the payment's order_id matches our order's
+    //         razorpayOrderId (proves the payment belongs to this checkout).
+    //      c) We verify the amount matches (prevents amount tampering).
+    //      d) We verify the status is "captured" (proves money was collected).
+    //    This eliminates the dependency on the webhook being correctly
+    //    configured and fixes "payment ta bhalo hoi nai" — the case where
+    //    payment succeeds but the entitlement is never granted because the
+    //    webhook secret is missing/mismatched on Vercel.
     let rzpPayment:
       | {
           id: string;
@@ -182,6 +129,7 @@ export async function POST(req: NextRequest) {
           fee: number;
           tax: number;
           amount: number;
+          order_id: string | null;
         }
       | null = null;
     try {
@@ -193,11 +141,112 @@ export async function POST(req: NextRequest) {
         fee: fetched.fee,
         tax: fetched.tax,
         amount: fetched.amount,
+        order_id: fetched.order_id,
       };
     } catch {
-      // Don't fail the verification solely because Razorpay fetch failed;
-      // signature already verified. We just skip the extra check.
       rzpPayment = null;
+    }
+
+    if (!sigOk) {
+      // Signature mismatch. Try the SELF-SUFFICIENT RECOVERY PATH: check
+      // Razorpay's API directly. If the payment is captured for our order with
+      // the correct amount, grant the entitlement. Otherwise, record the
+      // failure and return 400.
+      const rzpConfirmed =
+        rzpPayment !== null &&
+        rzpPayment.status === 'captured' &&
+        rzpPayment.order_id === order.razorpayOrderId &&
+        rzpPayment.amount === order.amount;
+
+      if (rzpConfirmed) {
+        // Razorpay API confirms the payment is captured for our order. This is
+        // just as trustworthy as a signature — proceed with the grant. Log the
+        // signature mismatch for audit but DO NOT block the user.
+        await db.paymentLog
+          .create({
+            data: {
+              orderId: order.id,
+              userId: prismaUserId,
+              event: 'SIGNATURE_MISMATCH_RAZORPAY_CONFIRMED',
+              level: 'WARN',
+              message: `Signature verification failed for ${razorpayPaymentId}, but Razorpay API confirms payment is captured for order ${order.razorpayOrderId} (amount ${order.amount} paise). Granting entitlement via self-sufficient recovery path.`,
+              payload: JSON.stringify({
+                razorpayPaymentId,
+                razorpayOrderId,
+                rzpStatus: rzpPayment!.status,
+                rzpAmount: rzpPayment!.amount,
+                rzpOrderId: rzpPayment!.order_id,
+                orderAmount: order.amount,
+                orderRazorpayOrderId: order.razorpayOrderId,
+              }),
+              ...clientMeta,
+            },
+          })
+          .catch(() => {});
+        // Fall through to the normal success flow below (mark PAID + grant).
+      } else {
+        // Signature failed AND Razorpay doesn't confirm capture. Record a
+        // FAILED Payment row for audit, but DO NOT mark the Order as FAILED
+        // (the webhook can still recover if it's properly configured).
+        try {
+          const payment = await db.payment.create({
+            data: {
+              orderId: order.id,
+              userId: prismaUserId,
+              razorpayPaymentId,
+              razorpaySignature,
+              razorpayOrderId,
+              amount: order.amount,
+              currency: order.currency,
+              status: 'FAILED',
+              errorCode: 'SIGNATURE_VERIFY_FAILED',
+              errorMessage: 'Server-side signature verification failed and Razorpay API did not confirm capture',
+              signatureVerified: false,
+            },
+          });
+          await db.paymentLog.create({
+            data: {
+              paymentId: payment.id,
+              orderId: order.id,
+              userId: prismaUserId,
+              event: 'SIGNATURE_VERIFY_FAILED',
+              level: 'WARN',
+              message: `Signature verification failed for payment ${razorpayPaymentId}. Razorpay confirmation also failed (rzpPayment=${rzpPayment ? 'fetched but not captured/mismatch' : 'fetch failed'}). Order left as ${order.status} so the webhook can still recover.`,
+              payload: JSON.stringify({
+                razorpayPaymentId,
+                razorpayOrderId,
+                orderStatusBefore: order.status,
+                rzpPaymentStatus: rzpPayment?.status ?? null,
+                rzpPaymentOrderId: rzpPayment?.order_id ?? null,
+                rzpPaymentAmount: rzpPayment?.amount ?? null,
+              }),
+              ...clientMeta,
+            },
+          });
+        } catch (e) {
+          const code = (e as { code?: string })?.code;
+          if (code !== 'P2002') {
+            db.paymentLog
+              .create({
+                data: {
+                  orderId: order.id,
+                  userId: prismaUserId,
+                  event: 'SIGNATURE_VERIFY_FAILED_LOG_ERROR',
+                  level: 'ERROR',
+                  message: `Failed to record SIGNATURE_VERIFY_FAILED audit row: ${e instanceof Error ? e.message : 'unknown'}`,
+                  payload: JSON.stringify({ razorpayPaymentId, razorpayOrderId }),
+                  ...clientMeta,
+                },
+              })
+              .catch(() => {});
+          }
+        }
+
+        return NextResponse.json(
+          { error: 'Signature verification failed. If money was deducted, it will be auto-verified within a few seconds — please check "My Purchases".' },
+          { status: 400 },
+        );
+      }
     }
 
     // ---- Amount cross-check (tamper defense) ----
@@ -320,7 +369,11 @@ export async function POST(req: NextRequest) {
           method: rzpPayment?.method ?? null,
           fee: rzpPayment?.fee ?? null,
           tax: rzpPayment?.tax ?? null,
-          signatureVerified: true,
+          // sigOk is true when the HMAC-SHA256 signature verified normally.
+          // When false, we're in the self-sufficient recovery path (Razorpay
+          // API confirmed capture) — still trustworthy, but we record the
+          // distinction for audit.
+          signatureVerified: sigOk,
           webhookVerified: false,
           verifiedAt: now,
           capturedAt: now,

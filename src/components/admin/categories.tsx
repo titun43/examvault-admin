@@ -13,6 +13,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+import { adminAuthHeaders } from '@/lib/admin-token';
 import { useAppStore } from '@/lib/store';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
@@ -211,13 +212,59 @@ export default function Categories() {
         premiumPrice: form.isPremium ? (Number(form.premiumPrice) || 0) : null,
         premiumDurationMonths: form.isPremium ? (Number(form.premiumDurationMonths) || 1) : null,
       };
+      let categoryId: string | null = null;
       if (editingId) {
         await updateDoc(doc(db, 'categories', editingId), { ...data, updatedAt: serverTimestamp() });
+        categoryId = editingId;
         toast.success('Category updated');
       } else {
-        await addDoc(collection(db, 'categories'), { ...data, subjectCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        const ref = await addDoc(collection(db, 'categories'), { ...data, subjectCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        categoryId = ref.id;
         toast.success('Category added');
       }
+
+      // ---- Sync EXAM_PACK Product with premium settings ----
+      // After Firestore write, idempotently create/update/deactivate the
+      // Prisma EXAM_PACK Product so the Flutter app can actually purchase
+      // this category. Failure here is non-fatal — the Firestore write already
+      // succeeded. We warn the admin so they can fix it manually if needed.
+      if (categoryId) {
+        try {
+          const syncRes = await fetch('/api/admin/products/sync-from-category', {
+            method: 'POST',
+            headers: adminAuthHeaders(),
+            body: JSON.stringify({
+              categoryId,
+              categoryName: data.name,
+              isPremium: !!data.isPremium,
+              premiumPrice: data.isPremium ? Number(data.premiumPrice) || 0 : 0,
+              premiumDurationMonths: data.isPremium ? Number(data.premiumDurationMonths) || 1 : null,
+            }),
+          });
+          if (!syncRes.ok) {
+            const errJson = await syncRes.json().catch(() => ({}));
+            console.warn('[categories] product sync failed:', errJson);
+            toast.warning(
+              `Category saved, but EXAM_PACK product sync failed: ${errJson.error || syncRes.statusText}. Please create it manually on the Products page.`,
+            );
+          } else {
+            const syncJson = await syncRes.json().catch(() => ({}));
+            if (syncJson.action === 'created') {
+              toast.success(`EXAM_PACK product auto-created (₹${data.premiumPrice})`);
+            } else if (syncJson.action === 'updated') {
+              toast.success(`EXAM_PACK product synced (₹${data.premiumPrice})`);
+            } else if (syncJson.action === 'deactivated') {
+              toast.info('EXAM_PACK product deactivated (category no longer premium)');
+            }
+          }
+        } catch (syncErr: any) {
+          console.warn('[categories] product sync error:', syncErr);
+          toast.warning(
+            'Category saved, but EXAMPACK product sync errored. Please verify on the Products page.',
+          );
+        }
+      }
+
       setDialogOpen(false);
     } catch (err: any) {
       toast.error(err?.message || 'Save failed');
@@ -231,6 +278,23 @@ export default function Categories() {
     try {
       await deleteDoc(doc(db, 'categories', deleteId));
       toast.success('Category deleted');
+
+      // Best-effort: deactivate the linked EXAM_PACK Product so users can't
+      // purchase a now-deleted category. Non-fatal if this fails.
+      try {
+        await fetch('/api/admin/products/sync-from-category', {
+          method: 'POST',
+          headers: adminAuthHeaders(),
+          body: JSON.stringify({
+            categoryId: deleteId,
+            categoryName: '(deleted)',
+            isPremium: false,
+          }),
+        });
+      } catch {
+        // ignore — category is already deleted in Firestore
+      }
+
       setDeleteId(null);
     } catch (err: any) {
       toast.error(err?.message || 'Delete failed');

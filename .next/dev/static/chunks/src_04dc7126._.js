@@ -128,6 +128,15 @@ function AdminAuthProvider({ children }) {
                     // (Firestore rules allow any signed-in user to CREATE their own admins doc).
                     // Accept the primary admin address and the owner's address (from app_config)
                     // so the owner can also sign in as admin without a manual admins doc write.
+                    //
+                    // ⚠️ DO NOT set `isPremium: true` or `subscriptionStatus: 'premium'` here.
+                    // The admin is a CONTENT MANAGER, not a paying subscriber. Auto-granting
+                    // premium to the admin account caused a "forever premium" bug — the admin
+                    // (often the tester) never saw paywalls in the Flutter app because the
+                    // local cache believed they were already premium. This must match the
+                    // Flutter-side fix in `lib/services/auth_service.dart` (commit e97a0da).
+                    // If the admin wants to test premium flows, they must purchase premium
+                    // like a normal user (or use a separate non-admin test account).
                     const canonicalAdminEmails = [
                         'admin@examvault.com',
                         'lkstudeoandcomputering@gmail.com'
@@ -140,7 +149,10 @@ function AdminAuthProvider({ children }) {
                                 role: 'admin',
                                 createdAt: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["serverTimestamp"])()
                             });
-                            // Also ensure users/{uid} has role=admin
+                            // Ensure users/{uid} has role=admin ONLY. Do NOT touch
+                            // subscriptionStatus / isPremium — leave whatever the user already
+                            // has (free by default). This keeps admin and premium states
+                            // independent.
                             const userDocRef = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["doc"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], 'users', fbUser.uid);
                             const userDoc = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getDoc"])(userDocRef);
                             if (!userDoc.exists()) {
@@ -148,18 +160,16 @@ function AdminAuthProvider({ children }) {
                                     name: 'Admin',
                                     email: fbUser.email,
                                     role: 'admin',
-                                    isPremium: true,
-                                    subscriptionStatus: 'premium',
+                                    // NOTE: No isPremium / subscriptionStatus here — defaults to free.
                                     createdAt: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["serverTimestamp"])(),
                                     updatedAt: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["serverTimestamp"])(),
                                     isActive: true
                                 });
                             } else if (userDoc.data()?.role !== 'admin') {
-                                // Promote existing user to admin
+                                // Promote existing user to admin — ONLY set role, do NOT touch
+                                // subscriptionStatus / isPremium.
                                 await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["setDoc"])(userDocRef, {
                                     role: 'admin',
-                                    isPremium: true,
-                                    subscriptionStatus: 'premium',
                                     updatedAt: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["serverTimestamp"])()
                                 }, {
                                     merge: true
@@ -228,7 +238,7 @@ function AdminAuthProvider({ children }) {
         children: children
     }, void 0, false, {
         fileName: "[project]/src/lib/admin-auth.tsx",
-        lineNumber: 169,
+        lineNumber: 181,
         columnNumber: 5
     }, this);
 }

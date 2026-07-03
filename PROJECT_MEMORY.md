@@ -152,6 +152,13 @@ DATABASE_URL=file:/home/z/my-project/db/custom.db
 
 ### Session: 2026-07-03 (current)
 
+**Fixed: "Go Premium / paywall not working" — admin panel kept re-granting premium (`622f203`, pushed to `examvault-admin`):**
+- User reported: "laste jei kaj ta korechi seta hoi nai" (previous fix didn't work).
+- **Root cause:** Flutter's `auth_service.dart` was fixed in commit `e97a0da` to NOT set `subscriptionStatus: 'premium'` on admin bootstrap. BUT the admin panel's `src/lib/admin-auth.tsx` STILL had the old code — it set `isPremium: true` + `subscriptionStatus: 'premium'` on `users/{uid}` doc every time admin logged in.
+- Effect: Even if user manually cleared `subscriptionStatus` in Firestore (as the previous fix instructed), the next admin panel login re-set it to `premium` → admin/tester was forever premium in the app → paywall never fired → "Premium button doesn't work".
+- Fix: `admin-auth.tsx` bootstrap + promotion now sets ONLY `role: 'admin'`. Does NOT touch `isPremium` / `subscriptionStatus`. Matches the Flutter-side fix.
+- **Tester action required (one-time, STILL needed):** existing admin user doc in Firestore `users/{uid}` still has stale `isPremium: true` + `subscriptionStatus: 'premium'`. User must manually clear these two fields in Firebase Console → Firestore → `users/{adminUid}` (set `isPremium: false`, `subscriptionStatus: 'free'`, or delete the fields). After this fix, future admin logins will no longer re-introduce them.
+
 **Pending investigation — "Premium button shows no plans" (saved before user testing):**
 
 > User report: Flutter app-এ category-তে click করে "Premium" button-এ click করলে plan list দেখাচ্ছে না ("No Plans Available"). Category premium toggle + EXAM_PACK auto-sync fix কাজ করেছে (verified আগের session-এ), কিন্তু Go Premium flow আলাদা।
@@ -363,4 +370,4 @@ Whenever you (the AI) do something significant:
 
 ---
 
-*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (saved "Go Premium no plans" diagnostic before user testing — resume from section 7 "Pending investigation" + section 11 P0 item)*
+*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (fixed `admin-auth.tsx` re-granting premium on admin login — `622f203` pushed; tester must still manually clear stale `users/{adminUid}` fields one-time)*

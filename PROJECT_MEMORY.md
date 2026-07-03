@@ -708,3 +708,71 @@ entitlement. The paywall only reappears on the next access check.
 - Option B: admin manually inserts the ExamPackPurchase row.
 - Option C: if neither is feasible, refund + have them re-purchase
   (new purchase will work correctly).
+
+---
+
+## 16. Session Log — 2026-07-03 (LAYER 2: test access missing categoryId)
+
+**User report:** "akhon paymnet er subject khulche, tarpor test premium
+dekhacche" — After the exam pack fix (section 15), the subject list now
+opens correctly after payment. BUT when tapping a test inside, it shows
+premium/locked again.
+
+**Root cause — THIRD bug in the chain:**
+- `TakeTestScreen._checkAccessAndLoad` calls `AccessService.checkTestAccess`
+  WITHOUT passing `categoryId`.
+- Backend `checkAccess` (payment-access.ts line 92): `if (resource.categoryId)`
+  — the exam-pack tier (Tier 2) is SKIPPED when categoryId is undefined.
+- So a user who owns an exam pack is falsely denied access to individual
+  tests in that category.
+- WHY: `TestModel` only carries `subjectId` (not `categoryId`). The comment
+  in payment-access.ts explicitly warns about this:
+  > "If the caller omits subjectId/categoryId, tiers 2 and 3 are SKIPPED —
+  > which would cause a FALSE DENY for a user who owns an exam/subject pack."
+- `test_list_screen` was already passing categoryId (line 374), but
+  `TakeTestScreen` (which does its OWN access check on load) was not.
+
+**Fix (commit `aefa849`, v1.42.0+49):**
+1. `FirestoreService.getSubjectById(id)` — new method, single Firestore doc
+   read to resolve a `SubjectModel` from its id.
+2. `TakeTestScreen` — added optional `categoryId` constructor param. In
+   `_checkAccessAndLoad`, if categoryId is not provided, resolve it from
+   Firestore via `test.subjectId → subject.categoryId`. Then pass it to
+   `checkTestAccess`.
+3. `test_list_screen` — all 6 `TakeTestScreen` navigations now pass
+   `categoryId: widget.subject?.categoryId` (avoids the Firestore read in
+   the common flow).
+
+**IMPORTANT — this fix only works if the entitlement EXISTS:**
+- If the user paid AFTER the FK fix (admin-repo `ff09d8c`) was deployed to
+  Vercel → entitlement exists → this Flutter fix resolves the false deny.
+- If the user paid BEFORE the FK fix → entitlement was never created (FK
+  violation) → backend still returns DENIED even with categoryId passed.
+  Recovery: re-trigger Razorpay webhook / manual DB insert / refund +
+  re-purchase.
+
+**Architecture lesson — TestModel lacks categoryId:**
+- `TestModel` has: id, subjectId, title, price, isPremium, ...
+- `SubjectModel` has: id, categoryId, name, ...
+- The backend needs categoryId to check exam-pack access, but TestModel
+  doesn't carry it. The Flutter app must resolve it via the subject.
+- This is why `AccessService.checkTestAccess` accepts optional
+  `subjectId` + `categoryId` params — the caller is responsible for
+  providing the hierarchy.
+- Future improvement: consider adding `categoryId` to TestModel (populated
+  from Firestore at read time) to avoid the extra subject lookup.
+
+**Full bug chain (3 layers, all now fixed):**
+1. **Layer 1** (backend FK, `ff09d8c`): `grantEntitlement` used Firestore
+   categoryId as ExamPackPurchase.productId → FK violation → entitlement
+   never created.
+2. **Layer 2** (Flutter optimistic cache, `ee57db2`): category screens used
+   `clearCache()` instead of `markExamPackPurchased()` → category access
+   check hit backend too early (before /verify completed) → denied.
+3. **Layer 3** (Flutter test access, `aefa849`): `TakeTestScreen` didn't
+   pass categoryId to `checkTestAccess` → backend skipped exam-pack tier
+   → false deny on individual tests.
+
+All 3 layers must be fixed for the exam-pack purchase flow to work
+end-to-end. Layers 1+2 fix the category (subject list opens). Layer 3
+fixes individual test access (test opens, not paywall).

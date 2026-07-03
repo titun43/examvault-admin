@@ -173,6 +173,13 @@ DATABASE_URL=file:/home/z/my-project/db/custom.db
 7. **No test code:** User explicitly said "do not write any test code" (system rule).
 8. **Don't create docs unless asked:** System rule. This `PROJECT_MEMORY.md` was explicitly requested.
 9. **Use Agent Browser for verification:** After code changes, verify via Agent Browser (system rule for post-launch self-verification).
+10. **DIRECT WORKFLOW — do NOT rely on local dev server for testing:**
+    - User said: "apni apnar dev server kaj korte hobe na direct korben"
+    - Meaning: Make code changes directly, push to GitHub, verify on Vercel production.
+    - DO NOT spend time testing on local `http://localhost:3000` — local `.env.local` has placeholder DATABASE_URL anyway, so admin pages can't load real data locally.
+    - Workflow: Edit code → `bun run lint` → `git commit` → `git push` → tell user to verify on Vercel.
+    - Only use local dev server if explicitly needed for debugging a specific issue.
+    - User tests on Vercel production directly.
 
 ---
 

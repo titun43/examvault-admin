@@ -10,6 +10,9 @@ import {
   doc,
   serverTimestamp,
   writeBatch,
+  getDocs,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { uploadImage, deleteItems } from '@/lib/admin-firestore';
@@ -223,6 +226,48 @@ export default function Categories() {
         toast.success('Category added');
       }
 
+      // ---- Propagate premium flag to all tests in this category ----
+      // CRITICAL: When admin marks a category as premium, all tests inside it
+      // must also have their `isPremium` flag set to match — otherwise the
+      // Flutter `take_test_screen.dart` fast-path (`if (!test.isPaid) grant`)
+      // will let users take the tests without any access check, completely
+      // bypassing the category paywall. The category-level premium flag only
+      // controls the "Unlock this exam" button visibility; the test-level
+      // `isPremium` flag is what actually gates test access.
+      // `isPaid` in the Flutter model = `price > 0 || isPremium`, so setting
+      // `isPremium=true` on each test makes `isPaid=true` → access check runs
+      // → paywall fires for non-entitled users.
+      if (categoryId) {
+        try {
+          const testsQ = query(
+            collection(db, 'tests'),
+            where('categoryId', '==', categoryId),
+          );
+          const testsSnap = await getDocs(testsQ);
+          if (!testsSnap.empty) {
+            const batch = writeBatch(db);
+            testsSnap.forEach((d) => {
+              batch.update(d.ref, {
+                isPremium: !!data.isPremium,
+                updatedAt: serverTimestamp(),
+              });
+            });
+            await batch.commit();
+            const n = testsSnap.size;
+            if (n > 0) {
+              toast.success(
+                `${n} test${n === 1 ? '' : 's'} ${data.isPremium ? 'marked premium' : 'marked free'} (category premium ${data.isPremium ? 'ON' : 'OFF'})`,
+              );
+            }
+          }
+        } catch (propagateErr: any) {
+          console.warn('[categories] test isPremium propagation failed:', propagateErr);
+          toast.warning(
+            `Category saved, but could not update ${data.isPremium ? 'premium flag on' : 'free flag on'} tests. Please open each test and set isPremium manually.`,
+          );
+        }
+      }
+
       // ---- Sync EXAM_PACK Product with premium settings ----
       // After Firestore write, idempotently create/update/deactivate the
       // Prisma EXAM_PACK Product so the Flutter app can actually purchase
@@ -276,6 +321,29 @@ export default function Categories() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
+      // Before deleting the category, propagate `isPremium=false` to all its
+      // tests so they don't stay locked behind a now-nonexistent paywall.
+      // Non-fatal if this fails — the category is still deleted below.
+      try {
+        const testsQ = query(
+          collection(db, 'tests'),
+          where('categoryId', '==', deleteId),
+        );
+        const testsSnap = await getDocs(testsQ);
+        if (!testsSnap.empty) {
+          const batch = writeBatch(db);
+          testsSnap.forEach((d) => {
+            batch.update(d.ref, {
+              isPremium: false,
+              updatedAt: serverTimestamp(),
+            });
+          });
+          await batch.commit();
+        }
+      } catch (propagateErr) {
+        console.warn('[categories] test isPremium clear on delete failed:', propagateErr);
+      }
+
       await deleteDoc(doc(db, 'categories', deleteId));
       toast.success('Category deleted');
 

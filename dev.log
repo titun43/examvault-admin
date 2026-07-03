@@ -6,50 +6,9 @@
   · optimizePackageImports
 
 ✓ Starting...
-✓ Ready in 1032ms
- GET /api/admin/payments 401 in 384ms (compile: 365ms, render: 19ms)
-prisma:error 
-Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$db$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["db"].payment.findMany()` invocation in
-/home/z/my-project/.next/dev/server/chunks/[root-of-the-server]__85e2aaee._.js:514:142
-
-  511 }
-  512 // ---- Query ----
-  513 const [payments, total] = await Promise.all([
-→ 514     __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$db$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["db"].payment.findMany(
-Error querying the database: Error code 14: Unable to open the database file
-prisma:error 
-Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$db$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["db"].payment.count()` invocation in
-/home/z/my-project/.next/dev/server/chunks/[root-of-the-server]__85e2aaee._.js:544:142
-
-  541     skip: (page - 1) * limit,
-  542     take: limit
-  543 }),
-→ 544 __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$db$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["db"].payment.count(
-Error querying the database: Error code 14: Unable to open the database file
-[admin/payments GET] error: 
-Invalid `__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$db$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["db"].payment.findMany()` invocation in
-/home/z/my-project/.next/dev/server/chunks/[root-of-the-server]__85e2aaee._.js:514:142
-
-  511 }
-  512 // ---- Query ----
-  513 const [payments, total] = await Promise.all([
-→ 514     __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$db$2e$ts__$5b$app$2d$route$5d$__$28$ecmascript$29$__["db"].payment.findMany(
-Error querying the database: Error code 14: Unable to open the database file
- GET /api/admin/payments 500 in 24ms (compile: 3ms, render: 20ms)
- GET / 200 in 2.2s (compile: 1793ms, render: 420ms)
- GET /sw.js 404 in 98ms (compile: 45ms, render: 53ms)
- GET /api/admin/payments 200 in 14ms (compile: 3ms, render: 10ms)
- GET /api/admin/dashboard/stats 200 in 259ms (compile: 247ms, render: 12ms)
- GET / 200 in 37ms (compile: 3ms, render: 34ms)
- GET / 200 in 35ms (compile: 3ms, render: 31ms)
- GET / 200 in 36ms (compile: 3ms, render: 34ms)
- GET /sw.js 404 in 35ms (compile: 4ms, render: 31ms)
- GET / 200 in 52ms (compile: 15ms, render: 37ms)
- GET / 200 in 53ms (compile: 2ms, render: 51ms)
- GET / 200 in 29ms (compile: 5ms, render: 24ms)
- GET /sw.js 404 in 29ms (compile: 6ms, render: 23ms)
- GET /api/admin/dashboard/stats 200 in 8ms (compile: 1803µs, render: 6ms)
- GET /api/admin/dashboard/stats 401 in 10ms (compile: 2ms, render: 8ms)
- GET /api/admin/dashboard/stats 401 in 4ms (compile: 1384µs, render: 3ms)
- GET /api/admin/dashboard/stats 200 in 8ms (compile: 1919µs, render: 6ms)
-n 8ms (compile: 1919µs, render: 6ms)
+✓ Ready in 1022ms
+ GET / 200 in 2.2s (compile: 1889ms, render: 338ms)
+ GET /sw.js 404 in 117ms (compile: 59ms, render: 58ms)
+ GET /api/admin/dashboard/stats 200 in 124ms (compile: 86ms, render: 38ms)
+ GET /api/admin/payments 200 in 37ms (compile: 29ms, render: 8ms)
+ in 37ms (compile: 29ms, render: 8ms)

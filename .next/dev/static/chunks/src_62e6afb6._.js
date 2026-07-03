@@ -888,17 +888,35 @@ function PremiumPlans() {
                 order: Number(form.order) || 0
             };
             if (editingId) {
-                await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["updateDoc"])((0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["doc"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], 'premium_plans', editingId), {
+                // Ensure planId is never empty — if admin cleared it (or it was never
+                // set), fall back to the Firestore doc id. This is CRITICAL because
+                // the Flutter app sends `planId` as `productId` to the create-order
+                // API, and the backend rejects empty `productId` with
+                // "Missing or invalid fields: productId" — which surfaces in the UI
+                // as "payment failed missing field product".
+                const finalData = {
                     ...data,
+                    planId: data.planId?.trim() ? data.planId.trim() : editingId
+                };
+                await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["updateDoc"])((0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["doc"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], 'premium_plans', editingId), {
+                    ...finalData,
                     updatedAt: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["serverTimestamp"])()
                 });
                 __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].success('Plan updated');
             } else {
-                await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["addDoc"])((0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["collection"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], 'premium_plans'), {
+                const docRef = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["addDoc"])((0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["collection"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], 'premium_plans'), {
                     ...data,
                     createdAt: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["serverTimestamp"])(),
                     updatedAt: (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["serverTimestamp"])()
                 });
+                // Auto-fill planId with the Firestore doc id if the admin didn't
+                // provide a Razorpay Plan ID. The Flutter app uses this as the
+                // `productId` for the create-order API call — it MUST be non-empty.
+                if (!data.planId?.trim()) {
+                    await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["updateDoc"])(docRef, {
+                        planId: docRef.id
+                    });
+                }
                 __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].success('Plan added');
             }
             setDialogOpen(false);
@@ -979,14 +997,14 @@ function PremiumPlans() {
                                         className: "w-5 h-5 text-emerald-400"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                        lineNumber: 251,
+                                        lineNumber: 267,
                                         columnNumber: 13
                                     }, this),
                                     " Premium Plans"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                lineNumber: 250,
+                                lineNumber: 266,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -994,13 +1012,13 @@ function PremiumPlans() {
                                 children: "Manage subscription plans shown to users"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                lineNumber: 253,
+                                lineNumber: 269,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                        lineNumber: 249,
+                        lineNumber: 265,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1011,20 +1029,20 @@ function PremiumPlans() {
                                 className: "w-4 h-4 mr-1"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                lineNumber: 256,
+                                lineNumber: 272,
                                 columnNumber: 11
                             }, this),
                             " Add Plan"
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                        lineNumber: 255,
+                        lineNumber: 271,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                lineNumber: 248,
+                lineNumber: 264,
                 columnNumber: 7
             }, this),
             loading ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1033,12 +1051,12 @@ function PremiumPlans() {
                     className: "w-6 h-6 text-emerald-500 animate-spin"
                 }, void 0, false, {
                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                    lineNumber: 262,
+                    lineNumber: 278,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                lineNumber: 261,
+                lineNumber: 277,
                 columnNumber: 9
             }, this) : items.length === 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Card"], {
                 className: "bg-slate-900 border-slate-800 border-dashed",
@@ -1049,7 +1067,7 @@ function PremiumPlans() {
                             className: "w-12 h-12 text-slate-700 mx-auto mb-3"
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 267,
+                            lineNumber: 283,
                             columnNumber: 13
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1057,18 +1075,18 @@ function PremiumPlans() {
                             children: "No premium plans yet. Add your first one!"
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 268,
+                            lineNumber: 284,
                             columnNumber: 13
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                    lineNumber: 266,
+                    lineNumber: 282,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                lineNumber: 265,
+                lineNumber: 281,
                 columnNumber: 9
             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
                 children: [
@@ -1084,7 +1102,7 @@ function PremiumPlans() {
                                         "aria-label": "Select all premium plans"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                        lineNumber: 275,
+                                        lineNumber: 291,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1092,20 +1110,20 @@ function PremiumPlans() {
                                         children: allFilteredSelected ? 'All selected' : someFilteredSelected ? `${selectedIds.size} selected` : 'Select all'
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                        lineNumber: 280,
+                                        lineNumber: 296,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                lineNumber: 274,
+                                lineNumber: 290,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                 className: "flex-1"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                lineNumber: 284,
+                                lineNumber: 300,
                                 columnNumber: 11
                             }, this),
                             selectedIds.size > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1120,7 +1138,7 @@ function PremiumPlans() {
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                        lineNumber: 287,
+                                        lineNumber: 303,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1133,14 +1151,14 @@ function PremiumPlans() {
                                                 className: "w-3.5 h-3.5 mr-1"
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                lineNumber: 296,
+                                                lineNumber: 312,
                                                 columnNumber: 17
                                             }, this),
                                             " Delete Selected"
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                        lineNumber: 290,
+                                        lineNumber: 306,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1153,24 +1171,24 @@ function PremiumPlans() {
                                             className: "w-3.5 h-3.5"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 305,
+                                            lineNumber: 321,
                                             columnNumber: 17
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                        lineNumber: 298,
+                                        lineNumber: 314,
                                         columnNumber: 15
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                lineNumber: 286,
+                                lineNumber: 302,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                        lineNumber: 273,
+                        lineNumber: 289,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1191,19 +1209,19 @@ function PremiumPlans() {
                                                     className: "w-3 h-3 mr-1"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 323,
+                                                    lineNumber: 339,
                                                     columnNumber: 23
                                                 }, this),
                                                 " POPULAR"
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 322,
+                                            lineNumber: 338,
                                             columnNumber: 21
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                        lineNumber: 321,
+                                        lineNumber: 337,
                                         columnNumber: 19
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["CardContent"], {
@@ -1222,7 +1240,7 @@ function PremiumPlans() {
                                                                 className: "mt-1"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                                lineNumber: 330,
+                                                                lineNumber: 346,
                                                                 columnNumber: 23
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1233,7 +1251,7 @@ function PremiumPlans() {
                                                                         children: item.name || 'Untitled Plan'
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                                        lineNumber: 337,
+                                                                        lineNumber: 353,
                                                                         columnNumber: 25
                                                                     }, this),
                                                                     item.durationLabel && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1241,19 +1259,19 @@ function PremiumPlans() {
                                                                         children: item.durationLabel
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                                        lineNumber: 339,
+                                                                        lineNumber: 355,
                                                                         columnNumber: 27
                                                                     }, this)
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                                lineNumber: 336,
+                                                                lineNumber: 352,
                                                                 columnNumber: 23
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                        lineNumber: 329,
+                                                        lineNumber: 345,
                                                         columnNumber: 21
                                                     }, this),
                                                     active ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$badge$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Badge"], {
@@ -1262,7 +1280,7 @@ function PremiumPlans() {
                                                         children: "Active"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                        lineNumber: 344,
+                                                        lineNumber: 360,
                                                         columnNumber: 23
                                                     }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$badge$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Badge"], {
                                                         variant: "outline",
@@ -1270,13 +1288,13 @@ function PremiumPlans() {
                                                         children: "Inactive"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                        lineNumber: 348,
+                                                        lineNumber: 364,
                                                         columnNumber: 23
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                lineNumber: 328,
+                                                lineNumber: 344,
                                                 columnNumber: 19
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1290,7 +1308,7 @@ function PremiumPlans() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                        lineNumber: 355,
+                                                        lineNumber: 371,
                                                         columnNumber: 21
                                                     }, this),
                                                     item.durationMonths ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1302,13 +1320,13 @@ function PremiumPlans() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                        lineNumber: 357,
+                                                        lineNumber: 373,
                                                         columnNumber: 23
                                                     }, this) : null
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                lineNumber: 354,
+                                                lineNumber: 370,
                                                 columnNumber: 19
                                             }, this),
                                             item.description && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1316,7 +1334,7 @@ function PremiumPlans() {
                                                 children: item.description
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                lineNumber: 362,
+                                                lineNumber: 378,
                                                 columnNumber: 21
                                             }, this),
                                             Array.isArray(item.features) && item.features.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("ul", {
@@ -1329,7 +1347,7 @@ function PremiumPlans() {
                                                                     className: "w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                                    lineNumber: 369,
+                                                                    lineNumber: 385,
                                                                     columnNumber: 27
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1337,13 +1355,13 @@ function PremiumPlans() {
                                                                     children: f
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                                    lineNumber: 370,
+                                                                    lineNumber: 386,
                                                                     columnNumber: 27
                                                                 }, this)
                                                             ]
                                                         }, i, true, {
                                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                            lineNumber: 368,
+                                                            lineNumber: 384,
                                                             columnNumber: 25
                                                         }, this)),
                                                     item.features.length > 5 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("li", {
@@ -1355,13 +1373,13 @@ function PremiumPlans() {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                        lineNumber: 374,
+                                                        lineNumber: 390,
                                                         columnNumber: 25
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                lineNumber: 366,
+                                                lineNumber: 382,
                                                 columnNumber: 21
                                             }, this),
                                             item.planId && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1372,7 +1390,7 @@ function PremiumPlans() {
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                lineNumber: 382,
+                                                lineNumber: 398,
                                                 columnNumber: 21
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1383,7 +1401,7 @@ function PremiumPlans() {
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                lineNumber: 386,
+                                                lineNumber: 402,
                                                 columnNumber: 19
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1399,14 +1417,14 @@ function PremiumPlans() {
                                                                 className: "w-3 h-3 mr-1"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                                lineNumber: 395,
+                                                                lineNumber: 411,
                                                                 columnNumber: 23
                                                             }, this),
                                                             " Edit"
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                        lineNumber: 389,
+                                                        lineNumber: 405,
                                                         columnNumber: 21
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1419,38 +1437,38 @@ function PremiumPlans() {
                                                                 className: "w-3 h-3 mr-1"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                                lineNumber: 403,
+                                                                lineNumber: 419,
                                                                 columnNumber: 23
                                                             }, this),
                                                             " Delete"
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                        lineNumber: 397,
+                                                        lineNumber: 413,
                                                         columnNumber: 21
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                lineNumber: 388,
+                                                lineNumber: 404,
                                                 columnNumber: 19
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                        lineNumber: 327,
+                                        lineNumber: 343,
                                         columnNumber: 17
                                     }, this)
                                 ]
                             }, item.id, true, {
                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                lineNumber: 316,
+                                lineNumber: 332,
                                 columnNumber: 15
                             }, this);
                         })
                     }, void 0, false, {
                         fileName: "[project]/src/components/admin/premium-plans.tsx",
-                        lineNumber: 310,
+                        lineNumber: 326,
                         columnNumber: 9
                     }, this)
                 ]
@@ -1466,12 +1484,12 @@ function PremiumPlans() {
                                 children: editingId ? 'Edit Plan' : 'Add Premium Plan'
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                lineNumber: 418,
+                                lineNumber: 434,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 417,
+                            lineNumber: 433,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1484,7 +1502,7 @@ function PremiumPlans() {
                                             children: "Plan Name *"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 422,
+                                            lineNumber: 438,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1497,13 +1515,13 @@ function PremiumPlans() {
                                             className: "bg-slate-800 border-slate-700"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 423,
+                                            lineNumber: 439,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 421,
+                                    lineNumber: 437,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1516,7 +1534,7 @@ function PremiumPlans() {
                                                     children: "Price (INR) *"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 432,
+                                                    lineNumber: 448,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1531,13 +1549,13 @@ function PremiumPlans() {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 433,
+                                                    lineNumber: 449,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 431,
+                                            lineNumber: 447,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1547,7 +1565,7 @@ function PremiumPlans() {
                                                     children: "Order"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 443,
+                                                    lineNumber: 459,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1561,19 +1579,19 @@ function PremiumPlans() {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 444,
+                                                    lineNumber: 460,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 442,
+                                            lineNumber: 458,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 430,
+                                    lineNumber: 446,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1586,7 +1604,7 @@ function PremiumPlans() {
                                                     children: "Duration (months)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 455,
+                                                    lineNumber: 471,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1600,13 +1618,13 @@ function PremiumPlans() {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 456,
+                                                    lineNumber: 472,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 454,
+                                            lineNumber: 470,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1616,7 +1634,7 @@ function PremiumPlans() {
                                                     children: "Duration Label"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 465,
+                                                    lineNumber: 481,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1629,19 +1647,19 @@ function PremiumPlans() {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 466,
+                                                    lineNumber: 482,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 464,
+                                            lineNumber: 480,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 453,
+                                    lineNumber: 469,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1651,7 +1669,7 @@ function PremiumPlans() {
                                             children: "Razorpay Plan ID"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 475,
+                                            lineNumber: 491,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1664,13 +1682,13 @@ function PremiumPlans() {
                                             className: "bg-slate-800 border-slate-700 font-mono text-xs"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 476,
+                                            lineNumber: 492,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 474,
+                                    lineNumber: 490,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1680,7 +1698,7 @@ function PremiumPlans() {
                                             children: "Description"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 484,
+                                            lineNumber: 500,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$textarea$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Textarea"], {
@@ -1694,13 +1712,13 @@ function PremiumPlans() {
                                             rows: 2
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 485,
+                                            lineNumber: 501,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 483,
+                                    lineNumber: 499,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1710,7 +1728,7 @@ function PremiumPlans() {
                                             children: "Features (one per line)"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 494,
+                                            lineNumber: 510,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$textarea$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Textarea"], {
@@ -1724,7 +1742,7 @@ function PremiumPlans() {
                                             rows: 5
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 495,
+                                            lineNumber: 511,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1732,13 +1750,13 @@ function PremiumPlans() {
                                             children: "Each line becomes one feature bullet."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 502,
+                                            lineNumber: 518,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 493,
+                                    lineNumber: 509,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1755,7 +1773,7 @@ function PremiumPlans() {
                                                         })
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 506,
+                                                    lineNumber: 522,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$label$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Label"], {
@@ -1765,20 +1783,20 @@ function PremiumPlans() {
                                                             className: "w-3.5 h-3.5 text-amber-400"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                            lineNumber: 511,
+                                                            lineNumber: 527,
                                                             columnNumber: 19
                                                         }, this),
                                                         " Mark as Popular"
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 510,
+                                                    lineNumber: 526,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 505,
+                                            lineNumber: 521,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1792,7 +1810,7 @@ function PremiumPlans() {
                                                         })
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 515,
+                                                    lineNumber: 531,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$label$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Label"], {
@@ -1802,38 +1820,38 @@ function PremiumPlans() {
                                                             className: "w-3.5 h-3.5 text-emerald-400"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                            lineNumber: 521,
+                                                            lineNumber: 537,
                                                             columnNumber: 21
                                                         }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$x$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__X$3e$__["X"], {
                                                             className: "w-3.5 h-3.5 text-slate-500"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                            lineNumber: 523,
+                                                            lineNumber: 539,
                                                             columnNumber: 21
                                                         }, this),
                                                         "Active"
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                                    lineNumber: 519,
+                                                    lineNumber: 535,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 514,
+                                            lineNumber: 530,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 504,
+                                    lineNumber: 520,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 420,
+                            lineNumber: 436,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["DialogFooter"], {
@@ -1845,7 +1863,7 @@ function PremiumPlans() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 531,
+                                    lineNumber: 547,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1857,31 +1875,31 @@ function PremiumPlans() {
                                             className: "w-4 h-4 mr-1 animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 535,
+                                            lineNumber: 551,
                                             columnNumber: 26
                                         }, this),
                                         editingId ? 'Update' : 'Add'
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 534,
+                                    lineNumber: 550,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 530,
+                            lineNumber: 546,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                    lineNumber: 416,
+                    lineNumber: 432,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                lineNumber: 415,
+                lineNumber: 431,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
@@ -1896,7 +1914,7 @@ function PremiumPlans() {
                                     children: "Delete this premium plan?"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 546,
+                                    lineNumber: 562,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
@@ -1904,13 +1922,13 @@ function PremiumPlans() {
                                     children: "This action cannot be undone. The plan will be removed from Firestore and will no longer be shown to users."
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 547,
+                                    lineNumber: 563,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 545,
+                            lineNumber: 561,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
@@ -1920,7 +1938,7 @@ function PremiumPlans() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 552,
+                                    lineNumber: 568,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
@@ -1929,24 +1947,24 @@ function PremiumPlans() {
                                     children: "Delete"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 553,
+                                    lineNumber: 569,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 551,
+                            lineNumber: 567,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                    lineNumber: 544,
+                    lineNumber: 560,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                lineNumber: 543,
+                lineNumber: 559,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
@@ -1964,7 +1982,7 @@ function PremiumPlans() {
                                             className: "w-5 h-5 text-red-400"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 565,
+                                            lineNumber: 581,
                                             columnNumber: 15
                                         }, this),
                                         " Delete ",
@@ -1975,7 +1993,7 @@ function PremiumPlans() {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 564,
+                                    lineNumber: 580,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
@@ -1991,19 +2009,19 @@ function PremiumPlans() {
                                             children: "This action cannot be undone."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 570,
+                                            lineNumber: 586,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 567,
+                                    lineNumber: 583,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 563,
+                            lineNumber: 579,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
@@ -2013,7 +2031,7 @@ function PremiumPlans() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 574,
+                                    lineNumber: 590,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
@@ -2025,7 +2043,7 @@ function PremiumPlans() {
                                             className: "w-4 h-4 mr-1 animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                            lineNumber: 580,
+                                            lineNumber: 596,
                                             columnNumber: 32
                                         }, this),
                                         "Delete ",
@@ -2035,30 +2053,30 @@ function PremiumPlans() {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                                    lineNumber: 575,
+                                    lineNumber: 591,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/premium-plans.tsx",
-                            lineNumber: 573,
+                            lineNumber: 589,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/premium-plans.tsx",
-                    lineNumber: 562,
+                    lineNumber: 578,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/premium-plans.tsx",
-                lineNumber: 561,
+                lineNumber: 577,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/src/components/admin/premium-plans.tsx",
-        lineNumber: 247,
+        lineNumber: 263,
         columnNumber: 5
     }, this);
 }

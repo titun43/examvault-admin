@@ -152,6 +152,14 @@ DATABASE_URL=file:/home/z/my-project/db/custom.db
 
 ### Session: 2026-07-03 (current)
 
+**Fixed: "Subscribe → payment failed missing field product" — empty `planId` rejected by backend (`62a9e93`, pushed to `examvault-admin`):**
+- User reported: "subscribe for click korle payment faild missing filed, product"
+- **Root cause:** Admin panel Premium Plans form has an optional "Razorpay Plan ID" field. When admin left it empty, Firestore `premium_plans.planId` was `''`. Flutter `startPayment` sends `planId` as `productId` to `/api/payments/create-order`. Backend validation `if (!productId) missing.push('productId')` rejected empty string → "Missing or invalid fields: productId" → user saw "payment failed missing field product".
+- **Fix 1 (admin/premium-plans.tsx `handleSave`):** On `addDoc`, if `planId` empty, `updateDoc` it with the Firestore doc id. On `updateDoc` (edit), if admin cleared `planId`, fall back to doc id. New + re-saved plans now always have non-empty `planId`.
+- **Fix 2 (create-order/route.ts) — defensive backend fallback:** For `PREMIUM_SUBSCRIPTION` ONLY, if `productId` is empty (existing plans created before Fix 1 that haven't been re-saved), generate `plan_<idempotencyKey>` as `effectiveProductId`. Same for `productName` → fall back to `meta.planName` or 'Premium Subscription'. TEST_PURCHASE / SUBJECT_PACK / EXAM_PACK remain strictly validated (real testId/refId required).
+- All `resolvePrice`, `createRazorpayOrder`, `db.order.create`, `db.order.update`, paymentLog payload, and JSON response now use `effectiveProductId` / `effectiveProductName` so the fallback flows end-to-end.
+- **User action required:** None for new purchases. Existing premium plans with empty `planId` will now work via Fix 2. Optionally, admin can open each existing plan in the Premium Plans page and click "Edit → Update" to back-fill `planId` with the doc id (Fix 1).
+
 **Fixed: "Go Premium / paywall not working" — admin panel kept re-granting premium (`622f203`, pushed to `examvault-admin`):**
 - User reported: "laste jei kaj ta korechi seta hoi nai" (previous fix didn't work).
 - **Root cause:** Flutter's `auth_service.dart` was fixed in commit `e97a0da` to NOT set `subscriptionStatus: 'premium'` on admin bootstrap. BUT the admin panel's `src/lib/admin-auth.tsx` STILL had the old code — it set `isPremium: true` + `subscriptionStatus: 'premium'` on `users/{uid}` doc every time admin logged in.
@@ -370,4 +378,4 @@ Whenever you (the AI) do something significant:
 
 ---
 
-*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (fixed `admin-auth.tsx` re-granting premium on admin login — `622f203` pushed; tester must still manually clear stale `users/{adminUid}` fields one-time)*
+*Last updated: 2026-07-03, session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` (fixed empty `planId` causing "missing field product" on premium subscribe — `62a9e93` pushed; both admin auto-fill + backend fallback)*

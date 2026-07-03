@@ -10,9 +10,18 @@
 //   4. Individual Test purchase -> access that test only
 //   5. Otherwise -> denied (show purchase screen)
 //
-// Content metadata (test -> subject -> category mapping) is read from
-// Firestore via the existing admin-firestore helpers. To avoid circular deps,
-// this module accepts that mapping as a parameter from the caller.
+// IMPORTANT — hierarchy resolution responsibility:
+//   This service CANNOT read Firestore (no firebase-admin SDK on the server),
+//   so it does NOT resolve a testId into its subjectId/categoryId. The caller
+//   (Flutter app) MUST pass the full hierarchy when calling /access-check:
+//     type=test&testId=X&subjectId=Y&categoryId=Z
+//   If the caller omits subjectId/categoryId, tiers 2 and 3 are SKIPPED —
+//   which would cause a FALSE DENY for a user who owns an exam/subject pack.
+//   The Flutter app already knows the hierarchy from its Firestore reads, so
+//   it must forward it. The premium content model itself (whether a test is
+//   locked at all) is enforced by the `isPremium` flag on each test in
+//   Firestore — the app only calls /access-check for tests where
+//   `price > 0 || isPremium` is true.
 // =============================================================================
 
 import { db } from './db';
@@ -42,6 +51,12 @@ export interface AccessDecision {
   sourceId?: string;
   // Expiry if applicable (for premium subscriptions)
   expiresAt?: Date;
+  // True when the resource needs an entitlement the user doesn't have.
+  // The Flutter app uses this to decide whether to show the paywall: when
+  // `allowed=false && requiresPremium=true`, surface the purchase screen.
+  // (When `allowed=false && requiresPremium=false` the resource is either
+  // free or the check was for `type=all` without a premium subscription.)
+  requiresPremium?: boolean;
 }
 
 // ==================== MAIN ACCESS CHECK ====================
@@ -70,7 +85,7 @@ export async function checkAccess(
 
   // For 'all' resource type, premium is the only thing that grants access
   if (resource.type === 'all') {
-    return { allowed: false, reason: 'No active premium subscription' };
+    return { allowed: false, reason: 'No active premium subscription', requiresPremium: true };
   }
 
   // Tier 2: Exam pack (unlocks the whole category/exam)
@@ -130,7 +145,7 @@ export async function checkAccess(
     }
   }
 
-  return { allowed: false, reason: 'No matching entitlement' };
+  return { allowed: false, reason: 'No matching entitlement', requiresPremium: true };
 }
 
 // ==================== GRANT ACCESS AFTER PAYMENT ====================

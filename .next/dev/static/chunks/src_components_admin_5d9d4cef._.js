@@ -4,7 +4,7 @@
 __turbopack_context__.v((parentImport) => {
     return Promise.all([
   "static/chunks/src_9cef6ae6._.js",
-  "static/chunks/node_modules_62b3df58._.js",
+  "static/chunks/node_modules_6bda42dc._.js",
   "static/chunks/src_components_admin_categories_tsx_533633ce._.js"
 ].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
         return parentImport("[project]/src/components/admin/categories.tsx [app-client] (ecmascript, next/dynamic entry)");

@@ -52,7 +52,7 @@ interface Test {
 }
 
 interface Subject { id: string; name: string; categoryId: string; }
-interface Category { id: string; name: string; }
+interface Category { id: string; name: string; isPremium?: boolean; }
 
 const TYPE_COLORS: Record<string, string> = {
   mock: 'border-emerald-700 text-emerald-400 bg-emerald-950/40',
@@ -156,17 +156,38 @@ export default function Tests({ fixedType }: TestsProps = {}) {
     }
     setBulkSaving(true);
     try {
+      // Build a subjectId -> category.isPremium lookup so imported tests
+      // inherit premium status from their parent category. A test inside a
+      // premium category MUST be premium, otherwise the Flutter fast-path
+      // (`if (!test.isPaid) grant`) lets users take it for free.
+      const subjectPremiumMap = new Map<string, boolean>();
+      for (const s of subjects) {
+        const cat = categories.find((c) => c.id === s.categoryId);
+        subjectPremiumMap.set(s.id, !!cat?.isPremium);
+      }
+      let autoPremiumCount = 0;
+
       const batch = writeBatch(db);
       const colRef = collection(db, 'tests');
       parsed.forEach((item) => {
         const ref = doc(colRef);
         const payload = { ...item };
+        // Inherit premium from parent category. If the admin explicitly set
+        // isPremium=false on a row whose category is premium, force it true.
+        const sid = payload.subjectId;
+        if (typeof sid === 'string' && subjectPremiumMap.get(sid)) {
+          if (!payload.isPremium) autoPremiumCount++;
+          payload.isPremium = true;
+        }
         if (!payload.createdAt) payload.createdAt = serverTimestamp();
         if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
+      const autoNote = autoPremiumCount > 0
+        ? ` (${autoPremiumCount} auto-marked premium — parent category is premium)`
+        : '';
+      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : '') + autoNote);
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -217,6 +238,22 @@ export default function Tests({ fixedType }: TestsProps = {}) {
     if (!form.subjectId) { toast.error('Please select a subject'); return; }
     setSaving(true);
     try {
+      // ---- Inherit premium status from the parent category ----
+      // CRITICAL: a test inside a PREMIUM category must itself be premium,
+      // otherwise the Flutter `take_test_screen` fast-path
+      // (`if (!test.isPaid) grant`) lets users take it for free — bypassing
+      // the category paywall. If the admin left "Premium test" OFF but the
+      // test's subject's category is premium, force it ON and warn the admin.
+      let effectiveIsPremium = form.isPremium;
+      const subj = subjects.find((s) => s.id === form.subjectId);
+      const cat = subj ? categories.find((c) => c.id === subj.categoryId) : undefined;
+      if (cat?.isPremium && !form.isPremium) {
+        effectiveIsPremium = true;
+        toast.warning(
+          `This test's category "${cat.name}" is premium — the test has been marked premium automatically so it isn't accessible for free.`,
+        );
+      }
+
       const data: any = {
         subjectId: form.subjectId,
         title: form.title.trim(),
@@ -231,7 +268,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
         negativeMarking: form.negativeMarking,
         negativeMarks: Number(form.negativeMarks) || 0,
         instructions: form.instructions || null,
-        isPremium: form.isPremium,
+        isPremium: effectiveIsPremium,
         price: Number(form.price) || 0,
       };
       if ((fixedType || form.type) === 'previousYear') {

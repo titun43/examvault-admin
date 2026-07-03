@@ -200,4 +200,13 @@
  GET / 200 in 24ms (compile: 3ms, render: 21ms)
  GET /sw.js 404 in 31ms (compile: 6ms, render: 25ms)
  GET /sw.js 404 in 30ms (compile: 8ms, render: 22ms)
- in 30ms (compile: 8ms, render: 22ms)
+ GET / 200 in 25ms (compile: 3ms, render: 22ms)
+ GET / 200 in 24ms (compile: 5ms, render: 19ms)
+ GET / 200 in 22ms (compile: 1914µs, render: 20ms)
+ GET /sw.js 404 in 34ms (compile: 9ms, render: 25ms)
+ GET /sw.js 404 in 26ms (compile: 4ms, render: 21ms)
+✓ Compiled in 215ms
+✓ Compiled in 167ms
+ GET /sw.js 404 in 39ms (compile: 12ms, render: 27ms)
+ GET / 200 in 400ms (compile: 72ms, render: 329ms)
+ 400ms (compile: 72ms, render: 329ms)

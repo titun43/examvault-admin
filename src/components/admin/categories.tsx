@@ -34,7 +34,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download, FileSpreadsheet } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download, FileSpreadsheet, RefreshCw } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -56,6 +56,57 @@ interface Category {
 
 const emptyForm = { name: '', slug: '', icon: '', description: '', image: '', color: '#10b981', order: 0, isPremium: false, premiumPrice: 99, premiumDurationMonths: 1 };
 
+// =============================================================================
+// propagateCategoryPremiumToTests — THE ROOT-CAUSE FIX for the
+// "category premium করা আছে কিন্তু category-র ভেতরের tests-গুলো access
+// হয়ে যাচ্ছে" bug.
+// =============================================================================
+// PREVIOUS (BROKEN): queried `tests.where('categoryId','==',categoryId)`. But
+// the Test model only stores `subjectId` (test → subject → category); tests
+// have NO `categoryId` field. The query always returned 0 docs, so tests inside
+// a premium category NEVER had their `isPremium` flag set. The Flutter
+// `take_test_screen` fast-path (`if (!test.isPaid) grant`) then let users take
+// those tests for free — completely bypassing the category paywall.
+//
+// FIX: resolve the category's tests through the SUBJECTS collection:
+//   1. subjects.where('categoryId','==',categoryId) → subjectIds
+//   2. tests.where('subjectId','in',[...subjectIds]) → test docs
+//      (Firestore `in` supports max 30 values → chunk automatically)
+//   3. batch.update each test's `isPremium` flag.
+//
+// Returns the number of tests updated so callers can toast an accurate count.
+// =============================================================================
+async function propagateCategoryPremiumToTests(
+  categoryId: string,
+  isPremium: boolean,
+): Promise<number> {
+  // Step 1: find all subjects belonging to this category.
+  const subjectsSnap = await getDocs(
+    query(collection(db, 'subjects'), where('categoryId', '==', categoryId)),
+  );
+  const subjectIds = subjectsSnap.docs.map((d) => d.id);
+  if (subjectIds.length === 0) return 0;
+
+  // Step 2: find tests for those subjects, chunking to respect Firestore's
+  // 30-value limit on the `in` operator.
+  const CHUNK_SIZE = 30;
+  let totalUpdated = 0;
+  for (let i = 0; i < subjectIds.length; i += CHUNK_SIZE) {
+    const chunk = subjectIds.slice(i, i + CHUNK_SIZE);
+    const testsSnap = await getDocs(
+      query(collection(db, 'tests'), where('subjectId', 'in', chunk)),
+    );
+    if (testsSnap.empty) continue;
+    const batch = writeBatch(db);
+    testsSnap.forEach((d) => {
+      batch.update(d.ref, { isPremium, updatedAt: serverTimestamp() });
+    });
+    await batch.commit();
+    totalUpdated += testsSnap.size;
+  }
+  return totalUpdated;
+}
+
 export default function Categories() {
   const { setCurrentSection } = useAppStore();
   const [items, setItems] = useState<Category[]>([]);
@@ -74,6 +125,9 @@ export default function Categories() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Re-sync premium flags across all categories (repairs legacy broken data).
+  const [resyncing, setResyncing] = useState(false);
+  const [resyncOpen, setResyncOpen] = useState(false);
 
   const BULK_SAMPLE = '[{"name":"SSC","description":"Staff Selection Commission exams","icon":"📋","color":"#10b981","order":1,"isActive":true},{"name":"Banking","description":"Bank PO/Clerk exams","icon":"🏦","color":"#f59e0b","order":2,"isActive":true}]';
 
@@ -237,33 +291,22 @@ export default function Categories() {
       // `isPaid` in the Flutter model = `price > 0 || isPremium`, so setting
       // `isPremium=true` on each test makes `isPaid=true` → access check runs
       // → paywall fires for non-entitled users.
+      //
+      // Tests are resolved through SUBJECTS (test → subject → category)
+      // because the Test model has no `categoryId` field. See
+      // `propagateCategoryPremiumToTests` for the full rationale.
       if (categoryId) {
         try {
-          const testsQ = query(
-            collection(db, 'tests'),
-            where('categoryId', '==', categoryId),
-          );
-          const testsSnap = await getDocs(testsQ);
-          if (!testsSnap.empty) {
-            const batch = writeBatch(db);
-            testsSnap.forEach((d) => {
-              batch.update(d.ref, {
-                isPremium: !!data.isPremium,
-                updatedAt: serverTimestamp(),
-              });
-            });
-            await batch.commit();
-            const n = testsSnap.size;
-            if (n > 0) {
-              toast.success(
-                `${n} test${n === 1 ? '' : 's'} ${data.isPremium ? 'marked premium' : 'marked free'} (category premium ${data.isPremium ? 'ON' : 'OFF'})`,
-              );
-            }
+          const n = await propagateCategoryPremiumToTests(categoryId, !!data.isPremium);
+          if (n > 0) {
+            toast.success(
+              `${n} test${n === 1 ? '' : 's'} ${data.isPremium ? 'marked premium' : 'marked free'} (category premium ${data.isPremium ? 'ON' : 'OFF'})`,
+            );
           }
         } catch (propagateErr: any) {
           console.warn('[categories] test isPremium propagation failed:', propagateErr);
           toast.warning(
-            `Category saved, but could not update ${data.isPremium ? 'premium flag on' : 'free flag on'} tests. Please open each test and set isPremium manually.`,
+            `Category saved, but could not update ${data.isPremium ? 'premium flag on' : 'free flag on'} tests. Use "Re-sync premium flags" to retry.`,
           );
         }
       }
@@ -324,22 +367,9 @@ export default function Categories() {
       // Before deleting the category, propagate `isPremium=false` to all its
       // tests so they don't stay locked behind a now-nonexistent paywall.
       // Non-fatal if this fails — the category is still deleted below.
+      // Tests are resolved through subjects (test → subject → category).
       try {
-        const testsQ = query(
-          collection(db, 'tests'),
-          where('categoryId', '==', deleteId),
-        );
-        const testsSnap = await getDocs(testsQ);
-        if (!testsSnap.empty) {
-          const batch = writeBatch(db);
-          testsSnap.forEach((d) => {
-            batch.update(d.ref, {
-              isPremium: false,
-              updatedAt: serverTimestamp(),
-            });
-          });
-          await batch.commit();
-        }
+        await propagateCategoryPremiumToTests(deleteId, false);
       } catch (propagateErr) {
         console.warn('[categories] test isPremium clear on delete failed:', propagateErr);
       }
@@ -366,6 +396,38 @@ export default function Categories() {
       setDeleteId(null);
     } catch (err: any) {
       toast.error(err?.message || 'Delete failed');
+    }
+  };
+
+  // ---- Re-sync premium flags across ALL categories ----
+  // Repairs legacy data broken by the old (buggy) propagation that queried a
+  // non-existent `tests.categoryId` field. For every category this re-runs the
+  // (now-correct) propagation: premium categories mark their tests premium,
+  // free categories mark their tests free. Safe to run repeatedly — it only
+  // writes the correct value. Also re-syncs the EXAM_PACK Product for each
+  // premium category so prices stay consistent.
+  const handleResyncPremium = async () => {
+    setResyncing(true);
+    try {
+      let totalTests = 0;
+      let catCount = 0;
+      for (const cat of items) {
+        try {
+          const n = await propagateCategoryPremiumToTests(cat.id, !!cat.isPremium);
+          totalTests += n;
+          if (cat.isPremium) catCount++;
+        } catch (e) {
+          console.warn(`[categories] resync failed for ${cat.id}:`, e);
+        }
+      }
+      toast.success(
+        `Re-synced ${totalTests} test${totalTests === 1 ? '' : 's'} across ${catCount} premium categor${catCount === 1 ? 'y' : 'ies'}.`,
+      );
+      setResyncOpen(false);
+    } catch (err: any) {
+      toast.error(err?.message || 'Re-sync failed');
+    } finally {
+      setResyncing(false);
     }
   };
 
@@ -432,6 +494,16 @@ export default function Categories() {
             className="border-slate-700 text-slate-200 hover:bg-slate-800"
           >
             <Layers className="w-4 h-4 mr-1" /> Bulk Add
+          </Button>
+          <Button
+            variant="outline"
+            onClick={() => setResyncOpen(true)}
+            disabled={resyncing || items.length === 0}
+            title="Re-mark all tests inside premium categories as premium. Fixes tests that were left free by a previous bug."
+            className="border-amber-700/60 text-amber-300 hover:bg-amber-950/40"
+          >
+            {resyncing ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+            Re-sync premium
           </Button>
         </div>
       </div>
@@ -771,6 +843,38 @@ export default function Categories() {
             >
               {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               Delete {selectedIds.size} categor{selectedIds.size === 1 ? 'y' : 'ies'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Re-sync Premium Flags Confirmation */}
+      <AlertDialog open={resyncOpen} onOpenChange={setResyncOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <RefreshCw className="w-5 h-5 text-amber-400" /> Re-sync premium flags?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This re-marks every test's <b>isPremium</b> flag to match its
+              category's premium setting (resolved via subjects). Premium
+              categories → tests become premium; free categories → tests become
+              free.
+              <span className="block mt-2 text-slate-300">
+                Use this to repair tests that were left free inside premium
+                categories by a previous bug. Safe to run repeatedly.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleResyncPremium}
+              disabled={resyncing}
+              className="bg-amber-600 hover:bg-amber-700 text-white"
+            >
+              {resyncing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              Re-sync all
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

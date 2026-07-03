@@ -1905,6 +1905,16 @@
     border-color: var(--color-amber-700);
   }
 
+  .border-amber-700\/60 {
+    border-color: #b7500099;
+  }
+
+  @supports (color: color-mix(in lab, red, red)) {
+    .border-amber-700\/60 {
+      border-color: color-mix(in oklab, var(--color-amber-700) 60%, transparent);
+    }
+  }
+
   .border-amber-800 {
     border-color: var(--color-amber-800);
   }

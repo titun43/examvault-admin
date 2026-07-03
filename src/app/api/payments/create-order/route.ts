@@ -72,10 +72,32 @@ export async function POST(req: NextRequest) {
     // ---- Validate ----
     // Razorpay minimum is ₹1 (100 paise). We validate here so we return a
     // clear error instead of forwarding Razorpay's "missing/invalid field".
+    //
+    // PREMIUM_SUBSCRIPTION special case: `productId` is the Firestore
+    // `premium_plans.planId` field, which is OPTIONAL in the admin UI (it's a
+    // placeholder for future Razorpay Subscription Plans). If the admin didn't
+    // fill it, the Flutter app sends an empty string — but the plan is still
+    // valid. We fall back to a generated id so the order can proceed.
+    // The same applies to `productName` (plan name) — extremely unlikely to be
+    // empty since the admin form requires it, but we fall back defensively.
+    let effectiveProductId = productId;
+    let effectiveProductName = productName;
+    if (productType === 'PREMIUM_SUBSCRIPTION') {
+      if (!effectiveProductId || !effectiveProductId.trim()) {
+        // Use the idempotencyKey as a stable unique id for this order. The
+        // plan is identified by the meta.planId (if set) + meta.planName.
+        effectiveProductId = `plan_${idempotencyKey}`;
+      }
+      if (!effectiveProductName || !effectiveProductName.trim()) {
+        const planName = meta?.planName as string | undefined;
+        effectiveProductName = planName?.trim() || 'Premium Subscription';
+      }
+    }
+
     const missing: string[] = [];
     if (!productType) missing.push('productType');
-    if (!productId) missing.push('productId');
-    if (!productName) missing.push('productName');
+    if (!effectiveProductId) missing.push('productId');
+    if (!effectiveProductName) missing.push('productName');
     if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
       missing.push('amount (must be > 0, Razorpay minimum is ₹1)');
     }
@@ -155,8 +177,8 @@ export async function POST(req: NextRequest) {
       // Resolve the price server-side first (security).
       const priceRes = await resolvePrice(
         productType as PurchaseType,
-        productId,
-        productName,
+        effectiveProductId,
+        effectiveProductName,
         amount,
         meta as Record<string, unknown> | undefined,
       );
@@ -175,7 +197,7 @@ export async function POST(req: NextRequest) {
         notes: {
           userId: prismaUserId,
           productType,
-          productId,
+          productId: effectiveProductId,
           idempotencyKey,
         },
       });
@@ -201,7 +223,7 @@ export async function POST(req: NextRequest) {
           message: `Order recreated after ${existing.status}: ${orderRef}`,
           payload: JSON.stringify({
             productType,
-            productId,
+            productId: effectiveProductId,
             productName: resolved.productName,
             amount: resolved.amountPaise,
             clientAmountRupees: amount,
@@ -252,8 +274,8 @@ export async function POST(req: NextRequest) {
     // ---- Fresh order: resolve price SERVER-SIDE (security) ----
     const priceRes = await resolvePrice(
       productType as PurchaseType,
-      productId,
-      productName,
+      effectiveProductId,
+      effectiveProductName,
       amount,
       meta as Record<string, unknown> | undefined,
     );
@@ -273,7 +295,7 @@ export async function POST(req: NextRequest) {
       notes: {
         userId: prismaUserId,
         productType,
-        productId,
+        productId: effectiveProductId,
         idempotencyKey,
       },
     });
@@ -283,7 +305,7 @@ export async function POST(req: NextRequest) {
         orderRef,
         userId: prismaUserId,
         productType: productType as PurchaseType,
-        productId,
+        productId: effectiveProductId,
         productName: resolved.productName,
         amount: amountPaise,
         currency: 'INR',
@@ -303,7 +325,7 @@ export async function POST(req: NextRequest) {
         message: `Order created: ${orderRef}`,
         payload: JSON.stringify({
           productType,
-          productId,
+          productId: effectiveProductId,
           productName: resolved.productName,
           amount: amountPaise,
           clientAmountRupees: amount,

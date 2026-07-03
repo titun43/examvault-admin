@@ -160,17 +160,33 @@ export default function PremiumPlans() {
       };
 
       if (editingId) {
-        await updateDoc(doc(db, 'premium_plans', editingId), {
+        // Ensure planId is never empty — if admin cleared it (or it was never
+        // set), fall back to the Firestore doc id. This is CRITICAL because
+        // the Flutter app sends `planId` as `productId` to the create-order
+        // API, and the backend rejects empty `productId` with
+        // "Missing or invalid fields: productId" — which surfaces in the UI
+        // as "payment failed missing field product".
+        const finalData = {
           ...data,
+          planId: data.planId?.trim() ? data.planId.trim() : editingId,
+        };
+        await updateDoc(doc(db, 'premium_plans', editingId), {
+          ...finalData,
           updatedAt: serverTimestamp(),
         });
         toast.success('Plan updated');
       } else {
-        await addDoc(collection(db, 'premium_plans'), {
+        const docRef = await addDoc(collection(db, 'premium_plans'), {
           ...data,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
+        // Auto-fill planId with the Firestore doc id if the admin didn't
+        // provide a Razorpay Plan ID. The Flutter app uses this as the
+        // `productId` for the create-order API call — it MUST be non-empty.
+        if (!data.planId?.trim()) {
+          await updateDoc(docRef, { planId: docRef.id });
+        }
         toast.success('Plan added');
       }
       setDialogOpen(false);

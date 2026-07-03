@@ -88,6 +88,15 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
       // (Firestore rules allow any signed-in user to CREATE their own admins doc).
       // Accept the primary admin address and the owner's address (from app_config)
       // so the owner can also sign in as admin without a manual admins doc write.
+      //
+      // ⚠️ DO NOT set `isPremium: true` or `subscriptionStatus: 'premium'` here.
+      // The admin is a CONTENT MANAGER, not a paying subscriber. Auto-granting
+      // premium to the admin account caused a "forever premium" bug — the admin
+      // (often the tester) never saw paywalls in the Flutter app because the
+      // local cache believed they were already premium. This must match the
+      // Flutter-side fix in `lib/services/auth_service.dart` (commit e97a0da).
+      // If the admin wants to test premium flows, they must purchase premium
+      // like a normal user (or use a separate non-admin test account).
       const canonicalAdminEmails = [
         'admin@examvault.com',
         'lkstudeoandcomputering@gmail.com',
@@ -100,7 +109,10 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
             role: 'admin',
             createdAt: serverTimestamp(),
           });
-          // Also ensure users/{uid} has role=admin
+          // Ensure users/{uid} has role=admin ONLY. Do NOT touch
+          // subscriptionStatus / isPremium — leave whatever the user already
+          // has (free by default). This keeps admin and premium states
+          // independent.
           const userDocRef = doc(db, 'users', fbUser.uid);
           const userDoc = await getDoc(userDocRef);
           if (!userDoc.exists()) {
@@ -108,15 +120,15 @@ export function AdminAuthProvider({ children }: { children: ReactNode }) {
               name: 'Admin',
               email: fbUser.email,
               role: 'admin',
-              isPremium: true,
-              subscriptionStatus: 'premium',
+              // NOTE: No isPremium / subscriptionStatus here — defaults to free.
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
               isActive: true,
             });
           } else if (userDoc.data()?.role !== 'admin') {
-            // Promote existing user to admin
-            await setDoc(userDocRef, { role: 'admin', isPremium: true, subscriptionStatus: 'premium', updatedAt: serverTimestamp() }, { merge: true });
+            // Promote existing user to admin — ONLY set role, do NOT touch
+            // subscriptionStatus / isPremium.
+            await setDoc(userDocRef, { role: 'admin', updatedAt: serverTimestamp() }, { merge: true });
           }
           setUser(adminUser);
           setIsAdmin(true);

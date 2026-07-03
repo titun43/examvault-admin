@@ -40,12 +40,20 @@ separate Flutter app (repo: `titun43/examvault`).
 
 ## 3. Repository & Deployment
 
-- **GitHub repo:** `titun43/examvault-admin` (HTTPS with token in URL)
-- **Sister repo:** `titun43/examvault` (Flutter app, separate, lives at `/home/z/work/examvault`)
-- **Vercel:** Auto-deploys on every push to `main`
-- **Working token (current):** `ghp_P6ht...` (full token stored in both remotes)
+### Two repos — work in the CORRECT one for each task:
+
+| Repo | Purpose | Local Path | What goes here |
+|------|---------|------------|----------------|
+| `titun43/examvault-admin` | Next.js admin panel | `/home/z/my-project` | Admin UI, payment APIs, Prisma schema, Razorpay server logic |
+| `titun43/examvault` | Flutter mobile app | `/home/z/work/examvault` | User-facing app, payment UI, Firebase integration, mobile UX |
+
+**CRITICAL:** Do NOT mix changes. Admin-related fixes go in `examvault-admin`, user-app-related fixes go in `examvault`. User explicitly warned: "kono bhul korben na" (don't make mistakes).
+
+- **Working token (both repos):** `ghp_P6ht...` (full token stored in both remotes)
   - **Expired token to AVOID:** `ghp_5HxE...`
-- **Local sandbox:** `/home/z/my-project` (port 3000, auto-restart on file change)
+- **Vercel (admin):** Auto-deploys on every push to `main` of `examvault-admin`
+- **Play Store (Flutter):** Manual build + release from `examvault` repo
+- **Local sandbox:** `/home/z/my-project` is the working copy of admin panel (port 3000)
 
 ---
 

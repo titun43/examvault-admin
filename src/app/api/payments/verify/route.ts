@@ -98,9 +98,22 @@ export async function POST(req: NextRequest) {
     );
 
     if (!sigOk) {
-      // Mark payment failed + log
-      await db.$transaction(async (tx) => {
-        const payment = await tx.payment.create({
+      // Signature mismatch — record a FAILED Payment row for audit, but DO NOT
+      // mark the Order as FAILED. The Razorpay payment may still have been
+      // captured (money deducted) and the webhook will fire shortly to mark
+      // the order PAID + grant the entitlement. If we mark the Order FAILED
+      // here, the webhook's ensureEntitlementGranted() refuses to grant
+      // (it only grants for PAID orders), and the user never gets what they
+      // paid for — exactly the "buy korlam but test khulteche na" bug.
+      //
+      // By leaving the Order as CREATED, the webhook can:
+      //   - Find the FAILED Payment row (Path B)
+      //   - Flip it to CAPTURED + flip the Order to PAID
+      //   - Grant the entitlement idempotently
+      // And the app's order-status polling will see paid=true once the webhook
+      // processes it, recovering the flow without user intervention.
+      try {
+        const payment = await db.payment.create({
           data: {
             orderId: order.id,
             userId: prismaUserId,
@@ -115,29 +128,47 @@ export async function POST(req: NextRequest) {
             signatureVerified: false,
           },
         });
-        await tx.order.update({
-          where: { id: order.id },
-          data: { status: 'FAILED' },
-        });
-        await tx.paymentLog.create({
+        await db.paymentLog.create({
           data: {
             paymentId: payment.id,
             orderId: order.id,
             userId: prismaUserId,
             event: 'SIGNATURE_VERIFY_FAILED',
             level: 'WARN',
-            message: `Signature verification failed for payment ${razorpayPaymentId}`,
+            message: `Signature verification failed for payment ${razorpayPaymentId}. Order left as ${order.status} so the webhook can still recover.`,
             payload: JSON.stringify({
               razorpayPaymentId,
               razorpayOrderId,
+              orderStatusBefore: order.status,
             }),
             ...clientMeta,
           },
         });
-      });
+      } catch (e) {
+        // P2002 = unique constraint (Payment row already exists, e.g. a retry).
+        // Safe to ignore — the row exists for audit.
+        const code = (e as { code?: string })?.code;
+        if (code !== 'P2002') {
+          // Unexpected — log but don't fail the response (we still want to
+          // return 400 to the client so it falls back to order-status polling).
+          db.paymentLog
+            .create({
+              data: {
+                orderId: order.id,
+                userId: prismaUserId,
+                event: 'SIGNATURE_VERIFY_FAILED_LOG_ERROR',
+                level: 'ERROR',
+                message: `Failed to record SIGNATURE_VERIFY_FAILED audit row: ${e instanceof Error ? e.message : 'unknown'}`,
+                payload: JSON.stringify({ razorpayPaymentId, razorpayOrderId }),
+                ...clientMeta,
+              },
+            })
+            .catch(() => {});
+        }
+      }
 
       return NextResponse.json(
-        { error: 'Signature verification failed' },
+        { error: 'Signature verification failed. If money was deducted, it will be auto-verified within a few seconds — please check "My Purchases".' },
         { status: 400 },
       );
     }

@@ -210,17 +210,36 @@ async function handlePaymentCaptured(p?: PaymentEntity) {
     // Path A: already processed by a previous webhook delivery — idempotent.
     if (payment.webhookVerified) return;
 
-    // Path B: mark captured + webhookVerified.
-    await db.payment.update({
-      where: { id: payment.id },
-      data: {
-        webhookVerified: true,
-        status: 'CAPTURED',
-        capturedAt: payment.capturedAt ?? new Date(),
-        method: p.method ?? payment.method,
-        fee: p.fee ?? payment.fee,
-        tax: p.tax ?? payment.tax,
-      },
+    // Path B: mark captured + webhookVerified. Also flip the Order to PAID
+    // if it isn't already — this handles the case where /verify ran first,
+    // signature verification failed (e.g. transient client/network issue),
+    // and the Payment row was created with status=FAILED while the Order was
+    // left as CREATED (per the verify route's defensive design). Without
+    // flipping the Order to PAID here, ensureEntitlementGranted() would
+    // refuse to grant (it only grants for PAID orders) and the user would
+    // never get what they paid for — the "buy korlam but test khulteche na"
+    // bug. Doing both updates in a single transaction keeps them atomic.
+    await db.$transaction(async (tx) => {
+      await tx.payment.update({
+        where: { id: payment.id },
+        data: {
+          webhookVerified: true,
+          status: 'CAPTURED',
+          capturedAt: payment.capturedAt ?? new Date(),
+          method: p.method ?? payment.method,
+          fee: p.fee ?? payment.fee,
+          tax: p.tax ?? payment.tax,
+        },
+      });
+      // Only flip the Order to PAID; never downgrade a PAID order, and never
+      // resurrect a REFUNDED one. CREATED/FAILED → PAID is the recovery path.
+      // We use updateMany to no-op if the order is already PAID (avoids the
+      // need for a prior read and prevents race conditions with concurrent
+      // verify runs).
+      await tx.order.updateMany({
+        where: { id: payment.orderId, status: { in: ['CREATED', 'FAILED'] } },
+        data: { status: 'PAID' },
+      });
     });
     await db.paymentLog.create({
       data: {
@@ -229,7 +248,7 @@ async function handlePaymentCaptured(p?: PaymentEntity) {
         userId: payment.userId,
         event: 'WEBHOOK_PAYMENT_CAPTURED',
         level: 'AUDIT',
-        message: `Webhook confirmed capture for ${p.id}`,
+        message: `Webhook confirmed capture for ${p.id}. Payment + Order flipped to PAID/CAPTURED.`,
         payload: JSON.stringify({ razorpayPaymentId: p.id, method: p.method }),
       },
     });
@@ -396,6 +415,14 @@ async function handlePaymentCaptured(p?: PaymentEntity) {
  * Idempotently ensure the entitlement for an order is granted. Reads the order
  * + its stored meta, then calls grantEntitlement (which uses upserts). Safe to
  * call multiple times — the ENTITLEMENT_GRANTED log + upserts prevent duplicates.
+ *
+ * DEFENSE-IN-DEPTH: if the order is not yet PAID but a CAPTURED payment exists
+ * (e.g. the webhook's Path B ran but a race left the Order stale, or a manual
+ * admin operation marked the Payment CAPTURED without flipping the Order), we
+ * flip the Order to PAID here before granting. This is the LAST line of
+ * defence against "user paid but never got the entitlement" — every path that
+ * reaches this function has confirmed (via webhook signature or admin action)
+ * that the payment was genuinely captured.
  */
 async function ensureEntitlementGranted(
   orderId: string,
@@ -412,7 +439,46 @@ async function ensureEntitlementGranted(
 
     const order = await db.order.findUnique({ where: { id: orderId } });
     if (!order) return;
-    if (order.status !== 'PAID') return; // defensive — only grant for PAID orders
+
+    // If the order is not PAID, attempt to recover by flipping it to PAID
+    // (only if a CAPTURED payment exists for this order). This is the safety
+    // net for the case where Path B's transaction committed the Payment
+    // update but the Order update was somehow lost (extremely rare, but the
+    // cost of an extra query is trivial vs. a permanently-locked-out user).
+    if (order.status !== 'PAID') {
+      const captured = await db.payment.findFirst({
+        where: { orderId, status: 'CAPTURED' },
+        orderBy: { capturedAt: 'desc' },
+        select: { id: true },
+      });
+      if (!captured) {
+        // No captured payment — genuinely nothing to grant. Bail.
+        return;
+      }
+      await db.order.updateMany({
+        where: { id: orderId, status: { in: ['CREATED', 'FAILED'] } },
+        data: { status: 'PAID' },
+      });
+      await db.paymentLog
+        .create({
+          data: {
+            orderId,
+            userId,
+            event: 'WEBHOOK_ORDER_RECOVERED',
+            level: 'AUDIT',
+            message: `ensureEntitlementGranted flipped order ${orderId} to PAID (was ${order.status}) because a CAPTURED payment exists.`,
+            payload: JSON.stringify({ priorStatus: order.status }),
+          },
+        })
+        .catch(() => {});
+      // Reload to confirm — if the updateMany affected 0 rows (e.g. another
+      // concurrent process flipped it to REFUNDED), bail.
+      const refreshed = await db.order.findUnique({
+        where: { id: orderId },
+        select: { status: true },
+      });
+      if (refreshed?.status !== 'PAID') return;
+    }
 
     // Resolve the paymentId if not provided (e.g. the "order already PAID" path
     // where /verify created the Payment row). grantEntitlement links the

@@ -327,6 +327,15 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                 setVerifying(false);
                 return;
             }
+            if (res.status === 500) {
+                // 500 here almost always means ADMIN_JWT_SECRET is not set on the
+                // server (Vercel env var missing). The server returns 500 before it
+                // even compares the token — so no token will work until the env var
+                // is configured. Surface a helpful, actionable message.
+                setVerifyErr('Server returned 500 — this usually means ADMIN_JWT_SECRET is not set ' + 'in the server environment (Vercel Project Settings → Environment Variables). ' + 'Set it, redeploy, then try again. (The token you paste here must match ' + 'that env var value exactly.)');
+                setVerifying(false);
+                return;
+            }
             if (!res.ok) {
                 setVerifyErr(`Server returned ${res.status}. Try again.`);
                 setVerifying(false);
@@ -356,12 +365,12 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                     className: "w-5 h-5 text-emerald-300"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                    lineNumber: 90,
+                                    lineNumber: 104,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                lineNumber: 89,
+                                lineNumber: 103,
                                 columnNumber: 13
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -371,7 +380,7 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                         children: "Admin token required"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                        lineNumber: 93,
+                                        lineNumber: 107,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -386,26 +395,26 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                                 children: "/api/admin/*"
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                                lineNumber: 98,
+                                                lineNumber: 112,
                                                 columnNumber: 17
                                             }, this),
                                             "."
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                        lineNumber: 96,
+                                        lineNumber: 110,
                                         columnNumber: 15
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                lineNumber: 92,
+                                lineNumber: 106,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                        lineNumber: 88,
+                        lineNumber: 102,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -417,7 +426,7 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                 children: "Admin secret"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                lineNumber: 104,
+                                lineNumber: 118,
                                 columnNumber: 13
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -433,7 +442,7 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                 autoFocus: true
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                lineNumber: 107,
+                                lineNumber: 121,
                                 columnNumber: 13
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -444,20 +453,20 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                         children: "x-admin-token"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                        lineNumber: 121,
+                                        lineNumber: 135,
                                         columnNumber: 34
                                     }, this),
                                     " header on every admin API request. Clear it anytime from the section header."
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                lineNumber: 119,
+                                lineNumber: 133,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                        lineNumber: 103,
+                        lineNumber: 117,
                         columnNumber: 11
                     }, this),
                     verifyErr && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -467,20 +476,20 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                 className: "w-4 h-4 mt-0.5 shrink-0"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                lineNumber: 128,
+                                lineNumber: 142,
                                 columnNumber: 15
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                 children: verifyErr
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                lineNumber: 129,
+                                lineNumber: 143,
                                 columnNumber: 15
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                        lineNumber: 127,
+                        lineNumber: 141,
                         columnNumber: 13
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -493,7 +502,7 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                     className: "w-4 h-4 mr-2 animate-spin"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                    lineNumber: 140,
+                                    lineNumber: 154,
                                     columnNumber: 17
                                 }, this),
                                 "Verifying…"
@@ -504,7 +513,7 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                                     className: "w-4 h-4 mr-2"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                                    lineNumber: 145,
+                                    lineNumber: 159,
                                     columnNumber: 17
                                 }, this),
                                 "Save & verify"
@@ -512,23 +521,23 @@ function AdminTokenGate({ children, title = 'Payments' }) {
                         }, void 0, true)
                     }, void 0, false, {
                         fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                        lineNumber: 133,
+                        lineNumber: 147,
                         columnNumber: 11
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-                lineNumber: 87,
+                lineNumber: 101,
                 columnNumber: 9
             }, this)
         }, void 0, false, {
             fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-            lineNumber: 86,
+            lineNumber: 100,
             columnNumber: 7
         }, this)
     }, void 0, false, {
         fileName: "[project]/src/components/admin/admin-token-gate.tsx",
-        lineNumber: 85,
+        lineNumber: 99,
         columnNumber: 5
     }, this);
 }

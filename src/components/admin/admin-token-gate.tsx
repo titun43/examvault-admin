@@ -65,6 +65,20 @@ export default function AdminTokenGate({
         setVerifying(false);
         return;
       }
+      if (res.status === 500) {
+        // 500 here almost always means ADMIN_JWT_SECRET is not set on the
+        // server (Vercel env var missing). The server returns 500 before it
+        // even compares the token — so no token will work until the env var
+        // is configured. Surface a helpful, actionable message.
+        setVerifyErr(
+          'Server returned 500 — this usually means ADMIN_JWT_SECRET is not set ' +
+          'in the server environment (Vercel Project Settings → Environment Variables). ' +
+          'Set it, redeploy, then try again. (The token you paste here must match ' +
+          'that env var value exactly.)',
+        );
+        setVerifying(false);
+        return;
+      }
       if (!res.ok) {
         setVerifyErr(`Server returned ${res.status}. Try again.`);
         setVerifying(false);

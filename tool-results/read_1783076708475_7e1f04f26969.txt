@@ -1,0 +1,655 @@
+     1→// =============================================================================
+     2→// ExamVault - Razorpay Payment Service (SERVER-SIDE-VERIFIED FLOW)
+     3→// =============================================================================
+     4→// v1.23+ — NO LONGER writes payment success to Firestore from the client.
+     5→// The flow is now:
+     6→//   1. createOrder()  → backend creates a Razorpay order + Prisma Order row
+     7→//   2. open Razorpay checkout WITH that order_id (mandatory for signature
+     8→//      verification to work)
+     9→//   3. On EVENT_PAYMENT_SUCCESS → verifyPayment() with the signature; only
+    10→//      call onSuccess if the backend returns { success: true, granted: true }
+    11→//   4. On EVENT_PAYMENT_ERROR → call onError with the Razorpay failure
+    12→//
+    13→// The old `payments` Firestore collection and PaymentModel are kept for
+    14→// backward-compat with historical records; NEW payments are recorded by the
+    15→// backend in Prisma, not here.
+    16→// =============================================================================
+    17→
+    18→import 'dart:async';
+    19→import 'package:razorpay_flutter/razorpay_flutter.dart';
+    20→import 'package:uuid/uuid.dart';
+    21→import '../config/app_config.dart';
+    22→import 'payment_api_service.dart';
+    23→
+    24→/// Hard timeout for the createOrder network call. If the backend doesn't
+    25→/// respond within this duration, we abort and call onError — the user is
+    26→/// never stuck spinning forever. 20s is generous enough for a cold Vercel
+    27→/// function + Razorpay API + DB writes, but short enough that the user
+    28→/// doesn't think the app froze.
+    29→const Duration _createOrderHardTimeout = Duration(seconds: 20);
+    30→
+    31→/// Hard timeout for the verifyPayment network call.
+    32→const Duration _verifyHardTimeout = Duration(seconds: 20);
+    33→
+    34→class RazorpayService {
+    35→  RazorpayService._();
+    36→
+    37→  // Nullable instead of late — if initialize() fails (caught in main.dart),
+    38→  // _razorpay stays null and payment methods bail early instead of throwing
+    39→  // LateInitializationError.
+    40→  static Razorpay? _razorpay;
+    41→
+    42→  // CONCURRENT-PAYMENT GUARD — prevents double-tap on Buy from starting two
+    43→  // payments. If a payment is already in flight, subsequent start* calls are
+    44→  // rejected with a clear error instead of overwriting the first payment's
+    45→  // Razorpay handlers (which would leave the first payment's callbacks
+    46→  // dangling and the user's money deducted with no unlock).
+    47→  static bool _isProcessing = false;
+    48→
+    49→  static void initialize() {
+    50→    _razorpay = Razorpay();
+    51→    // Register default no-op handlers. Each start*() method re-registers
+    52→    // success/error with closures that capture the active order's Prisma id
+    53→    // so it can be passed to /verify.
+    54→    _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS, _defaultSuccess);
+    55→    _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR, _defaultError);
+    56→    _razorpay!.on(Razorpay.EVENT_EXTERNAL_WALLET, _defaultWallet);
+    57→  }
+    58→
+    59→  static void _defaultSuccess(PaymentSuccessResponse _) {}
+    60→  static void _defaultError(PaymentFailureResponse _) {}
+    61→  static void _defaultWallet(ExternalWalletResponse _) {}
+    62→
+    63→  /// Resets the processing guard. Call this only if you're certain no payment
+    64→  /// is in flight (e.g., on app start, or after a stuck state was detected).
+    65→  static void resetProcessingState() {
+    66→    _isProcessing = false;
+    67→  }
+    68→
+    69→  // ==================== START SUBSCRIPTION PAYMENT ====================
+    70→  /// Premium subscription payment. Creates a server-side order, opens Razorpay
+    71→  /// checkout, verifies the signature, and only calls [onSuccess] if the
+    72→  /// backend confirms the entitlement was granted.
+    73→  ///
+    74→  /// [onPreparing] fires when createOrder starts (caller can show a loading
+    75→  /// indicator). [onCheckoutOpened] fires when the Razorpay checkout modal is
+    76→  /// about to open (caller should dismiss the preparing indicator). [onVerifying]
+    77→  /// fires after the user pays but before onSuccess/onError — during the server
+    78→  /// signature verification step (caller can show "Verifying payment...").
+    79→  static Future<void> startPayment({
+    80→    required String userId,
+    81→    required String userName,
+    82→    required String userEmail,
+    83→    required String userPhone,
+    84→    required int amount, // in INR (whole rupees)
+    85→    required String planId,
+    86→    required String planName,
+    87→    required int durationMonths,
+    88→    String? planTier,
+    89→    required void Function(PaymentSuccessResponse response) onSuccess,
+    90→    required void Function(PaymentFailureResponse response) onError,
+    91→    void Function()? onPreparing,
+    92→    void Function()? onCheckoutOpened,
+    93→    void Function()? onVerifying,
+    94→  }) async {
+    95→    // NEVER throw — always call onError on failure. This prevents the
+    96→    // "Preparing payment..." dialog from getting stuck if something
+    97→    // unexpected happens before createOrder completes.
+    98→    if (_razorpay == null) {
+    99→      print('[RazorpayService] _razorpay is null — initialize() failed');
+   100→      onError(PaymentFailureResponse(
+   101→          0, 'Payment service not available. Please restart the app.', null));
+   102→      return;
+   103→    }
+   104→    // CONCURRENT-PAYMENT GUARD — reject if a payment is already in flight.
+   105→    if (_isProcessing) {
+   106→      print('[RazorpayService] startPayment: rejected — another payment is already in flight');
+   107→      onError(PaymentFailureResponse(
+   108→          0, 'A payment is already being processed. Please wait for it to finish.', null));
+   109→      return;
+   110→    }
+   111→    _isProcessing = true;
+   112→
+   113→    // Wrap the onSuccess/onError callbacks so we always release the guard.
+   114→    void guardedOnSuccess(PaymentSuccessResponse r) {
+   115→      _isProcessing = false;
+   116→      onSuccess(r);
+   117→    }
+   118→    void guardedOnError(PaymentFailureResponse r) {
+   119→      _isProcessing = false;
+   120→      onError(r);
+   121→    }
+   122→
+   123→    final idempotencyKey = const Uuid().v4();
+   124→
+   125→    // 1) Create the order on the backend.
+   126→    print('[RazorpayService] startPayment: calling onPreparing...');
+   127→    if (onPreparing != null) onPreparing();
+   128→    Map<String, dynamic> order;
+   129→    try {
+   130→      print('[RazorpayService] startPayment: calling createOrder...');
+   131→      order = await PaymentApiService.createOrder(
+   132→        productType: 'PREMIUM_SUBSCRIPTION',
+   133→        productId: planId,
+   134→        productName: planName,
+   135→        amountRupees: amount.toDouble(),
+   136→        idempotencyKey: idempotencyKey,
+   137→        meta: {
+   138→          'planId': planId,
+   139→          'planName': planName,
+   140→          if (planTier != null) 'planTier': planTier,
+   141→          'durationMonths': durationMonths,
+   142→        },
+   143→      ).timeout(_createOrderHardTimeout, onTimeout: () {
+   144→        throw TimeoutException(
+   145→            'Payment server is taking too long. Please check your internet and try again.');
+   146→      });
+   147→      print('[RazorpayService] startPayment: createOrder succeeded, orderId=${order['orderId']}');
+   148→    } on PaymentApiException catch (e) {
+   149→      print('[RazorpayService] startPayment: createOrder PaymentApiException: ${e.message}');
+   150→      _isProcessing = false;
+   151→      onError(PaymentFailureResponse(0, e.message, null));
+   152→      return;
+   153→    } on TimeoutException catch (e) {
+   154→      print('[RazorpayService] startPayment: createOrder timeout: ${e.message}');
+   155→      _isProcessing = false;
+   156→      onError(PaymentFailureResponse(0, e.message, null));
+   157→      return;
+   158→    } catch (e) {
+   159→      print('[RazorpayService] startPayment: createOrder unexpected error: $e');
+   160→      _isProcessing = false;
+   161→      onError(PaymentFailureResponse(
+   162→          0, 'Could not start payment. Please try again.', null));
+   163→      return;
+   164→    }
+   165→
+   166→    print('[RazorpayService] startPayment: calling onCheckoutOpened...');
+   167→    if (onCheckoutOpened != null) onCheckoutOpened();
+   168→    if (!_openCheckout(
+   169→      order: order,
+   170→      fallbackAmountPaise: amount * 100,
+   171→      description: planName,
+   172→      prefillName: userName,
+   173→      prefillEmail: userEmail,
+   174→      prefillPhone: userPhone,
+   175→      onSuccess: guardedOnSuccess,
+   176→      onError: guardedOnError,
+   177→      onVerifying: onVerifying,
+   178→    )) {
+   179→      _isProcessing = false;
+   180→      return;
+   181→    }
+   182→  }
+   183→
+   184→  // ==================== START TEST PURCHASE ====================
+   185→  /// Pay-per-test purchase. Charges the user the test's price and, on
+   186→  /// server-verified success, the backend adds the testId to the user's
+   187→  /// entitlements. [onSuccess] is only called when the backend confirms.
+   188→  ///
+   189→  /// [onPreparing] fires when createOrder starts (caller can show a loading
+   190→  /// indicator). [onCheckoutOpened] fires when the Razorpay checkout modal is
+   191→  /// about to open (caller should dismiss the preparing indicator). [onVerifying]
+   192→  /// fires after the user pays but before onSuccess/onError — during the server
+   193→  /// signature verification step (caller can show "Verifying payment...").
+   194→  static Future<void> startTestPurchase({
+   195→    required String userId,
+   196→    required String userName,
+   197→    required String userEmail,
+   198→    required String userPhone,
+   199→    required String testId,
+   200→    required String testTitle,
+   201→    required int amount, // in INR
+   202→    String? subjectId,
+   203→    String? categoryId,
+   204→    required void Function(PaymentSuccessResponse response) onSuccess,
+   205→    required void Function(PaymentFailureResponse response) onError,
+   206→    void Function()? onPreparing,
+   207→    void Function()? onCheckoutOpened,
+   208→    void Function()? onVerifying,
+   209→  }) async {
+   210→    // NEVER throw — always call onError on failure. This prevents the
+   211→    // "Preparing payment..." dialog from getting stuck if something
+   212→    // unexpected happens before createOrder completes.
+   213→    if (_razorpay == null) {
+   214→      print('[RazorpayService] _razorpay is null — initialize() failed');
+   215→      onError(PaymentFailureResponse(
+   216→          0, 'Payment service not available. Please restart the app.', null));
+   217→      return;
+   218→    }
+   219→    // CONCURRENT-PAYMENT GUARD — reject if a payment is already in flight.
+   220→    if (_isProcessing) {
+   221→      print('[RazorpayService] startTestPurchase: rejected — another payment is already in flight');
+   222→      onError(PaymentFailureResponse(
+   223→          0, 'A payment is already being processed. Please wait for it to finish.', null));
+   224→      return;
+   225→    }
+   226→    _isProcessing = true;
+   227→
+   228→    // Wrap the onSuccess/onError callbacks so we always release the guard.
+   229→    void guardedOnSuccess(PaymentSuccessResponse r) {
+   230→      _isProcessing = false;
+   231→      onSuccess(r);
+   232→    }
+   233→    void guardedOnError(PaymentFailureResponse r) {
+   234→      _isProcessing = false;
+   235→      onError(r);
+   236→    }
+   237→
+   238→    final idempotencyKey = const Uuid().v4();
+   239→
+   240→    print('[RazorpayService] startTestPurchase: calling onPreparing...');
+   241→    if (onPreparing != null) onPreparing();
+   242→    Map<String, dynamic> order;
+   243→    try {
+   244→      print('[RazorpayService] startTestPurchase: calling createOrder (testId=$testId, amount=$amount)...');
+   245→      order = await PaymentApiService.createOrder(
+   246→        productType: 'TEST_PURCHASE',
+   247→        productId: testId,
+   248→        productName: testTitle,
+   249→        amountRupees: amount.toDouble(),
+   250→        idempotencyKey: idempotencyKey,
+   251→        meta: {
+   252→          'testId': testId,
+   253→          'testTitle': testTitle,
+   254→          if (subjectId != null) 'subjectId': subjectId,
+   255→          if (categoryId != null) 'categoryId': categoryId,
+   256→        },
+   257→      ).timeout(_createOrderHardTimeout, onTimeout: () {
+   258→        throw TimeoutException(
+   259→            'Payment server is taking too long. Please check your internet and try again.');
+   260→      });
+   261→      print('[RazorpayService] startTestPurchase: createOrder succeeded, orderId=${order['orderId']}');
+   262→    } on PaymentApiException catch (e) {
+   263→      print('[RazorpayService] startTestPurchase: createOrder PaymentApiException: ${e.message}');
+   264→      _isProcessing = false;
+   265→      onError(PaymentFailureResponse(0, e.message, null));
+   266→      return;
+   267→    } on TimeoutException catch (e) {
+   268→      print('[RazorpayService] startTestPurchase: createOrder timeout: ${e.message}');
+   269→      _isProcessing = false;
+   270→      onError(PaymentFailureResponse(0, e.message, null));
+   271→      return;
+   272→    } catch (e) {
+   273→      print('[RazorpayService] startTestPurchase: createOrder unexpected error: $e');
+   274→      _isProcessing = false;
+   275→      onError(PaymentFailureResponse(
+   276→          0, 'Could not start payment. Please try again.', null));
+   277→      return;
+   278→    }
+   279→
+   280→    print('[RazorpayService] startTestPurchase: calling onCheckoutOpened...');
+   281→    if (onCheckoutOpened != null) onCheckoutOpened();
+   282→    if (!_openCheckout(
+   283→      order: order,
+   284→      fallbackAmountPaise: amount * 100,
+   285→      description: 'Test: $testTitle',
+   286→      prefillName: userName,
+   287→      prefillEmail: userEmail,
+   288→      prefillPhone: userPhone,
+   289→      onSuccess: guardedOnSuccess,
+   290→      onError: guardedOnError,
+   291→      onVerifying: onVerifying,
+   292→    )) {
+   293→      _isProcessing = false;
+   294→      return;
+   295→    }
+   296→  }
+   297→
+   298→  // ==================== START SUBJECT PACK PURCHASE ====================
+   299→  /// Unlock all tests in a subject. [amount] is the pack price in INR.
+   300→  static Future<void> startSubjectPackPurchase({
+   301→    required String userId,
+   302→    required String userName,
+   303→    required String userEmail,
+   304→    required String userPhone,
+   305→    required String subjectId,
+   306→    required String subjectName,
+   307→    required int amount, // in INR
+   308→    String? categoryId,
+   309→    required void Function(PaymentSuccessResponse response) onSuccess,
+   310→    required void Function(PaymentFailureResponse response) onError,
+   311→  }) async {
+   312→    if (_razorpay == null) {
+   313→      onError(PaymentFailureResponse(
+   314→          0, 'Payment service not available. Please restart the app.', null));
+   315→      return;
+   316→    }
+   317→
+   318→    final idempotencyKey = const Uuid().v4();
+   319→
+   320→    Map<String, dynamic> order;
+   321→    try {
+   322→      order = await PaymentApiService.createOrder(
+   323→        productType: 'SUBJECT_PACK',
+   324→        productId: subjectId,
+   325→        productName: 'Subject Pack: $subjectName',
+   326→        amountRupees: amount.toDouble(),
+   327→        idempotencyKey: idempotencyKey,
+   328→        meta: {
+   329→          'subjectId': subjectId,
+   330→          'subjectName': subjectName,
+   331→          if (categoryId != null) 'categoryId': categoryId,
+   332→        },
+   333→      );
+   334→    } on PaymentApiException catch (e) {
+   335→      onError(PaymentFailureResponse(0, e.message, null));
+   336→      return;
+   337→    } catch (e) {
+   338→      onError(PaymentFailureResponse(
+   339→          0, 'Could not start payment. Please try again.', null));
+   340→      return;
+   341→    }
+   342→
+   343→    if (!_openCheckout(
+   344→      order: order,
+   345→      fallbackAmountPaise: amount * 100,
+   346→      description: 'Subject Pack: $subjectName',
+   347→      prefillName: userName,
+   348→      prefillEmail: userEmail,
+   349→      prefillPhone: userPhone,
+   350→      onSuccess: onSuccess,
+   351→      onError: onError,
+   352→    )) {
+   353→      return;
+   354→    }
+   355→  }
+   356→
+   357→  // ==================== START EXAM PACK PURCHASE ====================
+   358→  /// Unlock all subjects/tests in a category (exam pack). [amount] is the
+   359→  /// pack price in INR.
+   360→  static Future<void> startExamPackPurchase({
+   361→    required String userId,
+   362→    required String userName,
+   363→    required String userEmail,
+   364→    required String userPhone,
+   365→    required String categoryId,
+   366→    required String categoryName,
+   367→    required int amount, // in INR
+   368→    required void Function(PaymentSuccessResponse response) onSuccess,
+   369→    required void Function(PaymentFailureResponse response) onError,
+   370→  }) async {
+   371→    if (_razorpay == null) {
+   372→      onError(PaymentFailureResponse(
+   373→          0, 'Payment service not available. Please restart the app.', null));
+   374→      return;
+   375→    }
+   376→
+   377→    final idempotencyKey = const Uuid().v4();
+   378→
+   379→    Map<String, dynamic> order;
+   380→    try {
+   381→      order = await PaymentApiService.createOrder(
+   382→        productType: 'EXAM_PACK',
+   383→        productId: categoryId,
+   384→        productName: 'Exam Pack: $categoryName',
+   385→        amountRupees: amount.toDouble(),
+   386→        idempotencyKey: idempotencyKey,
+   387→        meta: {
+   388→          'categoryId': categoryId,
+   389→          'categoryName': categoryName,
+   390→        },
+   391→      );
+   392→    } on PaymentApiException catch (e) {
+   393→      onError(PaymentFailureResponse(0, e.message, null));
+   394→      return;
+   395→    } catch (e) {
+   396→      onError(PaymentFailureResponse(
+   397→          0, 'Could not start payment. Please try again.', null));
+   398→      return;
+   399→    }
+   400→
+   401→    if (!_openCheckout(
+   402→      order: order,
+   403→      fallbackAmountPaise: amount * 100,
+   404→      description: 'Exam Pack: $categoryName',
+   405→      prefillName: userName,
+   406→      prefillEmail: userEmail,
+   407→      prefillPhone: userPhone,
+   408→      onSuccess: onSuccess,
+   409→      onError: onError,
+   410→    )) {
+   411→      return;
+   412→    }
+   413→  }
+   414→
+   415→  // ==================== OPEN CHECKOUT (shared) ====================
+   416→  /// Shared helper that validates the create-order response, wires the
+   417→  /// success/error handlers to a /verify call, and opens Razorpay checkout.
+   418→  /// Returns true if checkout was opened; false if an error was already
+   419→  /// dispatched via [onError] (so the caller knows not to do anything else).
+   420→  ///
+   421→  /// [onVerifying] fires after the user pays in Razorpay but before the
+   422→  /// /verify network call — the caller should show a "Verifying payment..."
+   423→  /// indicator and dismiss it in onSuccess/onError.
+   424→  static bool _openCheckout({
+   425→    required Map<String, dynamic> order,
+   426→    required int fallbackAmountPaise,
+   427→    required String description,
+   428→    required String prefillName,
+   429→    required String prefillEmail,
+   430→    required String prefillPhone,
+   431→    required void Function(PaymentSuccessResponse) onSuccess,
+   432→    required void Function(PaymentFailureResponse) onError,
+   433→    void Function()? onVerifying,
+   434→  }) {
+   435→    final orderId = (order['orderId'] ?? '').toString();
+   436→    final razorpayOrderId = (order['razorpayOrderId'] ?? '').toString();
+   437→    final keyId = (order['keyId'] ?? AppConfig.razorpayKeyId).toString();
+   438→    final amountPaise = order['amount'] is int
+   439→        ? order['amount'] as int
+   440→        : (order['amount'] is num
+   441→            ? (order['amount'] as num).toInt()
+   442→            : fallbackAmountPaise);
+   443→
+   444→    if (orderId.isEmpty || razorpayOrderId.isEmpty) {
+   445→      print('[RazorpayService] _openCheckout: invalid order response — orderId=$orderId, razorpayOrderId=$razorpayOrderId');
+   446→      onError(PaymentFailureResponse(
+   447→          0, 'Server returned an invalid order. Please try again.', null));
+   448→      return false;
+   449→    }
+   450→
+   451→    print('[RazorpayService] _openCheckout: opening Razorpay checkout (razorpayOrderId=$razorpayOrderId, amountPaise=$amountPaise, keyId=$keyId)');
+   452→
+   453→    // Re-register handlers with closures that capture the Prisma orderId so
+   454→    // we can call /verify with it on success.
+   455→    _razorpay!.on(Razorpay.EVENT_PAYMENT_SUCCESS,
+   456→        (PaymentSuccessResponse response) async {
+   457→      print('[RazorpayService] EVENT_PAYMENT_SUCCESS: paymentId=${response.paymentId}, orderId=${response.orderId}');
+   458→      // Tell the caller we're entering the verify step so it can show a
+   459→      // "Verifying payment..." indicator. The Razorpay checkout modal has
+   460→      // just closed; without this indicator the user sees a frozen screen
+   461→      // for 1-3 seconds while /verify runs.
+   462→      if (onVerifying != null) onVerifying();
+   463→      await _verifyAndDispatch(
+   464→        response: response,
+   465→        orderId: orderId,
+   466→        onSuccess: onSuccess,
+   467→        onError: onError,
+   468→      );
+   469→    });
+   470→    _razorpay!.on(Razorpay.EVENT_PAYMENT_ERROR,
+   471→        (PaymentFailureResponse response) {
+   472→      print('[RazorpayService] EVENT_PAYMENT_ERROR: code=${response.code}, message=${response.message}');
+   473→      onError(response);
+   474→    });
+   475→
+   476→    final options = <String, dynamic>{
+   477→      'key': keyId,
+   478→      'order_id': razorpayOrderId, // CRITICAL for server-side verification
+   479→      'amount': amountPaise,
+   480→      'name': AppConfig.appName,
+   481→      'description': description,
+   482→      'prefill': {
+   483→        'name': prefillName,
+   484→        'email': prefillEmail,
+   485→        'contact': prefillPhone,
+   486→      },
+   487→      'theme': {'color': '#1565C0'},
+   488→      'currency': 'INR',
+   489→      'timeout': 300, // 5 minutes
+   490→    };
+   491→
+   492→    try {
+   493→      _razorpay!.open(options);
+   494→      print('[RazorpayService] _openCheckout: _razorpay.open() called successfully');
+   495→      return true;
+   496→    } catch (e) {
+   497→      print('[RazorpayService] _openCheckout: _razorpay.open() threw: $e');
+   498→      onError(PaymentFailureResponse(
+   499→          0, 'Could not open payment screen. Please try again.', null));
+   500→      return false;
+   501→    }
+   502→  }
+   503→
+   504→  // ==================== VERIFY + DISPATCH ====================
+   505→  /// Calls /api/payments/verify with the Razorpay signature. Only invokes
+   506→  /// [onSuccess] if the backend returns { success: true, granted: true }.
+   507→  ///
+   508→  /// RELIABILITY FALLBACK (v2): if /verify fails for ANY reason (network error,
+   509→  /// timeout, server error, or even a signature mismatch), we POLL
+   510→  /// /api/payments/order-status up to 3 times (3s apart). The Razorpay webhook
+   511→  /// is the ultimate safety net on the backend — it marks the order PAID +
+   512→  /// grants the entitlement even if /verify never runs. So polling order-status
+   513→  /// gives the webhook time to fire, and if it reports paid+granted, we honour
+   514→  /// the payment as success.
+   515→  ///
+   516→  /// This is the KEY FIX for "admin panel shows success but app says failed":
+   517→  /// the app no longer gives up after a single failed /verify. It keeps
+   518→  /// checking until the webhook has processed the payment, then unlocks the
+   519→  /// content. Only if the order is genuinely not paid after all polls does it
+   520→  /// declare failure (with a "check My Purchases" message).
+   521→  static Future<void> _verifyAndDispatch({
+   522→    required PaymentSuccessResponse response,
+   523→    required String orderId,
+   524→    required void Function(PaymentSuccessResponse) onSuccess,
+   525→    required void Function(PaymentFailureResponse) onError,
+   526→  }) async {
+   527→    try {
+   528→      print('[RazorpayService] _verifyAndDispatch: calling verifyPayment (orderId=$orderId, paymentId=${response.paymentId})...');
+   529→      final result = await PaymentApiService.verifyPayment(
+   530→        orderId: orderId,
+   531→        razorpayPaymentId: response.paymentId ?? '',
+   532→        razorpayOrderId: response.orderId ?? '',
+   533→        razorpaySignature: response.signature ?? '',
+   534→      ).timeout(_verifyHardTimeout, onTimeout: () {
+   535→        throw TimeoutException(
+   536→            'Payment verification timed out.');
+   537→      });
+   538→      print('[RazorpayService] _verifyAndDispatch: verifyPayment returned success=${result['success']}, granted=${result['granted']}');
+   539→
+   540→      final ok = result['success'] == true && result['granted'] == true;
+   541→      if (ok) {
+   542→        onSuccess(response);
+   543→        return;
+   544→      }
+   545→      // verify returned 200 but not granted — unusual. Fall through to
+   546→      // order-status polling in case the webhook has since processed it.
+   547→      print('[RazorpayService] _verifyAndDispatch: verify returned not-granted — polling order-status as fallback');
+   548→      final recovered = await _tryRecoverFromOrderStatus(orderId, response, onSuccess);
+   549→      if (!recovered) {
+   550→        final msg = (result['message'] ??
+   551→                'Payment could not be verified. If money was deducted, it will be refunded within 5-7 business days.')
+   552→            .toString();
+   553→        onError(PaymentFailureResponse(0, msg, null));
+   554→      }
+   555→    } on PaymentApiException catch (e) {
+   556→      print('[RazorpayService] _verifyAndDispatch: PaymentApiException: ${e.message}');
+   557→      // Network / server / signature error during verify — the payment may
+   558→      // still have been captured (the webhook is the safety net). Poll
+   559→      // order-status before declaring failure.
+   560→      final recovered = await _tryRecoverFromOrderStatus(orderId, response, onSuccess);
+   561→      if (!recovered) {
+   562→        onError(PaymentFailureResponse(0, e.message, null));
+   563→      }
+   564→    } on TimeoutException catch (e) {
+   565→      print('[RazorpayService] _verifyAndDispatch: timeout: ${e.message}');
+   566→      // Verify timed out — the payment may still have been captured (the
+   567→      // webhook is async). Poll order-status as a fallback.
+   568→      final recovered = await _tryRecoverFromOrderStatus(orderId, response, onSuccess);
+   569→      if (!recovered) {
+   570→        onError(PaymentFailureResponse(
+   571→          0,
+   572→          'Payment verification timed out. Your money may have been deducted — please check "My Purchases" to see if the payment succeeded. If not, it will be auto-refunded within 5-7 business days.',
+   573→          null,
+   574→        ));
+   575→      }
+   576→    } catch (e) {
+   577→      print('[RazorpayService] _verifyAndDispatch: unexpected error: $e');
+   578→      // Unexpected error — poll order-status before declaring failure.
+   579→      final recovered = await _tryRecoverFromOrderStatus(orderId, response, onSuccess);
+   580→      if (!recovered) {
+   581→        onError(PaymentFailureResponse(
+   582→          0,
+   583→          'Payment verification failed. Your money may have been deducted — please check "My Purchases" to see if the payment succeeded. If not, it will be auto-refunded within 5-7 business days.',
+   584→          null,
+   585→        ));
+   586→      }
+   587→    }
+   588→  }
+   589→
+   590→  /// FALLBACK: after /verify fails, POLL /api/payments/order-status up to 3
+   591→  /// times (3 seconds apart). The Razorpay webhook is the backend safety net —
+   592→  /// it marks the order PAID + grants the entitlement even if /verify never
+   593→  /// runs. Polling gives the webhook time to fire (it's async, typically 1-5s).
+   594→  ///
+   595→  /// As soon as a poll reports paid=true && granted=true, we call [onSuccess]
+   596→  /// and return true. If all polls report the order as not-yet-paid, we return
+   597→  /// false and the caller shows the "check My Purchases" message.
+   598→  ///
+   599→  /// This handles the critical case where:
+   600→  ///   1. User pays in Razorpay checkout (money deducted)
+   601→  ///   2. Razorpay fires the webhook → backend marks order PAID + grants entitlement
+   602→  ///   3. App's /verify call fails due to a transient network error
+   603→  ///   4. Without this fallback, the app shows "Payment failed" even though
+   604→  ///      the money was deducted and the entitlement was granted
+   605→  ///
+   606→  /// With this fallback, the app polls order-status, sees PAID + granted, and
+   607→  /// correctly calls onSuccess.
+   608→  static Future<bool> _tryRecoverFromOrderStatus(
+   609→    String orderId,
+   610→    PaymentSuccessResponse response,
+   611→    void Function(PaymentSuccessResponse) onSuccess,
+   612→  ) async {
+   613→    const int maxAttempts = 3;
+   614→    const Duration pollInterval = Duration(seconds: 3);
+   615→    const Duration pollTimeout = Duration(seconds: 10);
+   616→
+   617→    for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+   618→      try {
+   619→        print('[RazorpayService] _tryRecoverFromOrderStatus: poll $attempt/$maxAttempts (orderId=$orderId)...');
+   620→        final status = await PaymentApiService.getOrderStatus(orderId: orderId)
+   621→            .timeout(pollTimeout, onTimeout: () {
+   622→          throw TimeoutException('order-status check timed out');
+   623→        });
+   624→        final paid = status['paid'] == true;
+   625→        final granted = status['granted'] == true;
+   626→        print('[RazorpayService] _tryRecoverFromOrderStatus: poll $attempt → status=${status['status']}, paid=$paid, granted=$granted');
+   627→        if (paid && granted) {
+   628→          // The webhook already processed this payment. Treat as success.
+   629→          print('[RazorpayService] _tryRecoverFromOrderStatus: RECOVERED on poll $attempt — order is PAID + granted, calling onSuccess');
+   630→          onSuccess(response);
+   631→          return true;
+   632→        }
+   633→        // Order is not yet PAID/granted. The webhook may not have fired yet
+   634→        // (it's async). Wait and poll again, unless this was the last attempt.
+   635→        if (attempt < maxAttempts) {
+   636→          print('[RazorpayService] _tryRecoverFromOrderStatus: order not yet PAID — waiting ${pollInterval.inSeconds}s before next poll (webhook may still be processing)');
+   637→          await Future<void>.delayed(pollInterval);
+   638→        }
+   639→      } catch (e) {
+   640→        print('[RazorpayService] _tryRecoverFromOrderStatus: poll $attempt failed: $e');
+   641→        if (attempt < maxAttempts) {
+   642→          await Future<void>.delayed(pollInterval);
+   643→        }
+   644→      }
+   645→    }
+   646→    print('[RazorpayService] _tryRecoverFromOrderStatus: all $maxAttempts polls exhausted — order not yet PAID. Webhook may still be processing; user should check My Purchases.');
+   647→    return false;
+   648→  }
+   649→
+   650→  // ==================== CLEANUP ====================
+   651→  static void clear() {
+   652→    _razorpay?.clear();
+   653→  }
+   654→}
+   655→

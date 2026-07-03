@@ -1,0 +1,942 @@
+     1→// =============================================================================
+     2→// ExamVault - Take Test Screen (Test taking with timer)
+     3→// =============================================================================
+     4→
+     5→import 'dart:async';
+     6→import 'package:flutter/material.dart';
+     7→import 'package:provider/provider.dart';
+     8→import '../../models/test_model.dart';
+     9→import '../../models/question_model.dart';
+    10→import '../../models/test_result_model.dart';
+    11→import '../../services/access_service.dart';
+    12→import '../../services/firestore_service.dart';
+    13→import '../../services/payment_api_service.dart';
+    14→import '../../services/razorpay_service.dart';
+    15→import '../../theme/app_theme.dart';
+    16→import '../../providers/auth_provider.dart';
+    17→import '../../widgets/payment_progress_dialog.dart';
+    18→import 'result_screen.dart';
+    19→
+    20→class TakeTestScreen extends StatefulWidget {
+    21→  final TestModel test;
+    22→
+    23→  const TakeTestScreen({super.key, required this.test});
+    24→
+    25→  @override
+    26→  State<TakeTestScreen> createState() => _TakeTestScreenState();
+    27→}
+    28→
+    29→class _TakeTestScreenState extends State<TakeTestScreen> {
+    30→  List<QuestionModel> _questions = [];
+    31→  List<int> _userAnswers = [];
+    32→  int _currentQuestionIndex = 0;
+    33→  Timer? _timer;
+    34→  int _timeRemaining = 0;
+    35→  bool _isLoading = true;
+    36→  bool _isSubmitting = false; // guards against double-submission
+    37→  bool _accessGranted = false;
+    38→  // True while the server-side access check is in flight. Distinguished from
+    39→  // _isLoading (which is for question loading) so the paywall doesn't flash
+    40→  // before the access decision arrives.
+    41→  bool _accessChecking = true;
+    42→  // True if the access-check endpoint 404'd (backend not built yet). In that
+    43→  // case we fall back to the legacy local check (user.isPremium || hasTest).
+    44→  bool _accessCheckUnavailable = false;
+    45→
+    46→  @override
+    47→  void initState() {
+    48→    super.initState();
+    49→    _checkAccessAndLoad();
+    50→    _timeRemaining = widget.test.duration * 60;
+    51→  }
+    52→
+    53→  /// Checks whether the user has access to this test. Uses a FAST LOCAL
+    54→  /// CHECK first (premium or purchased in the local UserModel) — if the
+    55→  /// local state says the user has access, we grant it immediately and load
+    56→  /// questions without any network round-trip. This makes opening a test
+    57→  /// after purchasing it INSTANT (the v1.27 fix made the button flip to
+    58→  /// "Start Test" after purchase; this fix makes tapping it open the test
+    59→  /// without the 350-950ms server access-check delay).
+    60→  ///
+    61→  /// If the local check says NO access, falls back to the server-side access
+    62→  /// check (single source of truth). If the backend grants access, loads
+    63→  /// questions; otherwise shows the paywall.
+    64→  Future<void> _checkAccessAndLoad() async {
+    65→    final auth = Provider.of<AuthProvider>(context, listen: false);
+    66→    final user = auth.user;
+    67→
+    68→    // Fast path: free tests never need an access check.
+    69→    if (!widget.test.isPaid) {
+    70→      _accessGranted = true;
+    71→      _accessChecking = false;
+    72→      _loadQuestions();
+    73→      _startTimer();
+    74→      if (mounted) setState(() {});
+    75→      return;
+    76→    }
+    77→
+    78→    // FAST LOCAL CHECK — if the user is premium or has purchased this test
+    79→    // (according to the local UserModel, which is updated optimistically
+    80→    // after a purchase), grant access immediately. The server-side check is
+    81→    // the ultimate gatekeeper, but for a snappy UX we trust the local state
+    82→    // first. The 60s cache in AccessService will also return a positive
+    83→    // decision instantly if we just checked.
+    84→    final localIsPremium = user?.isPremium ?? false;
+    85→    final localHasTest =
+    86→        user?.purchasedTests.contains(widget.test.id) ?? false;
+    87→    if (localIsPremium || localHasTest) {
+    88→      _accessGranted = true;
+    89→      _accessChecking = false;
+    90→      _loadQuestions();
+    91→      _startTimer();
+    92→      if (mounted) setState(() {});
+    93→      return;
+    94→    }
+    95→
+    96→    // SERVER CHECK — for tests the user doesn't locally own. This catches
+    97→    // entitlements granted on another device or via a backend webhook.
+    98→    try {
+    99→      final decision = await AccessService.checkTestAccess(
+   100→        widget.test.id,
+   101→        subjectId: widget.test.subjectId.isNotEmpty
+   102→            ? widget.test.subjectId
+   103→            : null,
+   104→      );
+   105→      if (!mounted) return;
+   106→      _accessChecking = false;
+   107→      _accessGranted = decision.allowed;
+   108→      if (_accessGranted) {
+   109→        _loadQuestions();
+   110→        _startTimer();
+   111→      } else {
+   112→        _isLoading = false;
+   113→      }
+   114→      setState(() {});
+   115→    } on PaymentApiException catch (e) {
+   116→      if (!mounted) return;
+   117→      _accessChecking = false;
+   118→      _accessCheckUnavailable = e.statusCode == 404;
+   119→      // Fall back to local check.
+   120→      _accessGranted = localIsPremium || localHasTest;
+   121→      if (_accessGranted) {
+   122→        _loadQuestions();
+   123→        _startTimer();
+   124→      } else {
+   125→        _isLoading = false;
+   126→      }
+   127→      setState(() {});
+   128→    } catch (_) {
+   129→      if (!mounted) return;
+   130→      _accessChecking = false;
+   131→      _accessGranted = localIsPremium || localHasTest;
+   132→      if (_accessGranted) {
+   133→        _loadQuestions();
+   134→        _startTimer();
+   135→      } else {
+   136→        _isLoading = false;
+   137→      }
+   138→      setState(() {});
+   139→    }
+   140→  }
+   141→
+   142→  @override
+   143→  void dispose() {
+   144→    _timer?.cancel();
+   145→    super.dispose();
+   146→  }
+   147→
+   148→  void _loadQuestions() async {
+   149→    try {
+   150→      final questions = await FirestoreService.getQuestions(widget.test.id);
+   151→      if (!mounted) return;
+   152→      setState(() {
+   153→        _questions = questions;
+   154→        _userAnswers = List.filled(questions.length, -1);
+   155→        _isLoading = false;
+   156→      });
+   157→    } catch (e) {
+   158→      if (!mounted) return;
+   159→      setState(() {
+   160→        _isLoading = false;
+   161→      });
+   162→    }
+   163→  }
+   164→
+   165→  void _startTimer() {
+   166→    _timer = Timer.periodic(const Duration(seconds: 1), (timer) {
+   167→      if (!mounted) {
+   168→        timer.cancel();
+   169→        return;
+   170→      }
+   171→      setState(() {
+   172→        if (_timeRemaining > 0) {
+   173→          _timeRemaining--;
+   174→        } else {
+   175→          _timer?.cancel();
+   176→          _submitTest();
+   177→        }
+   178→      });
+   179→    });
+   180→  }
+   181→
+   182→  void _selectAnswer(int optionIndex) {
+   183→    setState(() {
+   184→      _userAnswers[_currentQuestionIndex] = optionIndex;
+   185→    });
+   186→  }
+   187→
+   188→  void _nextQuestion() {
+   189→    if (_currentQuestionIndex < _questions.length - 1) {
+   190→      setState(() {
+   191→        _currentQuestionIndex++;
+   192→      });
+   193→    }
+   194→  }
+   195→
+   196→  void _previousQuestion() {
+   197→    if (_currentQuestionIndex > 0) {
+   198→      setState(() {
+   199→        _currentQuestionIndex--;
+   200→      });
+   201→    }
+   202→  }
+   203→
+   204→  void _goToQuestion(int index) {
+   205→    setState(() {
+   206→      _currentQuestionIndex = index;
+   207→    });
+   208→    Navigator.pop(context);
+   209→  }
+   210→
+   211→  void _submitTest() {
+   212→    // Guard against double-submission (e.g. timer fires while user taps Submit)
+   213→    if (_isSubmitting) return;
+   214→    _isSubmitting = true;
+   215→    _timer?.cancel();
+   216→
+   217→    int correct = 0;
+   218→    int wrong = 0;
+   219→    int unattempted = 0;
+   220→    int obtainedMarks = 0;
+   221→
+   222→    for (int i = 0; i < _questions.length; i++) {
+   223→      if (_userAnswers[i] == -1) {
+   224→        unattempted++;
+   225→      } else if (_userAnswers[i] == _questions[i].correctAnswerIndex) {
+   226→        correct++;
+   227→        obtainedMarks += _questions[i].marks;
+   228→      } else {
+   229→        wrong++;
+   230→        if (widget.test.negativeMarking) {
+   231→          obtainedMarks -= widget.test.negativeMarks.toInt();
+   232→        }
+   233→      }
+   234→    }
+   235→
+   236→    final percentage = _questions.isNotEmpty
+   237→        ? (correct / _questions.length) * 100
+   238→        : 0.0;
+   239→    final accuracy = (correct + wrong) > 0
+   240→        ? (correct / (correct + wrong)) * 100
+   241→        : 0.0;
+   242→
+   243→    final userId = Provider.of<AuthProvider>(context, listen: false).user?.id ?? '';
+   244→
+   245→    final result = TestResultModel(
+   246→      id: '',
+   247→      userId: userId,
+   248→      testId: widget.test.id,
+   249→      testTitle: widget.test.title,
+   250→      totalQuestions: _questions.length,
+   251→      correctAnswers: correct,
+   252→      wrongAnswers: wrong,
+   253→      unattempted: unattempted,
+   254→      totalMarks: widget.test.totalMarks,
+   255→      obtainedMarks: obtainedMarks,
+   256→      percentage: percentage,
+   257→      isPassed: percentage >= widget.test.passingMarks,
+   258→      timeTaken: widget.test.duration * 60 - _timeRemaining,
+   259→      totalTime: widget.test.duration * 60,
+   260→      userAnswers: _userAnswers,
+   261→      correctAnswersList: _questions.map((q) => q.correctAnswerIndex).toList(),
+   262→      accuracy: accuracy,
+   263→      attemptedAt: DateTime.now(),
+   264→    );
+   265→
+   266→    // Save result + update user stats in the background. Wrap each in its own
+   267→    // try/catch so a failure in one doesn't block the others, and so a
+   268→    // Firestore error never crashes the app after submission (which was
+   269→    // the "app auto-closes after taking a test" bug). We navigate to the
+   270→    // result screen regardless — the user already finished the test and
+   271→    // deserves to see their score.
+   272→    //
+   273→    // IMPORTANT (v1.9.0 crash fix): The previous version called
+   274→    // AdMobService.showInterstitialAd() here. Showing an interstitial ad
+   275→    // immediately after test submission was the #1 cause of the post-test
+   276→    // native crash — the ad's fullScreenContentCallback was never wired,
+   277→    // so a failed/dismissed ad could leave the activity in a broken state
+   278→    // and the JVM would tear down the process. We now NEVER show an
+   279→    // interstitial on the submit path. Ads may still be shown elsewhere
+   280→    // (banners) but never as a blocking modal between test and result.
+   281→    _persistAndNavigate(result, userId, correct, _questions.length, percentage);
+   282→  }
+   283→
+   284→  Future<void> _persistAndNavigate(
+   285→    TestResultModel result,
+   286→    String userId,
+   287→    int correctAnswers,
+   288→    int totalQuestions,
+   289→    double percentage,
+   290→  ) async {
+   291→    // 1) Save the result (best-effort).
+   292→    try {
+   293→      await FirestoreService.saveResult(result);
+   294→    } catch (e) {
+   295→      print('saveResult error (non-fatal): $e');
+   296→    }
+   297→
+   298→    // 2) Update user aggregate stats (totalTestsAttempted, XP, level, streak,
+   299→    //    averageScore). This is what makes the profile test-count update.
+   300→    if (userId.isNotEmpty) {
+   301→      try {
+   302→        await FirestoreService.updateUserStatsAfterTest(
+   303→          userId: userId,
+   304→          correctAnswers: correctAnswers,
+   305→          totalQuestions: totalQuestions,
+   306→          percentage: percentage,
+   307→        );
+   308→      } catch (e) {
+   309→        print('updateUserStatsAfterTest error (non-fatal): $e');
+   310→      }
+   311→
+   312→      // 3) Refresh the in-memory AuthProvider user so the profile screen
+   313→      //    reflects the new counts immediately without requiring a re-login.
+   314→      try {
+   315→        if (mounted) {
+   316→          await Provider.of<AuthProvider>(context, listen: false).loadUserData();
+   317→        }
+   318→      } catch (e) {
+   319→        print('loadUserData after test error (non-fatal): $e');
+   320→      }
+   321→    }
+   322→
+   323→    // 4) Navigate to result screen. Use pushReplacement so the test screen is
+   324→    //    popped off the stack (prevents "back" returning to a finished test).
+   325→    //    No interstitial ad in between — see comment in _submitTest().
+   326→    if (!mounted) return;
+   327→    try {
+   328→      Navigator.pushReplacement(
+   329→        context,
+   330→        MaterialPageRoute(
+   331→          builder: (_) => ResultScreen(
+   332→            result: result,
+   333→            questions: _questions,
+   334→            userAnswers: _userAnswers,
+   335→          ),
+   336→        ),
+   337→      );
+   338→    } catch (e) {
+   339→      print('navigate to result error (non-fatal): $e');
+   340→    }
+   341→  }
+   342→
+   343→  /// Paywall shown when a user tries to open a paid test they haven't bought
+   344→  /// and aren't premium for. Offers two paths:
+   345→  ///   1. Buy this test individually (₹{test.price}) — only if the test has a
+   346→  ///      per-test price set by admin
+   347→  ///   2. Upgrade to Premium for unlimited access
+   348→  /// The old "Unlock subject pack ₹99" option was removed because subject-pack
+   349→  /// prices are not yet admin-configurable — the hardcoded ₹99 placeholder was
+   350→  /// confusing users.
+   351→  /// If the access-check endpoint 404'd (backend not built), a "rolling out"
+   352→  /// banner is shown above the buttons.
+   353→  Widget _buildPaywall(BuildContext context) {
+   354→    final auth = Provider.of<AuthProvider>(context, listen: false);
+   355→    final user = auth.user;
+   356→    final canBuyTest = widget.test.price > 0;
+   357→    return Scaffold(
+   358→      appBar: AppBar(title: Text(widget.test.title)),
+   359→      body: Center(
+   360→        child: SingleChildScrollView(
+   361→          padding: const EdgeInsets.all(24),
+   362→          child: Column(
+   363→            mainAxisAlignment: MainAxisAlignment.center,
+   364→            children: [
+   365→              Container(
+   366→                padding: const EdgeInsets.all(20),
+   367→                decoration: BoxDecoration(
+   368→                  color: AppTheme.accentColor.withOpacity(0.1),
+   369→                  shape: BoxShape.circle,
+   370→                ),
+   371→                child: const Icon(Icons.lock,
+   372→                    size: 56, color: AppTheme.accentColor),
+   373→              ),
+   374→              const SizedBox(height: 20),
+   375→              const Text(
+   376→                'Premium Test',
+   377→                style: TextStyle(
+   378→                  fontSize: 22,
+   379→                  fontWeight: FontWeight.w700,
+   380→                ),
+   381→              ),
+   382→              const SizedBox(height: 8),
+   383→              Text(
+   384→                canBuyTest
+   385→                    ? 'Buy this test or upgrade to Premium for unlimited access.'
+   386→                    : 'Upgrade to Premium to attempt this test.',
+   387→                textAlign: TextAlign.center,
+   388→                style: TextStyle(
+   389→                  fontSize: 14,
+   390→                  color: Colors.grey.shade600,
+   391→                ),
+   392→              ),
+   393→              if (_accessCheckUnavailable) ...[
+   394→                const SizedBox(height: 16),
+   395→                Container(
+   396→                  padding: const EdgeInsets.all(12),
+   397→                  decoration: BoxDecoration(
+   398→                    color: AppTheme.warningColor.withOpacity(0.1),
+   399→                    borderRadius: BorderRadius.circular(8),
+   400→                  ),
+   401→                  child: Row(
+   402→                    children: [
+   403→                      const Icon(Icons.info_outline,
+   404→                          color: AppTheme.warningColor, size: 18),
+   405→                      const SizedBox(width: 8),
+   406→                      Expanded(
+   407→                        child: Text(
+   408→                          'Live access verification is being rolled out. '
+   409→                          'Please update the app soon.',
+   410→                          style: TextStyle(
+   411→                            fontSize: 11,
+   412→                            color: Colors.grey.shade700,
+   413→                          ),
+   414→                        ),
+   415→                      ),
+   416→                    ],
+   417→                  ),
+   418→                ),
+   419→              ],
+   420→              const SizedBox(height: 28),
+   421→              if (canBuyTest) ...[
+   422→                SizedBox(
+   423→                  width: double.infinity,
+   424→                  height: 48,
+   425→                  child: ElevatedButton.icon(
+   426→                    onPressed: user == null ? null : _buyTest,
+   427→                    style: ElevatedButton.styleFrom(
+   428→                      backgroundColor: AppTheme.successColor,
+   429→                      foregroundColor: Colors.white,
+   430→                    ),
+   431→                    icon: const Icon(Icons.shopping_cart_outlined),
+   432→                    label: Text('Buy for ₹${widget.test.price}'),
+   433→                  ),
+   434→                ),
+   435→                const SizedBox(height: 12),
+   436→              ],
+   437→              SizedBox(
+   438→                width: double.infinity,
+   439→                height: 48,
+   440→                child: OutlinedButton.icon(
+   441→                  onPressed: () {
+   442→                    Navigator.pushNamed(context, '/premium');
+   443→                  },
+   444→                  icon: const Icon(Icons.workspace_premium,
+   445→                      color: AppTheme.accentColor),
+   446→                  label: const Text('Go Premium'),
+   447→                ),
+   448→              ),
+   449→              const SizedBox(height: 16),
+   450→              TextButton(
+   451→                onPressed: () => Navigator.pop(context),
+   452→                child: const Text('Go Back'),
+   453→              ),
+   454→            ],
+   455→          ),
+   456→        ),
+   457→      ),
+   458→    );
+   459→  }
+   460→
+   461→  /// Buy this single test via the server-side-verified Razorpay flow.
+   462→  /// Shows loading indicators during createOrder ("Preparing payment...")
+   463→  /// and verifyPayment ("Verifying payment...") so the user always sees
+   464→  /// what's happening. On success, writes a positive AccessDecision to the
+   465→  /// cache (so the next access check is instant), optimistically marks the
+   466→  /// test as purchased locally, and loads the test questions.
+   467→  ///
+   468→  /// BOTH dialogs are cancellable — the user is NEVER trapped. A 25-second
+   469→  /// safety timer force-dismisses any stuck dialog. A successful payment is
+   470→  /// ALWAYS processed (onSuccess runs regardless of the `cancelled` flag).
+   471→  void _buyTest() {
+   472→    final auth = Provider.of<AuthProvider>(context, listen: false);
+   473→    final user = auth.user;
+   474→    if (user == null) return;
+   475→
+   476→    final progress = PaymentProgressDialog();
+   477→    // `cancelled` only suppresses *error* snackbars after the user explicitly
+   478→    // cancelled. It does NOT block onSuccess — a payment that actually
+   479→    // succeeded must always be honoured.
+   480→    bool cancelled = false;
+   481→
+   482→    void showCheckPurchasesMessage() {
+   483→      if (!mounted) return;
+   484→      ScaffoldMessenger.of(context).showSnackBar(
+   485→        SnackBar(
+   486→          duration: const Duration(seconds: 10),
+   487→          content: const Text(
+   488→            'Payment is taking longer than expected. Check "My Purchases" to see if it succeeded.',
+   489→          ),
+   490→          backgroundColor: AppTheme.warningColor,
+   491→          action: SnackBarAction(
+   492→            label: 'My Purchases',
+   493→            textColor: Colors.white,
+   494→            onPressed: () {
+   495→              if (mounted) {
+   496→                Navigator.pushNamed(context, '/my-purchases');
+   497→              }
+   498→            },
+   499→          ),
+   500→        ),
+   501→      );
+   502→    }
+   503→
+   504→    RazorpayService.startTestPurchase(
+   505→      userId: user.id,
+   506→      userName: user.name,
+   507→      userEmail: user.email ?? 'user@examvault.com',
+   508→      userPhone: user.phoneNumber ?? '9999999999',
+   509→      testId: widget.test.id,
+   510→      testTitle: widget.test.title,
+   511→      amount: widget.test.price,
+   512→      subjectId: widget.test.subjectId.isNotEmpty ? widget.test.subjectId : null,
+   513→      onPreparing: () {
+   514→        if (cancelled) return;
+   515→        progress.show(
+   516→          context,
+   517→          message: 'Preparing payment...',
+   518→          cancellable: true,
+   519→          onCancel: () => cancelled = true,
+   520→          onSafetyTimeout: showCheckPurchasesMessage,
+   521→        );
+   522→      },
+   523→      onCheckoutOpened: () {
+   524→        progress.dismiss();
+   525→      },
+   526→      onVerifying: () {
+   527→        if (cancelled) return;
+   528→        progress.show(
+   529→          context,
+   530→          message: 'Verifying payment...',
+   531→          cancellable: true,
+   532→          cancelLabel: 'Check My Purchases',
+   533→          // 60s accommodates the verify call (20s) + order-status polling
+   534→          // (up to 3 polls × ~13s) which lets the Razorpay webhook fire.
+   535→          safetyTimeout: const Duration(seconds: 60),
+   536→          onCancel: () {
+   537→            cancelled = true;
+   538→            showCheckPurchasesMessage();
+   539→          },
+   540→          onSafetyTimeout: showCheckPurchasesMessage,
+   541→        );
+   542→      },
+   543→      onSuccess: (_) {
+   544→        // ALWAYS process a successful payment — even if the user dismissed
+   545→        // the dialog, the payment went through and the test must be unlocked.
+   546→        progress.dismiss();
+   547→
+   548→        // Write a positive AccessDecision to the cache so the next access
+   549→        // check is instant. This is the key fix for the post-payment loading
+   550→        // delay — instead of clearing the cache (which forces a network
+   551→        // round-trip), we write the positive decision directly.
+   552→        AccessService.markTestPurchased(widget.test.id);
+   553→        // Optimistically mark the test as purchased locally.
+   554→        auth.addPurchasedTest(widget.test.id);
+   555→        // Note: we intentionally do NOT call auth.loadUserData() here.
+   556→        // loadUserData() hits Firestore (which doesn't store Prisma purchase
+   557→        // info) and triggers a loading state. The optimistic update above
+   558→        // is sufficient for the UI.
+   559→        if (!mounted) return;
+   560→        ScaffoldMessenger.of(context).showSnackBar(
+   561→          SnackBar(
+   562→            content:
+   563→                Text('Payment successful! "${widget.test.title}" unlocked.'),
+   564→            backgroundColor: AppTheme.successColor,
+   565→          ),
+   566→        );
+   567→        // CRITICAL: set _accessChecking = false so the build method's
+   568→        // `if (_accessChecking || _isLoading)` guard doesn't keep showing
+   569→        // the loading screen forever. After payment success we KNOW access
+   570→        // is granted, so we skip directly to loading questions.
+   571→        setState(() {
+   572→          _accessChecking = false;
+   573→          _accessGranted = true;
+   574→          _isLoading = true;
+   575→        });
+   576→        _loadQuestions();
+   577→        _startTimer();
+   578→      },
+   579→      onError: (response) {
+   580→        progress.dismiss();
+   581→        // If the user explicitly cancelled, don't show a scary "Payment
+   582→        // failed" message — they already know.
+   583→        if (cancelled) return;
+   584→        if (!mounted) return;
+   585→        ScaffoldMessenger.of(context).showSnackBar(
+   586→          SnackBar(
+   587→            content: Text(
+   588→                'Payment failed: ${response.message ?? 'Please try again.'}'),
+   589→            backgroundColor: AppTheme.errorColor,
+   590→          ),
+   591→        );
+   592→      },
+   593→    );
+   594→  }
+   595→
+   596→  @override
+   597→  Widget build(BuildContext context) {
+   598→    if (_accessChecking || _isLoading) {
+   599→      return Scaffold(
+   600→        appBar: AppBar(title: const Text('Loading...')),
+   601→        body: const Center(child: CircularProgressIndicator()),
+   602→      );
+   603→    }
+   604→
+   605→    // Paywall: if the test is paid and the user hasn't purchased it and isn't
+   606→    // premium, show a purchase prompt instead of the test.
+   607→    if (!_accessGranted) {
+   608→      return _buildPaywall(context);
+   609→    }
+   610→
+   611→    // Empty-questions guard: if questions failed to load, show a friendly
+   612→    // message instead of crashing on _questions[_currentQuestionIndex].
+   613→    if (_questions.isEmpty) {
+   614→      return Scaffold(
+   615→        appBar: AppBar(title: Text(widget.test.title)),
+   616→        body: Center(
+   617→          child: Padding(
+   618→            padding: const EdgeInsets.all(24),
+   619→            child: Column(
+   620→              mainAxisAlignment: MainAxisAlignment.center,
+   621→              children: [
+   622→                const Icon(Icons.inbox, size: 64, color: Colors.grey),
+   623→                const SizedBox(height: 16),
+   624→                const Text(
+   625→                  'No questions available for this test yet.',
+   626→                  textAlign: TextAlign.center,
+   627→                  style: TextStyle(fontSize: 16),
+   628→                ),
+   629→                const SizedBox(height: 24),
+   630→                OutlinedButton(
+   631→                  onPressed: () => Navigator.pop(context),
+   632→                  child: const Text('Go Back'),
+   633→                ),
+   634→              ],
+   635→            ),
+   636→          ),
+   637→        ),
+   638→      );
+   639→    }
+   640→
+   641→    final isDark = Theme.of(context).brightness == Brightness.dark;
+   642→    final question = _questions[_currentQuestionIndex];
+   643→    final minutes = _timeRemaining ~/ 60;
+   644→    final seconds = _timeRemaining % 60;
+   645→
+   646→    return PopScope(
+   647→      canPop: false,
+   648→      onPopInvoked: (didPop) {
+   649→        if (!didPop) {
+   650→          _showExitDialog();
+   651→        }
+   652→      },
+   653→      child: Scaffold(
+   654→        appBar: AppBar(
+   655→          title: Text(
+   656→            widget.test.title,
+   657→            maxLines: 1,
+   658→            overflow: TextOverflow.ellipsis,
+   659→          ),
+   660→          actions: [
+   661→            Center(
+   662→              child: Container(
+   663→                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+   664→                decoration: BoxDecoration(
+   665→                  color: _timeRemaining < 300 ? Colors.red : Colors.white.withOpacity(0.2),
+   666→                  borderRadius: BorderRadius.circular(20),
+   667→                ),
+   668→                child: Text(
+   669→                  '${minutes.toString().padLeft(2, '0')}:${seconds.toString().padLeft(2, '0')}',
+   670→                  style: const TextStyle(
+   671→                    color: Colors.white,
+   672→                    fontWeight: FontWeight.w600,
+   673→                  ),
+   674→                ),
+   675→              ),
+   676→            ),
+   677→            IconButton(
+   678→              icon: const Icon(Icons.grid_view),
+   679→              onPressed: _showQuestionPalette,
+   680→            ),
+   681→            const SizedBox(width: 8),
+   682→          ],
+   683→        ),
+   684→        body: Column(
+   685→          children: [
+   686→            // Progress bar
+   687→            LinearProgressIndicator(
+   688→              value: (_currentQuestionIndex + 1) / _questions.length,
+   689→              backgroundColor: isDark ? Colors.grey.shade800 : Colors.grey.shade200,
+   690→              valueColor: const AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+   691→            ),
+   692→            // Question counter
+   693→            Padding(
+   694→              padding: const EdgeInsets.all(16),
+   695→              child: Row(
+   696→                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+   697→                children: [
+   698→                  Text(
+   699→                    'Question ${_currentQuestionIndex + 1} of ${_questions.length}',
+   700→                    style: TextStyle(
+   701→                      fontSize: 14,
+   702→                      fontWeight: FontWeight.w600,
+   703→                      color: isDark ? Colors.grey.shade100 : Colors.black87,
+   704→                    ),
+   705→                  ),
+   706→                  Text(
+   707→                    'Marks: ${question.marks}',
+   708→                    style: TextStyle(
+   709→                      fontSize: 12,
+   710→                      color: isDark ? Colors.grey.shade400 : Colors.grey,
+   711→                    ),
+   712→                  ),
+   713→                ],
+   714→              ),
+   715→            ),
+   716→            // Question
+   717→            Expanded(
+   718→              child: SingleChildScrollView(
+   719→                padding: const EdgeInsets.symmetric(horizontal: 16),
+   720→                child: Column(
+   721→                  crossAxisAlignment: CrossAxisAlignment.start,
+   722→                  children: [
+   723→                    if (question.imageUrl != null) ...[
+   724→                      ClipRRect(
+   725→                        borderRadius: BorderRadius.circular(12),
+   726→                        child: Image.network(question.imageUrl!),
+   727→                      ),
+   728→                      const SizedBox(height: 16),
+   729→                    ],
+   730→                    Text(
+   731→                      question.question,
+   732→                      style: TextStyle(
+   733→                        fontSize: 16,
+   734→                        fontWeight: FontWeight.w500,
+   735→                        height: 1.5,
+   736→                        color: isDark ? Colors.grey.shade50 : Colors.black87,
+   737→                      ),
+   738→                    ),
+   739→                    const SizedBox(height: 24),
+   740→                    // Options
+   741→                    ...List.generate(question.options.length, (index) {
+   742→                      final isSelected = _userAnswers[_currentQuestionIndex] == index;
+   743→                      return Container(
+   744→                        margin: const EdgeInsets.only(bottom: 12),
+   745→                        child: InkWell(
+   746→                          onTap: () => _selectAnswer(index),
+   747→                          borderRadius: BorderRadius.circular(12),
+   748→                          child: Container(
+   749→                            padding: const EdgeInsets.all(16),
+   750→                            decoration: BoxDecoration(
+   751→                              color: isSelected
+   752→                                  ? AppTheme.primaryColor.withOpacity(0.1)
+   753→                                  : Theme.of(context).cardColor,
+   754→                              borderRadius: BorderRadius.circular(12),
+   755→                              border: Border.all(
+   756→                                color: isSelected
+   757→                                    ? AppTheme.primaryColor
+   758→                                    : (isDark ? Colors.grey.shade600 : Colors.grey.shade300),
+   759→                                width: isSelected ? 2 : 1,
+   760→                              ),
+   761→                            ),
+   762→                            child: Row(
+   763→                              children: [
+   764→                                Container(
+   765→                                  width: 32,
+   766→                                  height: 32,
+   767→                                  decoration: BoxDecoration(
+   768→                                    color: isSelected
+   769→                                        ? AppTheme.primaryColor
+   770→                                        : (isDark ? Colors.grey.shade700 : Colors.grey.shade100),
+   771→                                    borderRadius: BorderRadius.circular(16),
+   772→                                  ),
+   773→                                  child: Center(
+   774→                                    child: Text(
+   775→                                      String.fromCharCode(65 + index),
+   776→                                      style: TextStyle(
+   777→                                        fontWeight: FontWeight.w600,
+   778→                                        color: isSelected
+   779→                                            ? Colors.white
+   780→                                            : (isDark ? Colors.grey.shade100 : Colors.grey.shade700),
+   781→                                      ),
+   782→                                    ),
+   783→                                  ),
+   784→                                ),
+   785→                                const SizedBox(width: 12),
+   786→                                Expanded(
+   787→                                  child: Text(
+   788→                                    question.options[index],
+   789→                                    style: TextStyle(
+   790→                                      fontSize: 14,
+   791→                                      color: isSelected
+   792→                                          ? AppTheme.primaryColor
+   793→                                          : (isDark ? Colors.grey.shade50 : Colors.black87),
+   794→                                    ),
+   795→                                  ),
+   796→                                ),
+   797→                              ],
+   798→                            ),
+   799→                          ),
+   800→                        ),
+   801→                      );
+   802→                    }),
+   803→                  ],
+   804→                ),
+   805→              ),
+   806→            ),
+   807→            // Bottom navigation
+   808→            Container(
+   809→              padding: const EdgeInsets.all(16),
+   810→              decoration: BoxDecoration(
+   811→                color: Theme.of(context).scaffoldBackgroundColor,
+   812→                boxShadow: [
+   813→                  BoxShadow(
+   814→                    color: Colors.black.withOpacity(0.05),
+   815→                    blurRadius: 10,
+   816→                    offset: const Offset(0, -2),
+   817→                  ),
+   818→                ],
+   819→              ),
+   820→              child: Row(
+   821→                children: [
+   822→                  if (_currentQuestionIndex > 0)
+   823→                    Expanded(
+   824→                      child: OutlinedButton(
+   825→                        onPressed: _previousQuestion,
+   826→                        child: const Text('Previous'),
+   827→                      ),
+   828→                    ),
+   829→                  if (_currentQuestionIndex > 0)
+   830→                    const SizedBox(width: 12),
+   831→                  Expanded(
+   832→                    child: _currentQuestionIndex == _questions.length - 1
+   833→                        ? ElevatedButton(
+   834→                            onPressed: _submitTest,
+   835→                            style: ElevatedButton.styleFrom(
+   836→                              backgroundColor: AppTheme.successColor,
+   837→                            ),
+   838→                            child: const Text('Submit Test'),
+   839→                          )
+   840→                        : ElevatedButton(
+   841→                            onPressed: _nextQuestion,
+   842→                            child: const Text('Next'),
+   843→                          ),
+   844→                  ),
+   845→                ],
+   846→              ),
+   847→            ),
+   848→          ],
+   849→        ),
+   850→      ),
+   851→    );
+   852→  }
+   853→
+   854→  void _showQuestionPalette() {
+   855→    final isDark = Theme.of(context).brightness == Brightness.dark;
+   856→    showDialog(
+   857→      context: context,
+   858→      builder: (context) {
+   859→        return AlertDialog(
+   860→          title: const Text('Question Palette'),
+   861→          content: SizedBox(
+   862→            width: double.maxFinite,
+   863→            child: GridView.builder(
+   864→              shrinkWrap: true,
+   865→              gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+   866→                crossAxisCount: 5,
+   867→                mainAxisSpacing: 8,
+   868→                crossAxisSpacing: 8,
+   869→              ),
+   870→              itemCount: _questions.length,
+   871→              itemBuilder: (context, index) {
+   872→                final isAnswered = _userAnswers[index] != -1;
+   873→                final isCurrent = index == _currentQuestionIndex;
+   874→                return GestureDetector(
+   875→                  onTap: () => _goToQuestion(index),
+   876→                  child: Container(
+   877→                    decoration: BoxDecoration(
+   878→                      color: isCurrent
+   879→                          ? AppTheme.primaryColor
+   880→                          : isAnswered
+   881→                              ? AppTheme.successColor.withOpacity(0.2)
+   882→                              : (isDark ? Colors.grey.shade700 : Colors.grey.shade200),
+   883→                      borderRadius: BorderRadius.circular(8),
+   884→                      border: isCurrent
+   885→                          ? Border.all(color: AppTheme.primaryColor, width: 2)
+   886→                          : null,
+   887→                    ),
+   888→                    child: Center(
+   889→                      child: Text(
+   890→                        '${index + 1}',
+   891→                        style: TextStyle(
+   892→                          fontWeight: FontWeight.w600,
+   893→                          color: isCurrent
+   894→                              ? Colors.white
+   895→                              : isAnswered
+   896→                                  ? AppTheme.successColor
+   897→                                  : (isDark ? Colors.grey.shade100 : Colors.grey.shade700),
+   898→                        ),
+   899→                      ),
+   900→                    ),
+   901→                  ),
+   902→                );
+   903→              },
+   904→            ),
+   905→          ),
+   906→          actions: [
+   907→            TextButton(
+   908→              onPressed: () => Navigator.pop(context),
+   909→              child: const Text('Close'),
+   910→            ),
+   911→          ],
+   912→        );
+   913→      },
+   914→    );
+   915→  }
+   916→
+   917→  void _showExitDialog() {
+   918→    showDialog(
+   919→      context: context,
+   920→      builder: (context) {
+   921→        return AlertDialog(
+   922→          title: const Text('Exit Test?'),
+   923→          content: const Text('Your progress will be lost. Are you sure?'),
+   924→          actions: [
+   925→            TextButton(
+   926→              onPressed: () => Navigator.pop(context),
+   927→              child: const Text('Cancel'),
+   928→            ),
+   929→            TextButton(
+   930→              onPressed: () {
+   931→                Navigator.pop(context);
+   932→                Navigator.pop(context);
+   933→              },
+   934→              child: const Text('Exit'),
+   935→            ),
+   936→          ],
+   937→        );
+   938→      },
+   939→    );
+   940→  }
+   941→}
+   942→

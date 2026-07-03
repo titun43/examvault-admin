@@ -69,17 +69,24 @@ export async function POST(req: NextRequest) {
     const { productType, productId, productName, amount, idempotencyKey, meta } =
       body;
 
-    // ---- Validate presence ----
-    if (
-      !productType ||
-      !productId ||
-      !productName ||
-      typeof amount !== 'number' ||
-      amount <= 0 ||
-      !idempotencyKey
-    ) {
+    // ---- Validate ----
+    // Razorpay minimum is ₹1 (100 paise). We validate here so we return a
+    // clear error instead of forwarding Razorpay's "missing/invalid field".
+    const missing: string[] = [];
+    if (!productType) missing.push('productType');
+    if (!productId) missing.push('productId');
+    if (!productName) missing.push('productName');
+    if (typeof amount !== 'number' || !Number.isFinite(amount) || amount <= 0) {
+      missing.push('amount (must be > 0, Razorpay minimum is ₹1)');
+    }
+    if (!idempotencyKey) missing.push('idempotencyKey');
+
+    if (missing.length > 0) {
       return NextResponse.json(
-        { error: 'Missing or invalid fields' },
+        {
+          error: `Missing or invalid fields: ${missing.join(', ')}`,
+          missing,
+        },
         { status: 400 },
       );
     }
@@ -91,7 +98,7 @@ export async function POST(req: NextRequest) {
     ];
     if (!validTypes.includes(productType)) {
       return NextResponse.json(
-        { error: 'Invalid productType' },
+        { error: `Invalid productType. Must be one of: ${validTypes.join(', ')}` },
         { status: 400 },
       );
     }

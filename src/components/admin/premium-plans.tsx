@@ -135,8 +135,8 @@ export default function PremiumPlans() {
       toast.error('Plan name is required');
       return;
     }
-    if (form.price < 0) {
-      toast.error('Price cannot be negative');
+    if (!form.price || form.price <= 0) {
+      toast.error('Price must be greater than 0. Razorpay minimum is ₹1.');
       return;
     }
     setSaving(true);
@@ -432,6 +432,7 @@ export default function PremiumPlans() {
                 <Label>Price (INR) *</Label>
                 <Input
                   type="number"
+                  min={1}
                   value={form.price}
                   onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
                   placeholder="299"

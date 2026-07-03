@@ -244,12 +244,26 @@ export async function grantEntitlement(
       }
       case 'SUBJECT_PACK': {
         if (!meta?.subjectId) throw new Error('subjectId required for subject pack');
+        // CRITICAL FIX: `productId` param = order.productId = the Firestore
+        // subjectId (NOT the Prisma Product.id). SubjectPackPurchase.productId
+        // has a FK to Product.id, so using the Firestore id directly causes a
+        // foreign-key constraint violation — the entitlement is never created.
+        // Resolve the real Product.id by looking up (type=SUBJECT_PACK,
+        // refId=subjectId) inside this transaction.
+        const subjProduct = await tx.product.findFirst({
+          where: { type: 'SUBJECT_PACK', refId: meta.subjectId, isActive: true },
+        });
+        if (!subjProduct) {
+          throw new Error(
+            `SUBJECT_PACK product not found for subjectId: ${meta.subjectId}`,
+          );
+        }
         await tx.subjectPackPurchase.upsert({
           where: { userId_subjectId: { userId: prismaUserId, subjectId: meta.subjectId } },
           update: { isActive: true, paymentId, orderId, revokedAt: null, revokeReason: null },
           create: {
             userId: prismaUserId,
-            productId,
+            productId: subjProduct.id,
             subjectId: meta.subjectId,
             packName: productName,
             amount,
@@ -270,12 +284,27 @@ export async function grantEntitlement(
       }
       case 'EXAM_PACK': {
         if (!meta?.categoryId) throw new Error('categoryId required for exam pack');
+        // CRITICAL FIX: `productId` param = order.productId = the Firestore
+        // categoryId (NOT the Prisma Product.id). ExamPackPurchase.productId
+        // has a FK to Product.id, so using the Firestore id directly causes a
+        // foreign-key constraint violation — the entitlement is never created
+        // and the user sees "payment succeeded but still locked". Resolve the
+        // real Product.id by looking up (type=EXAM_PACK,
+        // refId=categoryId) inside this transaction.
+        const examProduct = await tx.product.findFirst({
+          where: { type: 'EXAM_PACK', refId: meta.categoryId, isActive: true },
+        });
+        if (!examProduct) {
+          throw new Error(
+            `EXAM_PACK product not found for categoryId: ${meta.categoryId}`,
+          );
+        }
         await tx.examPackPurchase.upsert({
           where: { userId_categoryId: { userId: prismaUserId, categoryId: meta.categoryId } },
           update: { isActive: true, paymentId, orderId, revokedAt: null, revokeReason: null },
           create: {
             userId: prismaUserId,
-            productId,
+            productId: examProduct.id,
             categoryId: meta.categoryId,
             packName: productName,
             amount,

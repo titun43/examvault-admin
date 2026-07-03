@@ -1474,14 +1474,14 @@ function Categories() {
                                         className: "w-5 h-5 text-emerald-400"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 289,
+                                        lineNumber: 290,
                                         columnNumber: 13
                                     }, this),
                                     " Categories"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 288,
+                                lineNumber: 289,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1489,13 +1489,13 @@ function Categories() {
                                 children: "Exam categories like SSC, Railway, UPSC, Banking"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 291,
+                                lineNumber: 292,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/categories.tsx",
-                        lineNumber: 287,
+                        lineNumber: 288,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1509,14 +1509,14 @@ function Categories() {
                                         className: "w-4 h-4 mr-1"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 295,
+                                        lineNumber: 296,
                                         columnNumber: 13
                                     }, this),
                                     " Add Category"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 294,
+                                lineNumber: 295,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1528,26 +1528,26 @@ function Categories() {
                                         className: "w-4 h-4 mr-1"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 302,
+                                        lineNumber: 303,
                                         columnNumber: 13
                                     }, this),
                                     " Bulk Add"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 297,
+                                lineNumber: 298,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/categories.tsx",
-                        lineNumber: 293,
+                        lineNumber: 294,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/admin/categories.tsx",
-                lineNumber: 286,
+                lineNumber: 287,
                 columnNumber: 7
             }, this),
             loading ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1556,12 +1556,12 @@ function Categories() {
                     className: "w-6 h-6 text-emerald-500 animate-spin"
                 }, void 0, false, {
                     fileName: "[project]/src/components/admin/categories.tsx",
-                    lineNumber: 309,
+                    lineNumber: 310,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/categories.tsx",
-                lineNumber: 308,
+                lineNumber: 309,
                 columnNumber: 9
             }, this) : items.length === 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Card"], {
                 className: "bg-slate-900 border-slate-800 border-dashed",
@@ -1572,7 +1572,7 @@ function Categories() {
                             className: "w-12 h-12 text-slate-700 mx-auto mb-3"
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 314,
+                            lineNumber: 315,
                             columnNumber: 13
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1580,18 +1580,18 @@ function Categories() {
                             children: "No categories yet. Add your first one!"
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 315,
+                            lineNumber: 316,
                             columnNumber: 13
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/categories.tsx",
-                    lineNumber: 313,
+                    lineNumber: 314,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/categories.tsx",
-                lineNumber: 312,
+                lineNumber: 313,
                 columnNumber: 9
             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
                 children: [
@@ -1607,7 +1607,7 @@ function Categories() {
                                         "aria-label": "Select all categories"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 322,
+                                        lineNumber: 323,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1615,20 +1615,20 @@ function Categories() {
                                         children: allFilteredSelected ? 'All selected' : someFilteredSelected ? `${selectedIds.size} selected` : 'Select all'
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 327,
+                                        lineNumber: 328,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 321,
+                                lineNumber: 322,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                 className: "flex-1"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 331,
+                                lineNumber: 332,
                                 columnNumber: 11
                             }, this),
                             selectedIds.size > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1643,7 +1643,7 @@ function Categories() {
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 334,
+                                        lineNumber: 335,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1656,14 +1656,14 @@ function Categories() {
                                                 className: "w-3.5 h-3.5 mr-1"
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                lineNumber: 343,
+                                                lineNumber: 344,
                                                 columnNumber: 17
                                             }, this),
                                             " Delete Selected"
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 337,
+                                        lineNumber: 338,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1676,24 +1676,24 @@ function Categories() {
                                             className: "w-3.5 h-3.5"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 352,
+                                            lineNumber: 353,
                                             columnNumber: 17
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 345,
+                                        lineNumber: 346,
                                         columnNumber: 15
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 333,
+                                lineNumber: 334,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/categories.tsx",
-                        lineNumber: 320,
+                        lineNumber: 321,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1711,12 +1711,12 @@ function Categories() {
                                             "aria-label": `Select ${item.name}`
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 363,
+                                            lineNumber: 364,
                                             columnNumber: 17
                                         }, this)
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 362,
+                                        lineNumber: 363,
                                         columnNumber: 15
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["CardContent"], {
@@ -1731,7 +1731,7 @@ function Categories() {
                                                         className: "w-12 h-12 rounded-lg object-cover shrink-0"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                        lineNumber: 372,
+                                                        lineNumber: 373,
                                                         columnNumber: 21
                                                     }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
                                                         className: "w-12 h-12 rounded-lg flex items-center justify-center shrink-0",
@@ -1745,12 +1745,12 @@ function Categories() {
                                                             }
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 375,
+                                                            lineNumber: 376,
                                                             columnNumber: 23
                                                         }, this)
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                        lineNumber: 374,
+                                                        lineNumber: 375,
                                                         columnNumber: 21
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1764,7 +1764,7 @@ function Categories() {
                                                                         children: item.name
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                                        lineNumber: 380,
+                                                                        lineNumber: 381,
                                                                         columnNumber: 23
                                                                     }, this),
                                                                     item.isPremium ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$badge$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Badge"], {
@@ -1775,7 +1775,7 @@ function Categories() {
                                                                                 className: "w-3 h-3 mr-1"
                                                                             }, void 0, false, {
                                                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                                                lineNumber: 383,
+                                                                                lineNumber: 384,
                                                                                 columnNumber: 27
                                                                             }, this),
                                                                             " ₹",
@@ -1783,7 +1783,7 @@ function Categories() {
                                                                         ]
                                                                     }, void 0, true, {
                                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                                        lineNumber: 382,
+                                                                        lineNumber: 383,
                                                                         columnNumber: 25
                                                                     }, this) : null,
                                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$badge$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Badge"], {
@@ -1795,13 +1795,13 @@ function Categories() {
                                                                         ]
                                                                     }, void 0, true, {
                                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                                        lineNumber: 386,
+                                                                        lineNumber: 387,
                                                                         columnNumber: 23
                                                                     }, this)
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                                lineNumber: 379,
+                                                                lineNumber: 380,
                                                                 columnNumber: 21
                                                             }, this),
                                                             item.description && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1809,7 +1809,7 @@ function Categories() {
                                                                 children: item.description
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                                lineNumber: 388,
+                                                                lineNumber: 389,
                                                                 columnNumber: 42
                                                             }, this),
                                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1820,19 +1820,19 @@ function Categories() {
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                                lineNumber: 389,
+                                                                lineNumber: 390,
                                                                 columnNumber: 21
                                                             }, this)
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                        lineNumber: 378,
+                                                        lineNumber: 379,
                                                         columnNumber: 19
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                lineNumber: 370,
+                                                lineNumber: 371,
                                                 columnNumber: 17
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1848,14 +1848,14 @@ function Categories() {
                                                                 className: "w-3 h-3 mr-1"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                                lineNumber: 394,
+                                                                lineNumber: 395,
                                                                 columnNumber: 21
                                                             }, this),
                                                             " Edit"
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                        lineNumber: 393,
+                                                        lineNumber: 394,
                                                         columnNumber: 19
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1868,38 +1868,38 @@ function Categories() {
                                                                 className: "w-3 h-3 mr-1"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                                lineNumber: 397,
+                                                                lineNumber: 398,
                                                                 columnNumber: 21
                                                             }, this),
                                                             " Delete"
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                        lineNumber: 396,
+                                                        lineNumber: 397,
                                                         columnNumber: 19
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                lineNumber: 392,
+                                                lineNumber: 393,
                                                 columnNumber: 17
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                        lineNumber: 369,
+                                        lineNumber: 370,
                                         columnNumber: 15
                                     }, this)
                                 ]
                             }, item.id, true, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 361,
+                                lineNumber: 362,
                                 columnNumber: 13
                             }, this);
                         })
                     }, void 0, false, {
                         fileName: "[project]/src/components/admin/categories.tsx",
-                        lineNumber: 357,
+                        lineNumber: 358,
                         columnNumber: 9
                     }, this)
                 ]
@@ -1915,12 +1915,12 @@ function Categories() {
                                 children: editingId ? 'Edit Category' : 'Add Category'
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 412,
+                                lineNumber: 413,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 411,
+                            lineNumber: 412,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1933,7 +1933,7 @@ function Categories() {
                                             children: "Name *"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 416,
+                                            lineNumber: 417,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1947,13 +1947,13 @@ function Categories() {
                                             className: "bg-slate-800 border-slate-700"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 417,
+                                            lineNumber: 418,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 415,
+                                    lineNumber: 416,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1963,7 +1963,7 @@ function Categories() {
                                             children: "Slug"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 425,
+                                            lineNumber: 426,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1976,13 +1976,13 @@ function Categories() {
                                             className: "bg-slate-800 border-slate-700"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 426,
+                                            lineNumber: 427,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 424,
+                                    lineNumber: 425,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1995,7 +1995,7 @@ function Categories() {
                                                     children: "Icon (emoji)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 430,
+                                                    lineNumber: 431,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2008,13 +2008,13 @@ function Categories() {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 431,
+                                                    lineNumber: 432,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 429,
+                                            lineNumber: 430,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2024,7 +2024,7 @@ function Categories() {
                                                     children: "Color"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 434,
+                                                    lineNumber: 435,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2040,7 +2040,7 @@ function Categories() {
                                                             className: "w-12 h-9 rounded border border-slate-700 bg-slate-800 cursor-pointer"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 436,
+                                                            lineNumber: 437,
                                                             columnNumber: 19
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2052,25 +2052,25 @@ function Categories() {
                                                             className: "bg-slate-800 border-slate-700"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 437,
+                                                            lineNumber: 438,
                                                             columnNumber: 19
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 435,
+                                                    lineNumber: 436,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 433,
+                                            lineNumber: 434,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 428,
+                                    lineNumber: 429,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2080,7 +2080,7 @@ function Categories() {
                                             children: "Description"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 442,
+                                            lineNumber: 443,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$textarea$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Textarea"], {
@@ -2094,13 +2094,13 @@ function Categories() {
                                             rows: 2
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 443,
+                                            lineNumber: 444,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 441,
+                                    lineNumber: 442,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2110,7 +2110,7 @@ function Categories() {
                                             children: "Image"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 446,
+                                            lineNumber: 447,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2125,7 +2125,7 @@ function Categories() {
                                                             className: "w-16 h-16 rounded-lg object-cover"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 450,
+                                                            lineNumber: 451,
                                                             columnNumber: 21
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("button", {
@@ -2138,18 +2138,18 @@ function Categories() {
                                                                 className: "w-3 h-3"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                                                lineNumber: 452,
+                                                                lineNumber: 453,
                                                                 columnNumber: 23
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 451,
+                                                            lineNumber: 452,
                                                             columnNumber: 21
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 449,
+                                                    lineNumber: 450,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("input", {
@@ -2160,7 +2160,7 @@ function Categories() {
                                                     className: "hidden"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 456,
+                                                    lineNumber: 457,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -2174,32 +2174,32 @@ function Categories() {
                                                             className: "w-4 h-4 mr-1 animate-spin"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 458,
+                                                            lineNumber: 459,
                                                             columnNumber: 32
                                                         }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$image$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Image$3e$__["Image"], {
                                                             className: "w-4 h-4 mr-1"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 458,
+                                                            lineNumber: 459,
                                                             columnNumber: 84
                                                         }, this),
                                                         uploading ? 'Uploading...' : 'Upload'
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 457,
+                                                    lineNumber: 458,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 447,
+                                            lineNumber: 448,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 445,
+                                    lineNumber: 446,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2209,7 +2209,7 @@ function Categories() {
                                             children: "Order"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 464,
+                                            lineNumber: 465,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2222,13 +2222,13 @@ function Categories() {
                                             className: "bg-slate-800 border-slate-700"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 465,
+                                            lineNumber: 466,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 463,
+                                    lineNumber: 464,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2244,7 +2244,7 @@ function Categories() {
                                                             className: "w-4 h-4 text-amber-400"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 471,
+                                                            lineNumber: 472,
                                                             columnNumber: 19
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$label$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Label"], {
@@ -2252,13 +2252,13 @@ function Categories() {
                                                             children: "Premium Category"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 472,
+                                                            lineNumber: 473,
                                                             columnNumber: 19
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 470,
+                                                    lineNumber: 471,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$switch$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Switch"], {
@@ -2269,13 +2269,13 @@ function Categories() {
                                                         })
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 474,
+                                                    lineNumber: 475,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 469,
+                                            lineNumber: 470,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2283,7 +2283,7 @@ function Categories() {
                                             children: "Premium categories require a subscription to access their tests & content."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 479,
+                                            lineNumber: 480,
                                             columnNumber: 15
                                         }, this),
                                         form.isPremium && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2299,14 +2299,14 @@ function Categories() {
                                                                     className: "w-3 h-3"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                                    lineNumber: 485,
+                                                                    lineNumber: 486,
                                                                     columnNumber: 64
                                                                 }, this),
                                                                 " Price (₹)"
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 485,
+                                                            lineNumber: 486,
                                                             columnNumber: 21
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2321,13 +2321,13 @@ function Categories() {
                                                             className: "bg-slate-800 border-slate-700"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 486,
+                                                            lineNumber: 487,
                                                             columnNumber: 21
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 484,
+                                                    lineNumber: 485,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2337,7 +2337,7 @@ function Categories() {
                                                             children: "Duration (months)"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 496,
+                                                            lineNumber: 497,
                                                             columnNumber: 21
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Select"], {
@@ -2351,12 +2351,12 @@ function Categories() {
                                                                     className: "bg-slate-800 border-slate-700",
                                                                     children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectValue"], {}, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/categories.tsx",
-                                                                        lineNumber: 502,
+                                                                        lineNumber: 503,
                                                                         columnNumber: 25
                                                                     }, this)
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                                    lineNumber: 501,
+                                                                    lineNumber: 502,
                                                                     columnNumber: 23
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectContent"], {
@@ -2367,7 +2367,7 @@ function Categories() {
                                                                             children: "1 month"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                                            lineNumber: 505,
+                                                                            lineNumber: 506,
                                                                             columnNumber: 25
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2375,7 +2375,7 @@ function Categories() {
                                                                             children: "3 months"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                                            lineNumber: 506,
+                                                                            lineNumber: 507,
                                                                             columnNumber: 25
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2383,7 +2383,7 @@ function Categories() {
                                                                             children: "6 months"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                                            lineNumber: 507,
+                                                                            lineNumber: 508,
                                                                             columnNumber: 25
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2391,7 +2391,7 @@ function Categories() {
                                                                             children: "12 months"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                                            lineNumber: 508,
+                                                                            lineNumber: 509,
                                                                             columnNumber: 25
                                                                         }, this),
                                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2399,43 +2399,43 @@ function Categories() {
                                                                             children: "Lifetime (10 years)"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                                            lineNumber: 509,
+                                                                            lineNumber: 510,
                                                                             columnNumber: 25
                                                                         }, this)
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                                    lineNumber: 504,
+                                                                    lineNumber: 505,
                                                                     columnNumber: 23
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 497,
+                                                            lineNumber: 498,
                                                             columnNumber: 21
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 495,
+                                                    lineNumber: 496,
                                                     columnNumber: 19
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 483,
+                                            lineNumber: 484,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 468,
+                                    lineNumber: 469,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 414,
+                            lineNumber: 415,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["DialogFooter"], {
@@ -2447,7 +2447,7 @@ function Categories() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 518,
+                                    lineNumber: 519,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -2459,31 +2459,31 @@ function Categories() {
                                             className: "w-4 h-4 mr-1 animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 520,
+                                            lineNumber: 521,
                                             columnNumber: 26
                                         }, this),
                                         editingId ? 'Update' : 'Add'
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 519,
+                                    lineNumber: 520,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 517,
+                            lineNumber: 518,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/categories.tsx",
-                    lineNumber: 410,
+                    lineNumber: 411,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/categories.tsx",
-                lineNumber: 409,
+                lineNumber: 410,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Dialog"], {
@@ -2497,12 +2497,12 @@ function Categories() {
                                 children: "Bulk Add Categories"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/categories.tsx",
-                                lineNumber: 531,
+                                lineNumber: 532,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 530,
+                            lineNumber: 531,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2516,7 +2516,7 @@ function Categories() {
                                             children: "Paste a JSON array of category objects below, or paste CSV rows (first row = column headers)."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 535,
+                                            lineNumber: 536,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2533,14 +2533,14 @@ function Categories() {
                                                             className: "w-3.5 h-3.5 mr-1"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 546,
+                                                            lineNumber: 547,
                                                             columnNumber: 19
                                                         }, this),
                                                         " Download Template"
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 539,
+                                                    lineNumber: 540,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -2554,14 +2554,14 @@ function Categories() {
                                                             className: "w-3.5 h-3.5 mr-1"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                                            lineNumber: 555,
+                                                            lineNumber: 556,
                                                             columnNumber: 19
                                                         }, this),
                                                         " Download CSV"
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 548,
+                                                    lineNumber: 549,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -2573,19 +2573,19 @@ function Categories() {
                                                     children: "Load Sample"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                                    lineNumber: 557,
+                                                    lineNumber: 558,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 538,
+                                            lineNumber: 539,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 534,
+                                    lineNumber: 535,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$textarea$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Textarea"], {
@@ -2596,7 +2596,7 @@ function Categories() {
                                     className: "bg-slate-800 border-slate-700 font-mono text-xs"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 568,
+                                    lineNumber: 569,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2608,7 +2608,7 @@ function Categories() {
                                             children: "name"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 576,
+                                            lineNumber: 577,
                                             columnNumber: 23
                                         }, this),
                                         ",",
@@ -2618,7 +2618,7 @@ function Categories() {
                                             children: "description"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 577,
+                                            lineNumber: 578,
                                             columnNumber: 15
                                         }, this),
                                         ",",
@@ -2628,7 +2628,7 @@ function Categories() {
                                             children: "icon"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 578,
+                                            lineNumber: 579,
                                             columnNumber: 15
                                         }, this),
                                         " (emoji),",
@@ -2638,7 +2638,7 @@ function Categories() {
                                             children: "color"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 579,
+                                            lineNumber: 580,
                                             columnNumber: 15
                                         }, this),
                                         " (hex),",
@@ -2648,7 +2648,7 @@ function Categories() {
                                             children: "order"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 580,
+                                            lineNumber: 581,
                                             columnNumber: 15
                                         }, this),
                                         " (number),",
@@ -2658,20 +2658,20 @@ function Categories() {
                                             children: "isActive"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 581,
+                                            lineNumber: 582,
                                             columnNumber: 15
                                         }, this),
                                         " (boolean)"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 575,
+                                    lineNumber: 576,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 533,
+                            lineNumber: 534,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["DialogFooter"], {
@@ -2683,7 +2683,7 @@ function Categories() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 585,
+                                    lineNumber: 586,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -2695,31 +2695,31 @@ function Categories() {
                                             className: "w-4 h-4 mr-1 animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 597,
+                                            lineNumber: 598,
                                             columnNumber: 30
                                         }, this),
                                         "Validate & Import"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 592,
+                                    lineNumber: 593,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 584,
+                            lineNumber: 585,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/categories.tsx",
-                    lineNumber: 529,
+                    lineNumber: 530,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/categories.tsx",
-                lineNumber: 528,
+                lineNumber: 529,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
@@ -2734,7 +2734,7 @@ function Categories() {
                                     children: "Delete this category?"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 608,
+                                    lineNumber: 609,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
@@ -2742,13 +2742,13 @@ function Categories() {
                                     children: "This action cannot be undone. Subjects and tests under this category will remain but lose their category link."
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 609,
+                                    lineNumber: 610,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 607,
+                            lineNumber: 608,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
@@ -2758,7 +2758,7 @@ function Categories() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 614,
+                                    lineNumber: 615,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
@@ -2767,24 +2767,24 @@ function Categories() {
                                     children: "Delete"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 615,
+                                    lineNumber: 616,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 613,
+                            lineNumber: 614,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/categories.tsx",
-                    lineNumber: 606,
+                    lineNumber: 607,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/categories.tsx",
-                lineNumber: 605,
+                lineNumber: 606,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
@@ -2802,7 +2802,7 @@ function Categories() {
                                             className: "w-5 h-5 text-red-400"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 625,
+                                            lineNumber: 626,
                                             columnNumber: 15
                                         }, this),
                                         " Delete ",
@@ -2813,7 +2813,7 @@ function Categories() {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 624,
+                                    lineNumber: 625,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
@@ -2829,19 +2829,19 @@ function Categories() {
                                             children: "This action cannot be undone."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 630,
+                                            lineNumber: 631,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 627,
+                                    lineNumber: 628,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 623,
+                            lineNumber: 624,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
@@ -2851,7 +2851,7 @@ function Categories() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 634,
+                                    lineNumber: 635,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
@@ -2863,7 +2863,7 @@ function Categories() {
                                             className: "w-4 h-4 mr-1 animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/categories.tsx",
-                                            lineNumber: 640,
+                                            lineNumber: 641,
                                             columnNumber: 32
                                         }, this),
                                         "Delete ",
@@ -2873,30 +2873,30 @@ function Categories() {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/categories.tsx",
-                                    lineNumber: 635,
+                                    lineNumber: 636,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/categories.tsx",
-                            lineNumber: 633,
+                            lineNumber: 634,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/categories.tsx",
-                    lineNumber: 622,
+                    lineNumber: 623,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/categories.tsx",
-                lineNumber: 621,
+                lineNumber: 622,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/src/components/admin/categories.tsx",
-        lineNumber: 285,
+        lineNumber: 286,
         columnNumber: 5
     }, this);
 }

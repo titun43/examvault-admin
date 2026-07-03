@@ -137,6 +137,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../src/app/api/admin/products/sync-from-category/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/admin/products/sync-from-category">> = Specific
+  const handler = {} as typeof import("../../../src/app/api/admin/products/sync-from-category/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../src/app/api/admin/subject-pack-purchases/[id]/revoke/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/admin/subject-pack-purchases/[id]/revoke">> = Specific

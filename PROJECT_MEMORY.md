@@ -162,11 +162,24 @@ DATABASE_URL=file:/home/z/my-project/db/custom.db
 7. Switched schema BACK to `postgresql` for Vercel compatibility (`99a41c9`).
 8. Improved `admin-token-gate.tsx` 500 error message to point users to Vercel env vars.
 9. **Reverted commit `60842f7`** (`0add95b`) — it had committed `.env`, `upload/Private key Web Push certificates.txt`, `upload/rzp-key.csv live`, and `tool-results/`. Merged improved `.gitignore`.
+10. **Payment flow investigation** — traced full flow across both repos (admin + Flutter). Documented in conversation. Key findings:
+    - Firestore `isPremium`/`price`/`premiumPrice` are CLIENT-SIDE gating signals only. Backend payment APIs never read Firestore for premium flags.
+    - SUBJECT_PACK/EXAM_PACK: price is server-authoritative from Prisma `Product` table. If no Product row exists, purchase fails with "not available for purchase".
+    - TEST_PURCHASE/PREMIUM_SUBSCRIPTION: price is client-supplied, bounds-checked [₹1, ₹10,000]. No server-side Firestore price validation (no firebase-admin).
+    - Access check is 4-tier: PremiumSubscription > ExamPackPurchase > SubjectPackPurchase > TestPurchase.
+11. **Fixed: Auto-sync EXAM_PACK Product when category premium toggled** (`5b58d48`, pushed to `examvault-admin`):
+    - Root cause: Admin marked category premium in Categories page → only Firestore updated. No Prisma Product auto-created. Flutter "Unlock this exam" failed.
+    - Fix: New API `POST /api/admin/products/sync-from-category` idempotently upserts EXAM_PACK Product (create/activate+sync price / deactivate).
+    - `categories.tsx` `handleSave` + `handleDelete` now call this endpoint after Firestore write. Non-fatal on sync failure (warning toast).
+    - Also fixes two-sources-of-truth drift: `categories.premiumPrice` (Firestore) ↔ `Product.price` (Prisma) now synced.
 
 **Known issues:**
 - ⚠️ `upload/rzp-key.csv live` is **still in git history** (revert removed from current tree only). User should regenerate Razorpay LIVE keys if those were real.
 - ⚠️ Local `.env.local` has placeholder `DATABASE_URL` — local sandbox admin pages won't load data until real Neon URL is pasted. Vercel works (user confirmed env vars set).
 - `.next/` was tracked in early commits (340+ files, including a 57MB .sst). Now gitignored, but history still has them. Optional: `git filter-repo` to clean.
+- ⚠️ **TEST_PURCHASE server-side price validation NOT done.** Requires firebase-admin SDK (not installed) to read Firestore test prices server-side. Currently mitigated only by [₹1, ₹10,000] bounds check. A malicious client could buy a free test for ₹1 or a premium plan far below its Firestore price.
+- ⚠️ **Subject Pack purchase is dead code in Flutter.** `startSubjectPackPurchase` exists in `razorpay_service.dart` but no UI calls it. Backend SUBJECT_PACK support is complete. UI re-enable requires admin to define subject-pack prices.
+- ⚠️ **Optimistic success fallback risk in Flutter.** If `/verify` fails after Razorpay success, app grants local access relying on webhook. If webhook misconfigured, cross-device access breaks.
 
 ---
 

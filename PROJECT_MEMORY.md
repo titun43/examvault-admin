@@ -595,3 +595,116 @@ curl -s -H "Authorization: token $TOKEN" \
 curl -s -H "Authorization: token $TOKEN" -L \
   "https://api.github.com/repos/titun43/examvault/actions/jobs/{JOB_ID}/logs" -o /tmp/build_log.txt
 ```
+
+---
+
+## 15. Session Log — 2026-07-03 (CRITICAL: exam pack entitlement FK violation)
+
+**User report:** "admin theke category te premium lagiyechi, sob thik ache
+user app, category te click kore payment korechi, success o hoyeche, but
+open exam a click korle abar payment korte bole" — After paying for a premium
+category (EXAM_PACK), tapping "Open Exam" shows the paywall again.
+
+**Root cause — TWO bugs:**
+
+### Bug 1 (backend, CRITICAL): grantEntitlement FK violation
+- `create-order` stores `order.productId` = the Firestore `categoryId`
+  (the client-sent productId), NOT the Prisma `Product.id` (a cuid).
+- `verify` passes `order.productId` to `grantEntitlement` as the `productId`
+  parameter.
+- `grantEntitlement` (EXAM_PACK case) used this Firestore categoryId as
+  `ExamPackPurchase.productId` in the `create` path of the upsert.
+- `ExamPackPurchase.productId` has a FK to `Product.id`.
+- Firestore categoryId ≠ Product.id → **foreign-key constraint violation**
+  every time → entitlement row NEVER created.
+- Same bug existed for SUBJECT_PACK (`SubjectPackPurchase.productId` FK).
+
+### Bug 2 (Flutter, timing): clearCache instead of optimistic mark
+- The "INSTANT SUCCESS" pattern (commit `61b84bd`, v1.37.0+44) calls
+  `onSuccess` immediately when Razorpay confirms, then runs `/verify`
+  silently in the background.
+- The 3 category screens' `onSuccess` called `AccessService.clearCache()`
+  (forcing the next `_checkAccess()` to hit the backend), but the background
+  `/verify` may not have completed yet → backend returns `denied` → paywall.
+- `test_list_screen` and `premium_screen` already used the correct pattern
+  (`markTestPurchased` / `markPremiumGranted`), but the category screens
+  were missed.
+
+**Why it was masked:** The INSTANT SUCCESS pattern swallows `/verify`
+errors silently (by design — the webhook is the safety net). So the user
+sees "Payment Successful" even though the backend never granted the
+entitlement. The paywall only reappears on the next access check.
+
+**Fixes:**
+1. **Backend** (`src/lib/payment-access.ts`, commit `ff09d8c`): In
+   `grantEntitlement`, for EXAM_PACK and SUBJECT_PACK, resolve the real
+   `Product.id` by looking up `(type, refId=categoryId/subjectId, isActive)`
+   inside the transaction, and use that for the purchase row's `productId`.
+   The `update` path is unaffected (doesn't touch productId). This also
+   covers the webhook path (same `grantEntitlement` call).
+
+2. **Flutter** (commit `ee57db2`, v1.41.0+48): 3 category screens
+   (`category_detail_screen`, `home_screen`, `all_categories_screen`):
+   replaced `AccessService.clearCache()` with
+   `AccessService.markExamPackPurchased(category.id)` in the `onSuccess`
+   callback. This writes a positive decision to the in-memory cache (60s
+   TTL) so `_checkAccess()` returns instantly without a network round-trip.
+
+**Impact on existing affected users:**
+- Users who paid BEFORE this fix: their payment succeeded (Order is PAID,
+  Payment row exists) but NO ExamPackPurchase row was created.
+- They will still see the paywall even after the fix deploys.
+- **Recovery options:**
+  1. **Re-trigger the Razorpay webhook** for the affected `payment_id`.
+     The webhook now uses the fixed `grantEntitlement` and will create the
+     missing entitlement. (Razorpay dashboard → Payments → find the payment
+     → "Send Webhook" or use the Razorpay API.)
+  2. **Manual DB insert**: `INSERT INTO "ExamPackPurchase" (id, userId,
+     productId, categoryId, packName, amount, paymentId, orderId,
+     isActive, createdAt) VALUES (...)`. The `productId` must be the
+     Product.id from the Product table (look up by refId = categoryId).
+  3. **Refund + re-purchase**: refund the affected payment and have the
+     user re-purchase (the new purchase will work correctly).
+
+**Architecture lesson — `order.productId` semantics:**
+- `Order.productId` is a plain String (no FK). The comment says:
+  "Firestore testId / Product.id / premiumPlanId / categoryOrSubjectRef".
+- For TEST_PURCHASE: Firestore testId (no FK on TestPurchase.testId).
+- For PREMIUM_SUBSCRIPTION: planId (no FK on PremiumSubscription.planId).
+- For EXAM_PACK: Firestore categoryId (= Product.refId, NOT Product.id).
+- For SUBJECT_PACK: Firestore subjectId (= Product.refId, NOT Product.id).
+- The disconnect: `order.productId` for packs is the Firestore refId, but
+  `ExamPackPurchase.productId` / `SubjectPackPurchase.productId` have FKs
+  to `Product.id`. This mismatch caused the bug.
+- **Fix approach**: resolve the Product.id in `grantEntitlement` (not in
+  create-order) to avoid changing the Order schema and breaking legacy
+  orders. The `resolveOrderMeta` fallback (which uses `parsed.productId`
+  as categoryId for EXAM_PACK) still works because it only fires for
+  legacy orders without stored meta.
+
+**Files changed:**
+- Backend: `src/lib/payment-access.ts` (grantEntitlement EXAM_PACK +
+  SUBJECT_PACK cases — resolve Product.id via refId lookup).
+- Flutter: `lib/screens/home/category_detail_screen.dart`,
+  `lib/screens/home/home_screen.dart`,
+  `lib/screens/home/all_categories_screen.dart` (clearCache →
+  markExamPackPurchased).
+- Flutter: `pubspec.yaml` (version bump 1.40.0+47 → 1.41.0+48).
+
+**How to verify the fix works:**
+1. Vercel deploys `ff09d8c` (check Vercel dashboard).
+2. Flutter APK build `ee57db2` succeeds (check GitHub Actions).
+3. User installs the new APK, opens a premium category, pays.
+4. Tapping "Open Exam" should now show the subjects list (not the paywall).
+5. Backend: check `ExamPackPurchase` table — a new row should exist with
+   `categoryId` = the Firestore category id and `productId` = a valid
+   Product.id.
+
+**Recovery for the user who reported this bug:**
+- They already paid. Their payment is in the DB (Order status = PAID,
+  Payment row exists).
+- After the fix deploys, they should NOT need to pay again.
+- Option A: re-trigger the webhook for their payment_id.
+- Option B: admin manually inserts the ExamPackPurchase row.
+- Option C: if neither is feasible, refund + have them re-purchase
+  (new purchase will work correctly).

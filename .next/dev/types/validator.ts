@@ -173,6 +173,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
   type __Unused = __Check
 }
 
+// Validate ../../../src/app/api/payments/cancel-subscription/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/payments/cancel-subscription">> = Specific
+  const handler = {} as typeof import("../../../src/app/api/payments/cancel-subscription/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
 // Validate ../../../src/app/api/payments/create-order/route.ts
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/payments/create-order">> = Specific
@@ -186,6 +195,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/payments/invoice/[paymentId]">> = Specific
   const handler = {} as typeof import("../../../src/app/api/payments/invoice/[paymentId]/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../src/app/api/payments/order-status/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/payments/order-status">> = Specific
+  const handler = {} as typeof import("../../../src/app/api/payments/order-status/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check
@@ -213,6 +231,15 @@ type RouteHandlerConfig<Route extends AppRouteHandlerRoutes = AppRouteHandlerRou
 {
   type __IsExpected<Specific extends RouteHandlerConfig<"/api/payments/webhook">> = Specific
   const handler = {} as typeof import("../../../src/app/api/payments/webhook/route.js")
+  type __Check = __IsExpected<typeof handler>
+  // @ts-ignore
+  type __Unused = __Check
+}
+
+// Validate ../../../src/app/api/user/purchases/route.ts
+{
+  type __IsExpected<Specific extends RouteHandlerConfig<"/api/user/purchases">> = Specific
+  const handler = {} as typeof import("../../../src/app/api/user/purchases/route.js")
   type __Check = __IsExpected<typeof handler>
   // @ts-ignore
   type __Unused = __Check

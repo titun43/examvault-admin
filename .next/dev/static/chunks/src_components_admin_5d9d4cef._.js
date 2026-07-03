@@ -28,7 +28,7 @@ __turbopack_context__.v((parentImport) => {
 __turbopack_context__.v((parentImport) => {
     return Promise.all([
   "static/chunks/src_c957030d._.js",
-  "static/chunks/node_modules_821d5090._.js",
+  "static/chunks/node_modules_22ae386f._.js",
   "static/chunks/src_components_admin_tests_tsx_533633ce._.js"
 ].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
         return parentImport("[project]/src/components/admin/tests.tsx [app-client] (ecmascript, next/dynamic entry)");
@@ -40,7 +40,7 @@ __turbopack_context__.v((parentImport) => {
 __turbopack_context__.v((parentImport) => {
     return Promise.all([
   "static/chunks/src_927655f9._.js",
-  "static/chunks/node_modules_821d5090._.js",
+  "static/chunks/node_modules_22ae386f._.js",
   "static/chunks/src_components_admin_daily-quiz_tsx_533633ce._.js"
 ].map((chunk) => __turbopack_context__.l(chunk))).then(() => {
         return parentImport("[project]/src/components/admin/daily-quiz.tsx [app-client] (ecmascript, next/dynamic entry)");

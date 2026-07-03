@@ -1160,6 +1160,7 @@ var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$re
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$info$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Info$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/info.js [app-client] (ecmascript) <export default as Info>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$file$2d$spreadsheet$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__FileSpreadsheet$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/file-spreadsheet.js [app-client] (ecmascript) <export default as FileSpreadsheet>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$indian$2d$rupee$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__IndianRupee$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/indian-rupee.js [app-client] (ecmascript) <export default as IndianRupee>");
+var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$lock$2d$open$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Unlock$3e$__ = __turbopack_context__.i("[project]/node_modules/lucide-react/dist/esm/icons/lock-open.js [app-client] (ecmascript) <export default as Unlock>");
 var __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/node_modules/sonner/dist/index.mjs [app-client] (ecmascript)");
 var __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$download$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__ = __turbopack_context__.i("[project]/src/lib/download.ts [app-client] (ecmascript)");
 ;
@@ -1235,6 +1236,10 @@ function Tests({ fixedType } = {}) {
     const [selectedIds, setSelectedIds] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(new Set());
     const [bulkDeleteOpen, setBulkDeleteOpen] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
     const [bulkDeleting, setBulkDeleting] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
+    // Bulk "make free" state — resets isPremium=false, price=0.
+    const [bulkFreeOpen, setBulkFreeOpen] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [bulkFreeAllOpen, setBulkFreeAllOpen] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
+    const [bulkFreeing, setBulkFreeing] = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$index$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useState"])(false);
     // When fixedType is set, derive a filtered view + friendly labels.
     const fixedLabel = fixedType ? TYPE_LABELS[fixedType] || fixedType : null;
     const visibleItems = fixedType ? items.filter((t)=>t.type === fixedType) : items;
@@ -1524,6 +1529,35 @@ function Tests({ fixedType } = {}) {
             setBulkDeleting(false);
         }
     };
+    // Reset tests to free (isPremium=false, price=0) in a single Firestore batch.
+    // all=true -> every test; all=false -> only selected tests.
+    const handleBulkMakeFree = async (all)=>{
+        const ids = all ? items.map((t)=>t.id) : Array.from(selectedIds);
+        if (ids.length === 0) {
+            __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].error('No tests to update');
+            return;
+        }
+        setBulkFreeing(true);
+        try {
+            const batch = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["writeBatch"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"]);
+            for (const id of ids){
+                const ref = (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["doc"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], 'tests', id);
+                batch.update(ref, {
+                    isPremium: false,
+                    price: 0
+                });
+            }
+            await batch.commit();
+            __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].success(`${ids.length} test${ids.length === 1 ? '' : 's'} reset to free`);
+            setBulkFreeOpen(false);
+            setBulkFreeAllOpen(false);
+            if (!all) clearSelection();
+        } catch (err) {
+            __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].error(err?.message || 'Failed to reset tests');
+        } finally{
+            setBulkFreeing(false);
+        }
+    };
     const manageQuestions = (test)=>{
         setSelectedTest(test.id, test.title);
         setCurrentSection('questions');
@@ -1543,7 +1577,7 @@ function Tests({ fixedType } = {}) {
                                         className: "w-5 h-5 text-emerald-400"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                        lineNumber: 315,
+                                        lineNumber: 346,
                                         columnNumber: 13
                                     }, this),
                                     " ",
@@ -1551,7 +1585,7 @@ function Tests({ fixedType } = {}) {
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 314,
+                                lineNumber: 345,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1559,13 +1593,13 @@ function Tests({ fixedType } = {}) {
                                 children: fixedType ? `Manage ${fixedLabel} tests — published ones appear in the user app's ${fixedLabel} screen.` : 'Mock tests, daily quizzes, practice sets'
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 317,
+                                lineNumber: 348,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/tests.tsx",
-                        lineNumber: 313,
+                        lineNumber: 344,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1579,7 +1613,7 @@ function Tests({ fixedType } = {}) {
                                         className: "w-4 h-4 mr-1"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                        lineNumber: 325,
+                                        lineNumber: 356,
                                         columnNumber: 13
                                     }, this),
                                     " ",
@@ -1587,7 +1621,7 @@ function Tests({ fixedType } = {}) {
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 324,
+                                lineNumber: 355,
                                 columnNumber: 11
                             }, this),
                             !fixedType && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1599,26 +1633,26 @@ function Tests({ fixedType } = {}) {
                                         className: "w-4 h-4 mr-1"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                        lineNumber: 333,
+                                        lineNumber: 364,
                                         columnNumber: 15
                                     }, this),
                                     " Bulk Add"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 328,
+                                lineNumber: 359,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/tests.tsx",
-                        lineNumber: 323,
+                        lineNumber: 354,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/admin/tests.tsx",
-                lineNumber: 312,
+                lineNumber: 343,
                 columnNumber: 7
             }, this),
             loading ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -1627,12 +1661,12 @@ function Tests({ fixedType } = {}) {
                     className: "w-6 h-6 text-emerald-500 animate-spin"
                 }, void 0, false, {
                     fileName: "[project]/src/components/admin/tests.tsx",
-                    lineNumber: 340,
+                    lineNumber: 371,
                     columnNumber: 52
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/tests.tsx",
-                lineNumber: 340,
+                lineNumber: 371,
                 columnNumber: 9
             }, this) : visibleItems.length === 0 ? /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Card"], {
                 className: "bg-slate-900 border-slate-800 border-dashed",
@@ -1643,7 +1677,7 @@ function Tests({ fixedType } = {}) {
                             className: "w-12 h-12 text-slate-700 mx-auto mb-3"
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 344,
+                            lineNumber: 375,
                             columnNumber: 13
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1651,18 +1685,18 @@ function Tests({ fixedType } = {}) {
                             children: fixedType ? `No ${fixedLabel} tests yet. Add your first one!` : 'No tests yet. Add your first one!'
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 345,
+                            lineNumber: 376,
                             columnNumber: 13
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/tests.tsx",
-                    lineNumber: 343,
+                    lineNumber: 374,
                     columnNumber: 11
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/tests.tsx",
-                lineNumber: 342,
+                lineNumber: 373,
                 columnNumber: 9
             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Fragment"], {
                 children: [
@@ -1678,7 +1712,7 @@ function Tests({ fixedType } = {}) {
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 356,
+                                lineNumber: 387,
                                 columnNumber: 13
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1691,14 +1725,35 @@ function Tests({ fixedType } = {}) {
                                         className: "w-3.5 h-3.5 mr-1"
                                     }, void 0, false, {
                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                        lineNumber: 365,
+                                        lineNumber: 396,
                                         columnNumber: 15
                                     }, this),
                                     " Delete Selected"
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 359,
+                                lineNumber: 390,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
+                                size: "sm",
+                                variant: "outline",
+                                className: "h-8 border-emerald-700 text-emerald-300 hover:bg-emerald-950/40",
+                                onClick: ()=>setBulkFreeOpen(true),
+                                title: "Reset selected tests to free (isPremium=false, price=0)",
+                                children: [
+                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$lock$2d$open$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Unlock$3e$__["Unlock"], {
+                                        className: "w-3.5 h-3.5 mr-1"
+                                    }, void 0, false, {
+                                        fileName: "[project]/src/components/admin/tests.tsx",
+                                        lineNumber: 405,
+                                        columnNumber: 15
+                                    }, this),
+                                    " Make Selected Free"
+                                ]
+                            }, void 0, true, {
+                                fileName: "[project]/src/components/admin/tests.tsx",
+                                lineNumber: 398,
                                 columnNumber: 13
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -1711,18 +1766,68 @@ function Tests({ fixedType } = {}) {
                                     className: "w-3.5 h-3.5"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 374,
+                                    lineNumber: 414,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 367,
+                                lineNumber: 407,
                                 columnNumber: 13
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/tests.tsx",
-                        lineNumber: 355,
+                        lineNumber: 386,
+                        columnNumber: 11
+                    }, this),
+                    items.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
+                        className: "flex items-center gap-2 rounded-md border border-amber-900/50 bg-amber-950/20 px-3 py-1.5 flex-wrap",
+                        children: [
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$info$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Info$3e$__["Info"], {
+                                className: "w-3.5 h-3.5 text-amber-400"
+                            }, void 0, false, {
+                                fileName: "[project]/src/components/admin/tests.tsx",
+                                lineNumber: 421,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                className: "text-xs text-amber-200/80",
+                                children: [
+                                    items.filter((t)=>t.isPremium || t.price > 0).length,
+                                    " of ",
+                                    items.length,
+                                    " tests are currently paid/premium."
+                                ]
+                            }, void 0, true, {
+                                fileName: "[project]/src/components/admin/tests.tsx",
+                                lineNumber: 422,
+                                columnNumber: 13
+                            }, this),
+                            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
+                                size: "sm",
+                                variant: "outline",
+                                className: "h-8 border-amber-700 text-amber-300 hover:bg-amber-950/40",
+                                onClick: ()=>setBulkFreeAllOpen(true),
+                                title: "Reset ALL tests to free (isPremium=false, price=0)",
+                                children: [
+                                    /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$lock$2d$open$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Unlock$3e$__["Unlock"], {
+                                        className: "w-3.5 h-3.5 mr-1"
+                                    }, void 0, false, {
+                                        fileName: "[project]/src/components/admin/tests.tsx",
+                                        lineNumber: 432,
+                                        columnNumber: 15
+                                    }, this),
+                                    " Make ALL Tests Free"
+                                ]
+                            }, void 0, true, {
+                                fileName: "[project]/src/components/admin/tests.tsx",
+                                lineNumber: 425,
+                                columnNumber: 13
+                            }, this)
+                        ]
+                    }, void 0, true, {
+                        fileName: "[project]/src/components/admin/tests.tsx",
+                        lineNumber: 420,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Card"], {
@@ -1746,12 +1851,12 @@ function Tests({ fixedType } = {}) {
                                                             "aria-label": "Select all tests"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 385,
+                                                            lineNumber: 443,
                                                             columnNumber: 23
                                                         }, this)
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 384,
+                                                        lineNumber: 442,
                                                         columnNumber: 21
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -1759,7 +1864,7 @@ function Tests({ fixedType } = {}) {
                                                         children: "Title"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 391,
+                                                        lineNumber: 449,
                                                         columnNumber: 21
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -1767,7 +1872,7 @@ function Tests({ fixedType } = {}) {
                                                         children: "Subject / Category"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 392,
+                                                        lineNumber: 450,
                                                         columnNumber: 21
                                                     }, this),
                                                     !fixedType && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -1775,7 +1880,7 @@ function Tests({ fixedType } = {}) {
                                                         children: "Type"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 393,
+                                                        lineNumber: 451,
                                                         columnNumber: 36
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -1783,7 +1888,7 @@ function Tests({ fixedType } = {}) {
                                                         children: "Duration"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 394,
+                                                        lineNumber: 452,
                                                         columnNumber: 21
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -1791,7 +1896,7 @@ function Tests({ fixedType } = {}) {
                                                         children: "Qs"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 395,
+                                                        lineNumber: 453,
                                                         columnNumber: 21
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -1799,7 +1904,7 @@ function Tests({ fixedType } = {}) {
                                                         children: "Price"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 396,
+                                                        lineNumber: 454,
                                                         columnNumber: 21
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -1807,7 +1912,7 @@ function Tests({ fixedType } = {}) {
                                                         children: "Status"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 397,
+                                                        lineNumber: 455,
                                                         columnNumber: 21
                                                     }, this),
                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("th", {
@@ -1815,18 +1920,18 @@ function Tests({ fixedType } = {}) {
                                                         children: "Actions"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 398,
+                                                        lineNumber: 456,
                                                         columnNumber: 21
                                                     }, this)
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                lineNumber: 383,
+                                                lineNumber: 441,
                                                 columnNumber: 19
                                             }, this)
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 382,
+                                            lineNumber: 440,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("tbody", {
@@ -1843,12 +1948,12 @@ function Tests({ fixedType } = {}) {
                                                                 "aria-label": `Select ${item.title}`
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 407,
+                                                                lineNumber: 465,
                                                                 columnNumber: 25
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 406,
+                                                            lineNumber: 464,
                                                             columnNumber: 23
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1859,7 +1964,7 @@ function Tests({ fixedType } = {}) {
                                                                     children: item.title
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 414,
+                                                                    lineNumber: 472,
                                                                     columnNumber: 25
                                                                 }, this),
                                                                 item.year && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1870,13 +1975,13 @@ function Tests({ fixedType } = {}) {
                                                                     ]
                                                                 }, void 0, true, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 415,
+                                                                    lineNumber: 473,
                                                                     columnNumber: 39
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 413,
+                                                            lineNumber: 471,
                                                             columnNumber: 23
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1887,7 +1992,7 @@ function Tests({ fixedType } = {}) {
                                                                     children: subjectName(item.subjectId)
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 418,
+                                                                    lineNumber: 476,
                                                                     columnNumber: 25
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -1895,13 +2000,13 @@ function Tests({ fixedType } = {}) {
                                                                     children: categoryName(item.subjectId)
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 419,
+                                                                    lineNumber: 477,
                                                                     columnNumber: 25
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 417,
+                                                            lineNumber: 475,
                                                             columnNumber: 23
                                                         }, this),
                                                         !fixedType && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1912,12 +2017,12 @@ function Tests({ fixedType } = {}) {
                                                                 children: TYPE_LABELS[item.type] || item.type
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 423,
+                                                                lineNumber: 481,
                                                                 columnNumber: 27
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 422,
+                                                            lineNumber: 480,
                                                             columnNumber: 25
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1928,7 +2033,7 @@ function Tests({ fixedType } = {}) {
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 426,
+                                                            lineNumber: 484,
                                                             columnNumber: 23
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1936,7 +2041,7 @@ function Tests({ fixedType } = {}) {
                                                             children: item.questionCount || 0
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 427,
+                                                            lineNumber: 485,
                                                             columnNumber: 23
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1949,19 +2054,19 @@ function Tests({ fixedType } = {}) {
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 430,
+                                                                lineNumber: 488,
                                                                 columnNumber: 27
                                                             }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
                                                                 className: "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-slate-500 bg-slate-800/60 border border-slate-700",
                                                                 children: "FREE"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 432,
+                                                                lineNumber: 490,
                                                                 columnNumber: 27
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 428,
+                                                            lineNumber: 486,
                                                             columnNumber: 23
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -1973,31 +2078,31 @@ function Tests({ fixedType } = {}) {
                                                                         className: "w-3.5 h-3.5 text-emerald-400"
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                                        lineNumber: 437,
+                                                                        lineNumber: 495,
                                                                         columnNumber: 47
                                                                     }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$eye$2d$off$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__EyeOff$3e$__["EyeOff"], {
                                                                         className: "w-3.5 h-3.5 text-slate-600"
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                                        lineNumber: 437,
+                                                                        lineNumber: 495,
                                                                         columnNumber: 98
                                                                     }, this),
                                                                     item.isPremium && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$crown$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Crown$3e$__["Crown"], {
                                                                         className: "w-3.5 h-3.5 text-amber-400"
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                                        lineNumber: 438,
+                                                                        lineNumber: 496,
                                                                         columnNumber: 46
                                                                     }, this)
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 436,
+                                                                lineNumber: 494,
                                                                 columnNumber: 25
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 435,
+                                                            lineNumber: 493,
                                                             columnNumber: 23
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("td", {
@@ -2015,14 +2120,14 @@ function Tests({ fixedType } = {}) {
                                                                                 className: "w-3.5 h-3.5 mr-1"
                                                                             }, void 0, false, {
                                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                                lineNumber: 444,
+                                                                                lineNumber: 502,
                                                                                 columnNumber: 29
                                                                             }, this),
                                                                             " Qs"
                                                                         ]
                                                                     }, void 0, true, {
                                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                                        lineNumber: 443,
+                                                                        lineNumber: 501,
                                                                         columnNumber: 27
                                                                     }, this),
                                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -2034,12 +2139,12 @@ function Tests({ fixedType } = {}) {
                                                                             className: "w-3.5 h-3.5"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                                            lineNumber: 447,
+                                                                            lineNumber: 505,
                                                                             columnNumber: 29
                                                                         }, this)
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                                        lineNumber: 446,
+                                                                        lineNumber: 504,
                                                                         columnNumber: 27
                                                                     }, this),
                                                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -2051,56 +2156,56 @@ function Tests({ fixedType } = {}) {
                                                                             className: "w-3.5 h-3.5"
                                                                         }, void 0, false, {
                                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                                            lineNumber: 450,
+                                                                            lineNumber: 508,
                                                                             columnNumber: 29
                                                                         }, this)
                                                                     }, void 0, false, {
                                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                                        lineNumber: 449,
+                                                                        lineNumber: 507,
                                                                         columnNumber: 27
                                                                     }, this)
                                                                 ]
                                                             }, void 0, true, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 442,
+                                                                lineNumber: 500,
                                                                 columnNumber: 25
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 441,
+                                                            lineNumber: 499,
                                                             columnNumber: 23
                                                         }, this)
                                                     ]
                                                 }, item.id, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 405,
+                                                    lineNumber: 463,
                                                     columnNumber: 21
                                                 }, this);
                                             })
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 401,
+                                            lineNumber: 459,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 381,
+                                    lineNumber: 439,
                                     columnNumber: 15
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 380,
+                                lineNumber: 438,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 379,
+                            lineNumber: 437,
                             columnNumber: 11
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/components/admin/tests.tsx",
-                        lineNumber: 378,
+                        lineNumber: 436,
                         columnNumber: 9
                     }, this)
                 ]
@@ -2116,12 +2221,12 @@ function Tests({ fixedType } = {}) {
                                 children: editingId ? 'Edit Test' : fixedType ? `Add ${fixedLabel}` : 'Add Test'
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 468,
+                                lineNumber: 526,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 467,
+                            lineNumber: 525,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2134,7 +2239,7 @@ function Tests({ fixedType } = {}) {
                                             children: "Title *"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 474,
+                                            lineNumber: 532,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2148,13 +2253,13 @@ function Tests({ fixedType } = {}) {
                                             className: "bg-slate-800 border-slate-700"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 475,
+                                            lineNumber: 533,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 473,
+                                    lineNumber: 531,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2167,7 +2272,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Subject *"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 479,
+                                                    lineNumber: 537,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Select"], {
@@ -2183,12 +2288,12 @@ function Tests({ fixedType } = {}) {
                                                                 placeholder: "Select subject"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 481,
+                                                                lineNumber: 539,
                                                                 columnNumber: 76
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 481,
+                                                            lineNumber: 539,
                                                             columnNumber: 19
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectContent"], {
@@ -2198,24 +2303,24 @@ function Tests({ fixedType } = {}) {
                                                                     children: s.name
                                                                 }, s.id, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 483,
+                                                                    lineNumber: 541,
                                                                     columnNumber: 42
                                                                 }, this))
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 482,
+                                                            lineNumber: 540,
                                                             columnNumber: 19
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 480,
+                                                    lineNumber: 538,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 478,
+                                            lineNumber: 536,
                                             columnNumber: 15
                                         }, this),
                                         !fixedType && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2225,7 +2330,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Type"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 489,
+                                                    lineNumber: 547,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Select"], {
@@ -2239,12 +2344,12 @@ function Tests({ fixedType } = {}) {
                                                             className: "bg-slate-800 border-slate-700",
                                                             children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectValue"], {}, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 491,
+                                                                lineNumber: 549,
                                                                 columnNumber: 78
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 491,
+                                                            lineNumber: 549,
                                                             columnNumber: 21
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectContent"], {
@@ -2255,7 +2360,7 @@ function Tests({ fixedType } = {}) {
                                                                     children: "Mock Test"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 493,
+                                                                    lineNumber: 551,
                                                                     columnNumber: 23
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2263,7 +2368,7 @@ function Tests({ fixedType } = {}) {
                                                                     children: "Previous Year"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 494,
+                                                                    lineNumber: 552,
                                                                     columnNumber: 23
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2271,7 +2376,7 @@ function Tests({ fixedType } = {}) {
                                                                     children: "Daily Quiz"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 495,
+                                                                    lineNumber: 553,
                                                                     columnNumber: 23
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2279,7 +2384,7 @@ function Tests({ fixedType } = {}) {
                                                                     children: "Practice"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 496,
+                                                                    lineNumber: 554,
                                                                     columnNumber: 23
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2287,25 +2392,25 @@ function Tests({ fixedType } = {}) {
                                                                     children: "Subject-wise"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 497,
+                                                                    lineNumber: 555,
                                                                     columnNumber: 23
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 492,
+                                                            lineNumber: 550,
                                                             columnNumber: 21
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 490,
+                                                    lineNumber: 548,
                                                     columnNumber: 19
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 488,
+                                            lineNumber: 546,
                                             columnNumber: 17
                                         }, this),
                                         fixedType && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2315,7 +2420,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Type"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 504,
+                                                    lineNumber: 562,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2324,7 +2429,7 @@ function Tests({ fixedType } = {}) {
                                                     className: "bg-slate-800 border-slate-700 text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 505,
+                                                    lineNumber: 563,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2334,26 +2439,26 @@ function Tests({ fixedType } = {}) {
                                                             className: "w-3 h-3"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 511,
+                                                            lineNumber: 569,
                                                             columnNumber: 21
                                                         }, this),
                                                         " Type is fixed for this section and cannot be changed."
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 510,
+                                                    lineNumber: 568,
                                                     columnNumber: 19
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 503,
+                                            lineNumber: 561,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 477,
+                                    lineNumber: 535,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2366,7 +2471,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Duration (min)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 517,
+                                                    lineNumber: 575,
                                                     columnNumber: 42
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2379,13 +2484,13 @@ function Tests({ fixedType } = {}) {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 517,
+                                                    lineNumber: 575,
                                                     columnNumber: 71
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 517,
+                                            lineNumber: 575,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2395,7 +2500,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Total Marks"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 518,
+                                                    lineNumber: 576,
                                                     columnNumber: 42
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2408,13 +2513,13 @@ function Tests({ fixedType } = {}) {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 518,
+                                                    lineNumber: 576,
                                                     columnNumber: 68
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 518,
+                                            lineNumber: 576,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2424,7 +2529,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Passing Marks"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 519,
+                                                    lineNumber: 577,
                                                     columnNumber: 42
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2437,19 +2542,19 @@ function Tests({ fixedType } = {}) {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 519,
+                                                    lineNumber: 577,
                                                     columnNumber: 70
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 519,
+                                            lineNumber: 577,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 516,
+                                    lineNumber: 574,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2462,7 +2567,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Difficulty"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 523,
+                                                    lineNumber: 581,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Select"], {
@@ -2476,12 +2581,12 @@ function Tests({ fixedType } = {}) {
                                                             className: "bg-slate-800 border-slate-700",
                                                             children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectValue"], {}, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 525,
+                                                                lineNumber: 583,
                                                                 columnNumber: 76
                                                             }, this)
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 525,
+                                                            lineNumber: 583,
                                                             columnNumber: 19
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectContent"], {
@@ -2492,7 +2597,7 @@ function Tests({ fixedType } = {}) {
                                                                     children: "Easy"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 527,
+                                                                    lineNumber: 585,
                                                                     columnNumber: 21
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2500,7 +2605,7 @@ function Tests({ fixedType } = {}) {
                                                                     children: "Medium"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 528,
+                                                                    lineNumber: 586,
                                                                     columnNumber: 21
                                                                 }, this),
                                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$select$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["SelectItem"], {
@@ -2508,25 +2613,25 @@ function Tests({ fixedType } = {}) {
                                                                     children: "Hard"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 529,
+                                                                    lineNumber: 587,
                                                                     columnNumber: 21
                                                                 }, this)
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 526,
+                                                            lineNumber: 584,
                                                             columnNumber: 19
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 524,
+                                                    lineNumber: 582,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 522,
+                                            lineNumber: 580,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2536,7 +2641,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Negative Marks (per wrong)"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 534,
+                                                    lineNumber: 592,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2551,7 +2656,7 @@ function Tests({ fixedType } = {}) {
                                                     className: "bg-slate-800 border-slate-700 disabled:opacity-60 disabled:cursor-not-allowed"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 535,
+                                                    lineNumber: 593,
                                                     columnNumber: 17
                                                 }, this),
                                                 !form.negativeMarking && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2561,26 +2666,26 @@ function Tests({ fixedType } = {}) {
                                                             className: "w-3 h-3"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 538,
+                                                            lineNumber: 596,
                                                             columnNumber: 21
                                                         }, this),
                                                         ' Turn on "Negative Marking" below to set the deduction value.'
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 537,
+                                                    lineNumber: 595,
                                                     columnNumber: 19
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 533,
+                                            lineNumber: 591,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 521,
+                                    lineNumber: 579,
                                     columnNumber: 13
                                 }, this),
                                 form.type === 'previousYear' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2593,7 +2698,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Year"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 545,
+                                                    lineNumber: 603,
                                                     columnNumber: 44
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2606,13 +2711,13 @@ function Tests({ fixedType } = {}) {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 545,
+                                                    lineNumber: 603,
                                                     columnNumber: 63
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 545,
+                                            lineNumber: 603,
                                             columnNumber: 17
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2622,7 +2727,7 @@ function Tests({ fixedType } = {}) {
                                                     children: "Exam Session"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 546,
+                                                    lineNumber: 604,
                                                     columnNumber: 44
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2635,19 +2740,19 @@ function Tests({ fixedType } = {}) {
                                                     className: "bg-slate-800 border-slate-700"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 546,
+                                                    lineNumber: 604,
                                                     columnNumber: 71
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 546,
+                                            lineNumber: 604,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 544,
+                                    lineNumber: 602,
                                     columnNumber: 15
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2657,7 +2762,7 @@ function Tests({ fixedType } = {}) {
                                             children: "Instructions"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 550,
+                                            lineNumber: 608,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$textarea$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Textarea"], {
@@ -2671,13 +2776,13 @@ function Tests({ fixedType } = {}) {
                                             className: "bg-slate-800 border-slate-700"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 551,
+                                            lineNumber: 609,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 549,
+                                    lineNumber: 607,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2694,7 +2799,7 @@ function Tests({ fixedType } = {}) {
                                                         })
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 555,
+                                                    lineNumber: 613,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$label$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Label"], {
@@ -2702,13 +2807,13 @@ function Tests({ fixedType } = {}) {
                                                     children: "Published"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 556,
+                                                    lineNumber: 614,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 554,
+                                            lineNumber: 612,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2722,7 +2827,7 @@ function Tests({ fixedType } = {}) {
                                                         })
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 559,
+                                                    lineNumber: 617,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$label$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Label"], {
@@ -2730,19 +2835,19 @@ function Tests({ fixedType } = {}) {
                                                     children: "Negative Marking"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 560,
+                                                    lineNumber: 618,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 558,
+                                            lineNumber: 616,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 553,
+                                    lineNumber: 611,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2758,7 +2863,7 @@ function Tests({ fixedType } = {}) {
                                                             className: "w-4 h-4 text-amber-400"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 571,
+                                                            lineNumber: 629,
                                                             columnNumber: 19
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$label$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Label"], {
@@ -2766,13 +2871,13 @@ function Tests({ fixedType } = {}) {
                                                             children: "Premium Test"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 572,
+                                                            lineNumber: 630,
                                                             columnNumber: 19
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 570,
+                                                    lineNumber: 628,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$switch$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Switch"], {
@@ -2783,13 +2888,13 @@ function Tests({ fixedType } = {}) {
                                                         })
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 574,
+                                                    lineNumber: 632,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 569,
+                                            lineNumber: 627,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -2797,7 +2902,7 @@ function Tests({ fixedType } = {}) {
                                             children: "Premium tests require a subscription OR a one-time per-test payment. Set a price below so non-premium users can buy it individually."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 579,
+                                            lineNumber: 637,
                                             columnNumber: 15
                                         }, this),
                                         (form.isPremium || form.price > 0) && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2813,14 +2918,14 @@ function Tests({ fixedType } = {}) {
                                                                     className: "w-3 h-3"
                                                                 }, void 0, false, {
                                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                                    lineNumber: 585,
+                                                                    lineNumber: 643,
                                                                     columnNumber: 64
                                                                 }, this),
                                                                 " Price (₹)"
                                                             ]
                                                         }, void 0, true, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 585,
+                                                            lineNumber: 643,
                                                             columnNumber: 21
                                                         }, this),
                                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -2836,13 +2941,13 @@ function Tests({ fixedType } = {}) {
                                                             className: "bg-slate-800 border-slate-700"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 586,
+                                                            lineNumber: 644,
                                                             columnNumber: 21
                                                         }, this)
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 584,
+                                                    lineNumber: 642,
                                                     columnNumber: 19
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2854,7 +2959,7 @@ function Tests({ fixedType } = {}) {
                                                                 className: "w-3 h-3"
                                                             }, void 0, false, {
                                                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                                                lineNumber: 598,
+                                                                lineNumber: 656,
                                                                 columnNumber: 23
                                                             }, this),
                                                             " ",
@@ -2862,30 +2967,30 @@ function Tests({ fixedType } = {}) {
                                                         ]
                                                     }, void 0, true, {
                                                         fileName: "[project]/src/components/admin/tests.tsx",
-                                                        lineNumber: 597,
+                                                        lineNumber: 655,
                                                         columnNumber: 21
                                                     }, this)
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 596,
+                                                    lineNumber: 654,
                                                     columnNumber: 19
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 583,
+                                            lineNumber: 641,
                                             columnNumber: 17
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 568,
+                                    lineNumber: 626,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 472,
+                            lineNumber: 530,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["DialogFooter"], {
@@ -2897,7 +3002,7 @@ function Tests({ fixedType } = {}) {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 606,
+                                    lineNumber: 664,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -2909,31 +3014,31 @@ function Tests({ fixedType } = {}) {
                                             className: "w-4 h-4 mr-1 animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 608,
+                                            lineNumber: 666,
                                             columnNumber: 26
                                         }, this),
                                         editingId ? 'Update' : 'Add'
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 607,
+                                    lineNumber: 665,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 605,
+                            lineNumber: 663,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/tests.tsx",
-                    lineNumber: 466,
+                    lineNumber: 524,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/tests.tsx",
-                lineNumber: 465,
+                lineNumber: 523,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Dialog"], {
@@ -2947,12 +3052,12 @@ function Tests({ fixedType } = {}) {
                                 children: "Bulk Add Tests"
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/tests.tsx",
-                                lineNumber: 619,
+                                lineNumber: 677,
                                 columnNumber: 13
                             }, this)
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 618,
+                            lineNumber: 676,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2966,7 +3071,7 @@ function Tests({ fixedType } = {}) {
                                             children: "Paste a JSON array of test objects below, or paste CSV rows (first row = column headers)."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 623,
+                                            lineNumber: 681,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -2983,14 +3088,14 @@ function Tests({ fixedType } = {}) {
                                                             className: "w-3.5 h-3.5 mr-1"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 634,
+                                                            lineNumber: 692,
                                                             columnNumber: 19
                                                         }, this),
                                                         " Download Template"
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 627,
+                                                    lineNumber: 685,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -3004,14 +3109,14 @@ function Tests({ fixedType } = {}) {
                                                             className: "w-3.5 h-3.5 mr-1"
                                                         }, void 0, false, {
                                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                                            lineNumber: 643,
+                                                            lineNumber: 701,
                                                             columnNumber: 19
                                                         }, this),
                                                         " Download CSV"
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 636,
+                                                    lineNumber: 694,
                                                     columnNumber: 17
                                                 }, this),
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -3023,19 +3128,19 @@ function Tests({ fixedType } = {}) {
                                                     children: "Load Sample"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                                    lineNumber: 645,
+                                                    lineNumber: 703,
                                                     columnNumber: 17
                                                 }, this)
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 626,
+                                            lineNumber: 684,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 622,
+                                    lineNumber: 680,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$textarea$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Textarea"], {
@@ -3046,7 +3151,7 @@ function Tests({ fixedType } = {}) {
                                     className: "bg-slate-800 border-slate-700 font-mono text-xs"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 656,
+                                    lineNumber: 714,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -3058,7 +3163,7 @@ function Tests({ fixedType } = {}) {
                                             children: "title"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 664,
+                                            lineNumber: 722,
                                             columnNumber: 23
                                         }, this),
                                         ",",
@@ -3068,7 +3173,7 @@ function Tests({ fixedType } = {}) {
                                             children: "subjectId"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 665,
+                                            lineNumber: 723,
                                             columnNumber: 15
                                         }, this),
                                         " (existing subject id),",
@@ -3078,7 +3183,7 @@ function Tests({ fixedType } = {}) {
                                             children: "type"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 666,
+                                            lineNumber: 724,
                                             columnNumber: 15
                                         }, this),
                                         " (mock | previousYear | dailyQuiz | practice | subjectwise),",
@@ -3088,7 +3193,7 @@ function Tests({ fixedType } = {}) {
                                             children: "duration"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 667,
+                                            lineNumber: 725,
                                             columnNumber: 15
                                         }, this),
                                         " (min),",
@@ -3098,7 +3203,7 @@ function Tests({ fixedType } = {}) {
                                             children: "totalMarks"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 668,
+                                            lineNumber: 726,
                                             columnNumber: 15
                                         }, this),
                                         ",",
@@ -3108,7 +3213,7 @@ function Tests({ fixedType } = {}) {
                                             children: "passingMarks"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 669,
+                                            lineNumber: 727,
                                             columnNumber: 15
                                         }, this),
                                         ",",
@@ -3118,7 +3223,7 @@ function Tests({ fixedType } = {}) {
                                             children: "difficulty"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 670,
+                                            lineNumber: 728,
                                             columnNumber: 15
                                         }, this),
                                         " (easy | medium | hard),",
@@ -3128,7 +3233,7 @@ function Tests({ fixedType } = {}) {
                                             children: "isPublished"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 671,
+                                            lineNumber: 729,
                                             columnNumber: 15
                                         }, this),
                                         " (boolean),",
@@ -3138,7 +3243,7 @@ function Tests({ fixedType } = {}) {
                                             children: "isPremium"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 672,
+                                            lineNumber: 730,
                                             columnNumber: 15
                                         }, this),
                                         " (boolean),",
@@ -3148,7 +3253,7 @@ function Tests({ fixedType } = {}) {
                                             children: "negativeMarking"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 673,
+                                            lineNumber: 731,
                                             columnNumber: 15
                                         }, this),
                                         " (boolean),",
@@ -3158,7 +3263,7 @@ function Tests({ fixedType } = {}) {
                                             children: "negativeMarks"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 674,
+                                            lineNumber: 732,
                                             columnNumber: 15
                                         }, this),
                                         " (number),",
@@ -3168,20 +3273,20 @@ function Tests({ fixedType } = {}) {
                                             children: "price"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 675,
+                                            lineNumber: 733,
                                             columnNumber: 15
                                         }, this),
                                         " (number, INR; 0 = free)"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 663,
+                                    lineNumber: 721,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 621,
+                            lineNumber: 679,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["DialogFooter"], {
@@ -3193,7 +3298,7 @@ function Tests({ fixedType } = {}) {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 679,
+                                    lineNumber: 737,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -3205,31 +3310,31 @@ function Tests({ fixedType } = {}) {
                                             className: "w-4 h-4 mr-1 animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 691,
+                                            lineNumber: 749,
                                             columnNumber: 30
                                         }, this),
                                         "Validate & Import"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 686,
+                                    lineNumber: 744,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 678,
+                            lineNumber: 736,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/tests.tsx",
-                    lineNumber: 617,
+                    lineNumber: 675,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/tests.tsx",
-                lineNumber: 616,
+                lineNumber: 674,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
@@ -3244,7 +3349,7 @@ function Tests({ fixedType } = {}) {
                                     children: "Delete this test?"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 701,
+                                    lineNumber: 759,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
@@ -3252,13 +3357,13 @@ function Tests({ fixedType } = {}) {
                                     children: "Questions under this test will remain in Firestore but lose their test link."
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 702,
+                                    lineNumber: 760,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 700,
+                            lineNumber: 758,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
@@ -3268,7 +3373,7 @@ function Tests({ fixedType } = {}) {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 705,
+                                    lineNumber: 763,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
@@ -3277,24 +3382,24 @@ function Tests({ fixedType } = {}) {
                                     children: "Delete"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 706,
+                                    lineNumber: 764,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 704,
+                            lineNumber: 762,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/tests.tsx",
-                    lineNumber: 699,
+                    lineNumber: 757,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/tests.tsx",
-                lineNumber: 698,
+                lineNumber: 756,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
@@ -3312,7 +3417,7 @@ function Tests({ fixedType } = {}) {
                                             className: "w-5 h-5 text-red-400"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 716,
+                                            lineNumber: 774,
                                             columnNumber: 15
                                         }, this),
                                         " Delete ",
@@ -3323,7 +3428,7 @@ function Tests({ fixedType } = {}) {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 715,
+                                    lineNumber: 773,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
@@ -3339,19 +3444,19 @@ function Tests({ fixedType } = {}) {
                                             children: "This action cannot be undone."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 721,
+                                            lineNumber: 779,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 718,
+                                    lineNumber: 776,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 714,
+                            lineNumber: 772,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
@@ -3361,7 +3466,7 @@ function Tests({ fixedType } = {}) {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 725,
+                                    lineNumber: 783,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
@@ -3373,7 +3478,7 @@ function Tests({ fixedType } = {}) {
                                             className: "w-4 h-4 mr-1 animate-spin"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/tests.tsx",
-                                            lineNumber: 731,
+                                            lineNumber: 789,
                                             columnNumber: 32
                                         }, this),
                                         "Delete ",
@@ -3383,34 +3488,282 @@ function Tests({ fixedType } = {}) {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/tests.tsx",
-                                    lineNumber: 726,
+                                    lineNumber: 784,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/tests.tsx",
-                            lineNumber: 724,
+                            lineNumber: 782,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/tests.tsx",
-                    lineNumber: 713,
+                    lineNumber: 771,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/tests.tsx",
-                lineNumber: 712,
+                lineNumber: 770,
+                columnNumber: 7
+            }, this),
+            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
+                open: bulkFreeOpen,
+                onOpenChange: setBulkFreeOpen,
+                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogContent"], {
+                    className: "bg-slate-900 border-slate-700 text-white max-w-md",
+                    children: [
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogHeader"], {
+                            children: [
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogTitle"], {
+                                    className: "flex items-center gap-2",
+                                    children: [
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$lock$2d$open$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Unlock$3e$__["Unlock"], {
+                                            className: "w-5 h-5 text-emerald-400"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 801,
+                                            columnNumber: 15
+                                        }, this),
+                                        " Reset ",
+                                        selectedIds.size,
+                                        " test",
+                                        selectedIds.size === 1 ? '' : 's',
+                                        " to free?"
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/src/components/admin/tests.tsx",
+                                    lineNumber: 800,
+                                    columnNumber: 13
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
+                                    className: "text-slate-400",
+                                    children: [
+                                        "This sets ",
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("b", {
+                                            children: "isPremium = false"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 804,
+                                            columnNumber: 25
+                                        }, this),
+                                        " and ",
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("b", {
+                                            children: "price = 0"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 804,
+                                            columnNumber: 54
+                                        }, this),
+                                        " on the selected test",
+                                        selectedIds.size === 1 ? '' : 's',
+                                        " in Firestore. Users will be able to attempt them without paying or subscribing.",
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                            className: "block mt-2 text-emerald-300 font-medium",
+                                            children: "You can re-enable premium/pricing later by editing each test."
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 806,
+                                            columnNumber: 15
+                                        }, this)
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/src/components/admin/tests.tsx",
+                                    lineNumber: 803,
+                                    columnNumber: 13
+                                }, this)
+                            ]
+                        }, void 0, true, {
+                            fileName: "[project]/src/components/admin/tests.tsx",
+                            lineNumber: 799,
+                            columnNumber: 11
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
+                            children: [
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogCancel"], {
+                                    className: "border-slate-700 text-slate-300",
+                                    children: "Cancel"
+                                }, void 0, false, {
+                                    fileName: "[project]/src/components/admin/tests.tsx",
+                                    lineNumber: 810,
+                                    columnNumber: 13
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
+                                    onClick: ()=>handleBulkMakeFree(false),
+                                    disabled: bulkFreeing,
+                                    className: "bg-emerald-600 hover:bg-emerald-700 text-white",
+                                    children: [
+                                        bulkFreeing && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$loader$2d$circle$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Loader2$3e$__["Loader2"], {
+                                            className: "w-4 h-4 mr-1 animate-spin"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 816,
+                                            columnNumber: 31
+                                        }, this),
+                                        "Make ",
+                                        selectedIds.size,
+                                        " test",
+                                        selectedIds.size === 1 ? '' : 's',
+                                        " free"
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/src/components/admin/tests.tsx",
+                                    lineNumber: 811,
+                                    columnNumber: 13
+                                }, this)
+                            ]
+                        }, void 0, true, {
+                            fileName: "[project]/src/components/admin/tests.tsx",
+                            lineNumber: 809,
+                            columnNumber: 11
+                        }, this)
+                    ]
+                }, void 0, true, {
+                    fileName: "[project]/src/components/admin/tests.tsx",
+                    lineNumber: 798,
+                    columnNumber: 9
+                }, this)
+            }, void 0, false, {
+                fileName: "[project]/src/components/admin/tests.tsx",
+                lineNumber: 797,
+                columnNumber: 7
+            }, this),
+            /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
+                open: bulkFreeAllOpen,
+                onOpenChange: setBulkFreeAllOpen,
+                children: /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogContent"], {
+                    className: "bg-slate-900 border-slate-700 text-white max-w-md",
+                    children: [
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogHeader"], {
+                            children: [
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogTitle"], {
+                                    className: "flex items-center gap-2",
+                                    children: [
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$lock$2d$open$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Unlock$3e$__["Unlock"], {
+                                            className: "w-5 h-5 text-amber-400"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 828,
+                                            columnNumber: 15
+                                        }, this),
+                                        " Make ALL ",
+                                        items.length,
+                                        " tests free?"
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/src/components/admin/tests.tsx",
+                                    lineNumber: 827,
+                                    columnNumber: 13
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
+                                    className: "text-slate-400",
+                                    children: [
+                                        "This will reset ",
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("b", {
+                                            children: "isPremium = false"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 831,
+                                            columnNumber: 31
+                                        }, this),
+                                        " and ",
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("b", {
+                                            children: "price = 0"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 831,
+                                            columnNumber: 60
+                                        }, this),
+                                        " on ",
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("b", {
+                                            children: "every test"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 831,
+                                            columnNumber: 80
+                                        }, this),
+                                        " in Firestore (",
+                                        items.length,
+                                        " total, ",
+                                        items.filter((t)=>t.isPremium || t.price > 0).length,
+                                        " currently paid/premium). All users will be able to attempt every test without paying.",
+                                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
+                                            className: "block mt-2 text-amber-300 font-medium",
+                                            children: 'Use this if tests are incorrectly showing "Go Premium" in the user app.'
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 834,
+                                            columnNumber: 15
+                                        }, this)
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/src/components/admin/tests.tsx",
+                                    lineNumber: 830,
+                                    columnNumber: 13
+                                }, this)
+                            ]
+                        }, void 0, true, {
+                            fileName: "[project]/src/components/admin/tests.tsx",
+                            lineNumber: 826,
+                            columnNumber: 11
+                        }, this),
+                        /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
+                            children: [
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogCancel"], {
+                                    className: "border-slate-700 text-slate-300",
+                                    children: "Cancel"
+                                }, void 0, false, {
+                                    fileName: "[project]/src/components/admin/tests.tsx",
+                                    lineNumber: 838,
+                                    columnNumber: 13
+                                }, this),
+                                /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
+                                    onClick: ()=>handleBulkMakeFree(true),
+                                    disabled: bulkFreeing,
+                                    className: "bg-amber-600 hover:bg-amber-700 text-white",
+                                    children: [
+                                        bulkFreeing && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$loader$2d$circle$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__Loader2$3e$__["Loader2"], {
+                                            className: "w-4 h-4 mr-1 animate-spin"
+                                        }, void 0, false, {
+                                            fileName: "[project]/src/components/admin/tests.tsx",
+                                            lineNumber: 844,
+                                            columnNumber: 31
+                                        }, this),
+                                        "Make all ",
+                                        items.length,
+                                        " tests free"
+                                    ]
+                                }, void 0, true, {
+                                    fileName: "[project]/src/components/admin/tests.tsx",
+                                    lineNumber: 839,
+                                    columnNumber: 13
+                                }, this)
+                            ]
+                        }, void 0, true, {
+                            fileName: "[project]/src/components/admin/tests.tsx",
+                            lineNumber: 837,
+                            columnNumber: 11
+                        }, this)
+                    ]
+                }, void 0, true, {
+                    fileName: "[project]/src/components/admin/tests.tsx",
+                    lineNumber: 825,
+                    columnNumber: 9
+                }, this)
+            }, void 0, false, {
+                fileName: "[project]/src/components/admin/tests.tsx",
+                lineNumber: 824,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/src/components/admin/tests.tsx",
-        lineNumber: 311,
+        lineNumber: 342,
         columnNumber: 5
     }, this);
 }
-_s(Tests, "g3kLRrJaFQEs9VUFFJzZ4m0XoxQ=", false, function() {
+_s(Tests, "bPyC2zNhJgZVNwNfCxUDoboO1l4=", false, function() {
     return [
         __TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$store$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["useAppStore"]
     ];

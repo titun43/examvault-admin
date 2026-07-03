@@ -15,4 +15,10 @@
  GET / 200 in 38ms (compile: 3ms, render: 35ms)
  GET / 200 in 39ms (compile: 3ms, render: 36ms)
  GET /sw.js 404 in 45ms (compile: 5ms, render: 40ms)
- in 45ms (compile: 5ms, render: 40ms)
+ GET / 200 in 66ms (compile: 4ms, render: 62ms)
+ GET / 200 in 36ms (compile: 3ms, render: 33ms)
+ GET / 200 in 34ms (compile: 3ms, render: 31ms)
+ GET /sw.js 404 in 38ms (compile: 6ms, render: 32ms)
+  Reload env: .env.local
+ender: 32ms)
+  Reload env: .env.local

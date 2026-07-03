@@ -6,12 +6,9 @@
   · optimizePackageImports
 
 ✓ Starting...
-Attention: Next.js now collects completely anonymous telemetry regarding usage.
-This information is used to shape Next.js' roadmap and prioritize features.
-You can learn more, including how to opt-out if you'd not like to participate in this anonymous program, by visiting the following URL:
-https://nextjs.org/telemetry
-
-✓ Ready in 1018ms
-js.org/telemetry
-
-✓ Ready in 1018ms
+✓ Ready in 1021ms
+ GET / 200 in 2.3s (compile: 1955ms, render: 338ms)
+ POST /api/payments/create-order 400 in 152ms (compile: 116ms, render: 36ms)
+ GET /sw.js 404 in 113ms (compile: 58ms, render: 55ms)
+ POST /api/payments/create-order 500 in 14ms (compile: 3ms, render: 11ms)
+ in 14ms (compile: 3ms, render: 11ms)

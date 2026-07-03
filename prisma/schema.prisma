@@ -1,14 +1,14 @@
 // =============================================================================
 // ExamVault Payment System - Prisma Schema
 // =============================================================================
-// Relational payment data lives in PostgreSQL (via Prisma) for transactional
+// Relational payment data lives in SQLite (via Prisma) for transactional
 // integrity, idempotency, foreign keys, and audit logs.
 // Content (categories/subjects/tests/questions) continues to live in Firestore
 // and is referenced here by its Firestore doc ID (String).
 //
-// NOTE: PostgreSQL is required (SQLite does not work on Vercel serverless).
-// Use Neon (free tier) or any hosted Postgres. Set DATABASE_URL to the
-// connection string in .env.local and in your Vercel project env vars.
+// NOTE: SQLite is used in the local sandbox. For production (Vercel), switch
+// `provider` to `postgresql` and set DATABASE_URL to a hosted Postgres URL
+// (Neon, Supabase, etc.). Enums work on both via Prisma's TEXT mapping.
 // =============================================================================
 
 generator client {
@@ -16,7 +16,7 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 

@@ -209,4 +209,9 @@
 ✓ Compiled in 167ms
  GET /sw.js 404 in 39ms (compile: 12ms, render: 27ms)
  GET / 200 in 400ms (compile: 72ms, render: 329ms)
- 400ms (compile: 72ms, render: 329ms)
+ GET / 200 in 72ms (compile: 29ms, render: 43ms)
+ GET / 200 in 74ms (compile: 4ms, render: 71ms)
+ GET / 200 in 33ms (compile: 3ms, render: 31ms)
+ GET /sw.js 404 in 37ms (compile: 6ms, render: 31ms)
+ GET /sw.js 404 in 36ms (compile: 6ms, render: 30ms)
+ in 36ms (compile: 6ms, render: 30ms)

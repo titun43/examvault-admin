@@ -177,6 +177,30 @@ export default function Categories() {
       toast.error('Input must be a JSON array or a CSV with a header row');
       return;
     }
+    // Validate: a premium category MUST have premiumPrice > 0, otherwise the
+    // user app shows a lock with no "Unlock this exam" button (broken state).
+    // Auto-fix: if isPremium=true but premiumPrice is missing/0, force a
+    // sane default (₹99) so the import doesn't create broken categories.
+    // We warn the admin about each auto-fix.
+    const autoFixed: string[] = [];
+    parsed.forEach((item: any, idx: number) => {
+      const isPrem = item.isPremium === true ||
+        String(item.isPremium).toLowerCase() === 'true';
+      let price = Number(item.premiumPrice) || 0;
+      if (isPrem && price <= 0) {
+        price = 99;
+        item.premiumPrice = price;
+        autoFixed.push(`row ${idx + 1}${item.name ? ` (${item.name})` : ''}`);
+      }
+      if (!isPrem) {
+        item.premiumPrice = null;
+      }
+    });
+    if (autoFixed.length > 0) {
+      toast.warning(
+        `${autoFixed.length} premium categor${autoFixed.length === 1 ? 'y' : 'ies'} had no price — auto-set to ₹99: ${autoFixed.slice(0, 3).join(', ')}${autoFixed.length > 3 ? '...' : ''}`,
+      );
+    }
     setBulkSaving(true);
     try {
       const batch = writeBatch(db);
@@ -253,6 +277,17 @@ export default function Categories() {
   const handleSave = async () => {
     if (!form.name.trim()) {
       toast.error('Name is required');
+      return;
+    }
+    // CRITICAL: A premium category MUST have a price > 0. Without it:
+    //   - The Flutter app hides the "Unlock this exam" button (it only shows
+    //     when premiumPrice > 0), so users see a lock with NO way to pay.
+    //   - The sync-from-category API rejects the request (premiumPrice <= 0),
+    //     so no EXAM_PACK Product is created → purchase is impossible even if
+    //     the button somehow showed.
+    // Razorpay's minimum is ₹1, so enforce at least that.
+    if (form.isPremium && (!form.premiumPrice || Number(form.premiumPrice) <= 0)) {
+      toast.error('Premium price is required when "Premium Category" is ON. Enter at least ₹1 — this is the amount users pay to unlock this exam.');
       return;
     }
     setSaving(true);
@@ -684,36 +719,44 @@ export default function Categories() {
                 Premium categories require a subscription to access their tests & content.
               </p>
               {form.isPremium && (
-                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-700">
-                  <div className="space-y-2">
-                    <Label className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> Price (₹)</Label>
-                    <Input
-                      type="number"
-                      value={form.premiumPrice}
-                      onChange={(e) => setForm({ ...form, premiumPrice: Number(e.target.value) })}
-                      placeholder="99"
-                      min="0"
-                      className="bg-slate-800 border-slate-700"
-                    />
+                <div className="space-y-3 pt-1 border-t border-slate-700">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-2">
+                      <Label className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> Price (₹) *</Label>
+                      <Input
+                        type="number"
+                        value={form.premiumPrice}
+                        onChange={(e) => setForm({ ...form, premiumPrice: Number(e.target.value) })}
+                        placeholder="99"
+                        min="1"
+                        className="bg-slate-800 border-slate-700"
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Duration (months)</Label>
+                      <Select
+                        value={String(form.premiumDurationMonths)}
+                        onValueChange={(v) => setForm({ ...form, premiumDurationMonths: Number(v) })}
+                      >
+                        <SelectTrigger className="bg-slate-800 border-slate-700">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent className="bg-slate-800 border-slate-700">
+                          <SelectItem value="1">1 month</SelectItem>
+                          <SelectItem value="3">3 months</SelectItem>
+                          <SelectItem value="6">6 months</SelectItem>
+                          <SelectItem value="12">12 months</SelectItem>
+                          <SelectItem value="120">Lifetime (10 years)</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
                   </div>
-                  <div className="space-y-2">
-                    <Label>Duration (months)</Label>
-                    <Select
-                      value={String(form.premiumDurationMonths)}
-                      onValueChange={(v) => setForm({ ...form, premiumDurationMonths: Number(v) })}
-                    >
-                      <SelectTrigger className="bg-slate-800 border-slate-700">
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent className="bg-slate-800 border-slate-700">
-                        <SelectItem value="1">1 month</SelectItem>
-                        <SelectItem value="3">3 months</SelectItem>
-                        <SelectItem value="6">6 months</SelectItem>
-                        <SelectItem value="12">12 months</SelectItem>
-                        <SelectItem value="120">Lifetime (10 years)</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
+                  <p className="text-xs text-amber-400/80 bg-amber-950/30 border border-amber-900/40 rounded px-2 py-1.5">
+                    💡 This price is what users pay to unlock THIS exam. It shows as
+                    "Unlock this exam (₹{form.premiumPrice || 0})" in the user app.
+                    Must be at least ₹1 (Razorpay minimum). Without a valid price,
+                    the lock shows but users can't buy.
+                  </p>
                 </div>
               )}
             </div>

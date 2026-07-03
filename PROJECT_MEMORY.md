@@ -172,6 +172,12 @@ DATABASE_URL=file:/home/z/my-project/db/custom.db
     - Fix: New API `POST /api/admin/products/sync-from-category` idempotently upserts EXAM_PACK Product (create/activate+sync price / deactivate).
     - `categories.tsx` `handleSave` + `handleDelete` now call this endpoint after Firestore write. Non-fatal on sync failure (warning toast).
     - Also fixes two-sources-of-truth drift: `categories.premiumPrice` (Firestore) ↔ `Product.price` (Prisma) now synced.
+12. **Fixed: Category premium paywall not showing in Flutter app** (`e97a0da`, pushed to `examvault`):
+    - Root cause: `auth_service.dart` admin bootstrap auto-set `subscriptionStatus=premium` with NO expiry → admin/tester was forever premium in local cache → `home_screen.dart` category tap used only local `auth.isPremium` check → `categoryLocked=false` → paywall never fired.
+    - Fix 1: `auth_service.dart` admin bootstrap no longer sets premium. Admin self-promotion only sets `role=admin`.
+    - Fix 2: `all_categories_screen.dart` `_showPaywall` now has "Unlock this exam (₹X)" button (was missing — only had "Go Premium").
+    - Fix 3: `category_detail_screen.dart` 404 from access-check now shows paywall (`denied`) instead of confusing "rolling out" message.
+    - **TESTER ACTION REQUIRED**: existing admin/tester accounts already have stale `subscriptionStatus=premium` in Firestore. Must manually clear `subscriptionStatus` + `isPremium` in `users/{uid}` doc, OR test with a fresh non-admin account.
 
 **Known issues:**
 - ⚠️ `upload/rzp-key.csv live` is **still in git history** (revert removed from current tree only). User should regenerate Razorpay LIVE keys if those were real.

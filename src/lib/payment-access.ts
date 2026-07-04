@@ -148,6 +148,52 @@ export async function checkAccess(
   return { allowed: false, reason: 'No matching entitlement', requiresPremium: true };
 }
 
+// ==================== ENTITLEMENT EXISTS CHECK ====================
+// Used by the /verify endpoint's idempotency path: when the order is already
+// PAID (because the webhook fired first), we must NOT blindly return
+// `granted: true`. We must verify the entitlement row actually exists in the
+// DB. If it doesn't (because grantEntitlement threw when the webhook tried),
+// the caller can re-attempt the grant. This closes the "PAID but no
+// entitlement" hole that caused the "category payment succeeded but tests
+// still locked" bug.
+export async function entitlementExists(
+  prismaUserId: string,
+  productType: PurchaseType,
+  meta?: { testId?: string; subjectId?: string; categoryId?: string; planId?: string },
+): Promise<boolean> {
+  switch (productType) {
+    case 'PREMIUM_SUBSCRIPTION': {
+      const sub = await db.premiumSubscription.findFirst({
+        where: { userId: prismaUserId, status: 'ACTIVE', endDate: { gt: new Date() } },
+      });
+      return !!sub;
+    }
+    case 'EXAM_PACK': {
+      if (!meta?.categoryId) return false;
+      const pack = await db.examPackPurchase.findFirst({
+        where: { userId: prismaUserId, categoryId: meta.categoryId, isActive: true },
+      });
+      return !!pack;
+    }
+    case 'SUBJECT_PACK': {
+      if (!meta?.subjectId) return false;
+      const pack = await db.subjectPackPurchase.findFirst({
+        where: { userId: prismaUserId, subjectId: meta.subjectId, isActive: true },
+      });
+      return !!pack;
+    }
+    case 'TEST_PURCHASE': {
+      if (!meta?.testId) return false;
+      const purch = await db.testPurchase.findFirst({
+        where: { userId: prismaUserId, testId: meta.testId, isActive: true },
+      });
+      return !!purch;
+    }
+    default:
+      return false;
+  }
+}
+
 // ==================== GRANT ACCESS AFTER PAYMENT ====================
 // Called by the verify endpoint after a successful signature verification.
 // Idempotent: if the entitlement already exists, returns it without creating
@@ -250,13 +296,36 @@ export async function grantEntitlement(
         // foreign-key constraint violation — the entitlement is never created.
         // Resolve the real Product.id by looking up (type=SUBJECT_PACK,
         // refId=subjectId) inside this transaction.
-        const subjProduct = await tx.product.findFirst({
-          where: { type: 'SUBJECT_PACK', refId: meta.subjectId, isActive: true },
+        //
+        // RESILIENCE FIX (v2): if the Product doesn't exist (admin didn't run
+        // sync-from-category, or it was deactivated), AUTO-CREATE it so the
+        // entitlement is ALWAYS granted. Previously, a missing Product caused
+        // grantEntitlement to throw → the order was left PAID with NO
+        // entitlement → the user saw "payment succeeded but still locked".
+        // Auto-creating the Product here ensures the FK is satisfied and the
+        // entitlement row is always created when payment succeeds.
+        let subjProduct = await tx.product.findFirst({
+          where: { type: 'SUBJECT_PACK', refId: meta.subjectId },
         });
         if (!subjProduct) {
-          throw new Error(
-            `SUBJECT_PACK product not found for subjectId: ${meta.subjectId}`,
-          );
+          subjProduct = await tx.product.create({
+            data: {
+              type: 'SUBJECT_PACK',
+              name: productName,
+              slug: `subject-pack-${meta.subjectId}`,
+              refId: meta.subjectId,
+              price: amount,
+              currency: 'INR',
+              isActive: true,
+              subjectIds: JSON.stringify([meta.subjectId]),
+            },
+          });
+        } else if (!subjProduct.isActive) {
+          // Reactivate + sync the price in case it was deactivated.
+          subjProduct = await tx.product.update({
+            where: { id: subjProduct.id },
+            data: { isActive: true, price: amount, name: productName },
+          });
         }
         await tx.subjectPackPurchase.upsert({
           where: { userId_subjectId: { userId: prismaUserId, subjectId: meta.subjectId } },
@@ -291,13 +360,36 @@ export async function grantEntitlement(
         // and the user sees "payment succeeded but still locked". Resolve the
         // real Product.id by looking up (type=EXAM_PACK,
         // refId=categoryId) inside this transaction.
-        const examProduct = await tx.product.findFirst({
-          where: { type: 'EXAM_PACK', refId: meta.categoryId, isActive: true },
+        //
+        // RESILIENCE FIX (v2): if the Product doesn't exist (admin didn't run
+        // sync-from-category, or it was deactivated), AUTO-CREATE it so the
+        // entitlement is ALWAYS granted. Previously, a missing Product caused
+        // grantEntitlement to throw → the order was left PAID with NO
+        // entitlement → the user saw "payment succeeded but still locked".
+        // Auto-creating the Product here ensures the FK is satisfied and the
+        // entitlement row is always created when payment succeeds.
+        let examProduct = await tx.product.findFirst({
+          where: { type: 'EXAM_PACK', refId: meta.categoryId },
         });
         if (!examProduct) {
-          throw new Error(
-            `EXAM_PACK product not found for categoryId: ${meta.categoryId}`,
-          );
+          examProduct = await tx.product.create({
+            data: {
+              type: 'EXAM_PACK',
+              name: productName,
+              slug: `exam-pack-${meta.categoryId}`,
+              refId: meta.categoryId,
+              price: amount,
+              currency: 'INR',
+              isActive: true,
+              subjectIds: '[]',
+            },
+          });
+        } else if (!examProduct.isActive) {
+          // Reactivate + sync the price in case it was deactivated.
+          examProduct = await tx.product.update({
+            where: { id: examProduct.id },
+            data: { isActive: true, price: amount, name: productName },
+          });
         }
         await tx.examPackPurchase.upsert({
           where: { userId_categoryId: { userId: prismaUserId, categoryId: meta.categoryId } },

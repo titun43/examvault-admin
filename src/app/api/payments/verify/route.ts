@@ -21,7 +21,7 @@ import {
   fetchRazorpayPayment,
 } from '@/lib/razorpay-server';
 import { requireUser, upsertUser } from '@/lib/payment-auth';
-import { grantEntitlement } from '@/lib/payment-access';
+import { grantEntitlement, entitlementExists } from '@/lib/payment-access';
 import { resolveOrderMeta, type OrderMeta } from '@/lib/order-meta';
 import { getClientMeta } from '../_lib';
 
@@ -76,16 +76,61 @@ export async function POST(req: NextRequest) {
     }
 
     // ---- Idempotency: already paid ----
+    // CRITICAL: do NOT blindly return granted:true here. If the webhook fired
+    // first and its grantEntitlement call FAILED (e.g. Product row was missing
+    // at the time), the order is PAID but NO entitlement exists. Returning
+    // granted:true in that case causes the Flutter app to optimistically
+    // unlock the category (120s cache) while tests still hit the backend and
+    // get denied — the "category payment korle test a abar paywall" bug.
+    // Instead, verify the entitlement truly exists; if not, re-attempt the
+    // grant (grantEntitlement is now resilient — auto-creates the Product).
     if (order.status === 'PAID') {
       const existingPayment = await db.payment.findFirst({
         where: { orderId: order.id, razorpayPaymentId },
       });
+      const meta = await resolveOrderMeta(order.id);
+      let granted = true;
+      try {
+        granted = await entitlementExists(prismaUserId, order.productType, meta);
+        if (!granted) {
+          // Entitlement missing — re-attempt the grant. grantEntitlement v2
+          // auto-creates the Product if needed, so this should succeed now
+          // even if the original webhook call failed due to a missing Product.
+          await grantEntitlement(
+            prismaUserId,
+            order.productType,
+            order.productId,
+            order.productName,
+            order.amount,
+            existingPayment?.id ?? '',
+            order.id,
+            meta,
+          );
+          granted = true;
+        }
+      } catch (reGrantErr) {
+        const msg = reGrantErr instanceof Error ? reGrantErr.message : 'Unknown';
+        db.paymentLog
+          .create({
+            data: {
+              orderId: order.id,
+              userId: prismaUserId,
+              event: 'RE_GRANT_FAILED',
+              level: 'ERROR',
+              message: `Re-grant failed on already-PAID order: ${msg}`,
+              payload: JSON.stringify({ error: msg, orderId: order.id }),
+              ...clientMeta,
+            },
+          })
+          .catch(() => {});
+        granted = false;
+      }
       return NextResponse.json({
         success: true,
         paymentId: existingPayment?.id ?? null,
         productType: order.productType,
         productId: order.productId,
-        granted: true,
+        granted,
         reused: true,
       });
     }

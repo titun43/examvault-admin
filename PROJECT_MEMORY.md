@@ -913,4 +913,125 @@ PERMANENTLY fixed. Future sessions will not see spurious "modified
 
 ---
 
-*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — splash animation replaced, guest browsing mode added (Flutter `b5eae8c`), admin repo git hygiene fixed (`d07cc69` pushed). Both repos 0/0 sync, clean. Dev server running on port 3000.*
+## 18. Session Log — REAL fix: category paid but tests still locked (session `web-f5c52b64...`, continued)
+
+**User report (verbatim):** "ami jodi category te premium lagiyechi tar mane akdom prothom, tahole seta buy korle se, subject+test sob open hobe, but akhon category payment korle subject ta show korche tar test a click korle abar payment korar option ase"
+
+**Previous "fixes" (sections 15-16) did NOT actually solve this.** They addressed
+symptoms (FK violation, optimistic cache timing, missing categoryId) but missed
+the REAL root cause. After re-reading ALL the actual current code from scratch
+(not trusting the memory notes), the true failure chain was found.
+
+### The REAL root cause (4-layer failure chain)
+
+**Layer A — `grantEntitlement` threw when the Product row was missing:**
+- `payment-access.ts` EXAM_PACK case: `tx.product.findFirst({ type: 'EXAM_PACK', refId: categoryId, isActive: true })`.
+- If the admin marked the category premium but the `sync-from-category` API never
+  created the EXAM_PACK Product row (or it was deactivated), this returned null.
+- The code then `throw new Error('EXAM_PACK product not found')`.
+- Same bug existed for SUBJECT_PACK.
+
+**Layer B — the webhook swallowed the throw:**
+- `webhook/route.ts` `ensureEntitlementGranted`: calls `grantEntitlement` inside
+  a try/catch. On throw, it logs `WEBHOOK_GRANT_FAILED` and does NOT re-throw.
+- The order was already marked PAID (in the transaction before the grant call).
+- Result: order is PAID, but NO ExamPackPurchase row exists, and NO
+  ENTITLEMENT_GRANTED log exists.
+
+**Layer C — the verify route's idempotency path blindly returned granted:true:**
+- `verify/route.ts` line 78-91: `if (order.status === 'PAID') return { granted: true }`.
+- It did NOT check whether the entitlement actually existed.
+- So when the Flutter app called /verify (after the webhook already marked the
+  order PAID), it got `granted: true` without any entitlement being created.
+- The Flutter app's `_verifyAndDispatch` saw `granted: true` → called `onSuccess`.
+
+**Layer D — the Flutter optimistic cache masked the missing entitlement:**
+- `category_detail_screen.dart` onSuccess → `markExamPackPurchased(category.id)`.
+- This wrote a positive decision to cache key `exam:$categoryId` (120s TTL).
+- `checkCategoryAccess(categoryId)` → cache HIT → subjects list opened. ✓
+- But `checkTestAccess(testId)` uses a DIFFERENT cache key (`test:$testId`).
+  - If the user had tapped a test BEFORE paying → stale DENIED entry cached.
+  - If no stale entry → cache MISS → hits backend → no ExamPackPurchase → DENIED.
+- Either way: test paywall. ✗
+
+### The 3-layer fix (this session)
+
+**Fix 1 (backend, `src/lib/payment-access.ts`, commit `507e5ba`):**
+- EXAM_PACK + SUBJECT_PACK cases in `grantEntitlement`: if the Product doesn't
+  exist, AUTO-CREATE it (type, name, slug=`exam-pack-{refId}`, refId, price=amount,
+  isActive=true, subjectIds). If it exists but is inactive, REACTIVATE it.
+- `grantEntitlement` no longer throws for missing Products → the entitlement row
+  is ALWAYS created when payment succeeds.
+- Added `entitlementExists(userId, productType, meta)` helper that checks the
+  actual entitlement row in the DB.
+
+**Fix 2 (backend, `src/app/api/payments/verify/route.ts`, commit `507e5ba`):**
+- The idempotency path (order already PAID) no longer blindly returns
+  `granted: true`. It calls `entitlementExists()`:
+  - If the entitlement exists → return `granted: true`.
+  - If missing → re-attempt `grantEntitlement` (which now succeeds thanks to
+    Fix 1). If the re-grant succeeds → `granted: true`. If it fails →
+    `granted: false` + `RE_GRANT_FAILED` error log.
+- This also recovers EXISTING affected users: the next time they open the app
+  and trigger /verify (or /order-status polling), the re-grant creates the
+  missing entitlement automatically.
+
+**Fix 3 (Flutter, `lib/services/access_service.dart`, commit `a8d1da4`, v1.43.3+53):**
+- `markExamPackPurchased` / `markSubjectPackPurchased` / `markPremiumGranted`
+  now invalidate stale cache entries BEFORE writing the optimistic positive
+  decision:
+  - `markExamPackPurchased` → `_clearPrefix('test:')` (clears all stale test
+    denials for this user — exam pack unlocks all tests in the category).
+  - `markSubjectPackPurchased` → `_clearPrefix('test:')` (same rationale).
+  - `markPremiumGranted` → `clearCache()` (premium unlocks everything).
+- Added `_clearPrefix(prefix)` helper for targeted invalidation.
+- This prevents stale DENIED test decisions from causing a false paywall after
+  a successful category/subject/premium purchase.
+
+### Why all 3 fixes are needed
+
+- Fix 1 alone: the entitlement is created, but stale Flutter cache could still
+  show a paywall for up to 120s after purchase.
+- Fix 3 alone: stale cache is cleared, but if the entitlement doesn't exist
+  (Layer A/B/C), the backend still returns DENIED → paywall.
+- Fix 2 alone: existing affected users recover, but NEW purchases would still
+  hit Layer A if the Product is missing.
+- All 3 together: the entitlement is always created (Fix 1), existing users
+  recover automatically (Fix 2), and stale cache doesn't cause false denials
+  (Fix 3).
+
+### How to verify the fix works
+
+1. Vercel deploys `507e5ba` (admin repo).
+2. Flutter APK build `a8d1da4` succeeds (GitHub Actions).
+3. User installs the new APK, opens a premium category, pays.
+4. Tapping "Open Exam" shows the subjects list (not the paywall). ✓
+5. Tapping a test inside opens the test (not the paywall). ✓
+6. Backend: check `ExamPackPurchase` table — a row should exist with
+   `categoryId` = the Firestore category id and `productId` = a valid Product.id
+   (auto-created if it didn't exist).
+7. For EXISTING affected users (who paid before this fix): they don't need to
+   pay again. Opening the app and tapping a test triggers /access-check (still
+   denied), but the next /verify or /order-status poll will re-grant the
+   entitlement via Fix 2. Alternatively, re-trigger the Razorpay webhook.
+
+### Files changed
+
+- Backend: `src/lib/payment-access.ts` (grantEntitlement EXAM_PACK + SUBJECT_PACK
+  auto-create Product; new `entitlementExists` helper).
+- Backend: `src/app/api/payments/verify/route.ts` (idempotency path checks
+  `entitlementExists` + re-grants if missing).
+- Flutter: `lib/services/access_service.dart` (mark* methods clear stale cache;
+  new `_clearPrefix` helper).
+- Flutter: `pubspec.yaml` (version 1.43.2+52 → 1.43.3+53).
+
+### Repo sync state (verified clean after push)
+
+| Repo | HEAD | origin/main | Sync |
+|------|------|-------------|------|
+| examvault-admin | `507e5ba` | `507e5ba` | 0/0 ✅ |
+| examvault (Flutter) | `a8d1da4` | `a8d1da4` | 0/0 ✅ |
+
+---
+
+*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — REAL fix for "category paid but tests still locked": 3-layer fix (grantEntitlement auto-create Product + verify idempotency checks entitlementExists + Flutter clears stale test cache). Admin `507e5ba` + Flutter `a8d1da4` pushed. Both repos 0/0 sync. Dev server running on port 3000.*

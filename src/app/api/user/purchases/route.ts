@@ -113,7 +113,8 @@ export async function GET(req: NextRequest) {
     const examPacksPayload = examPackPurchases.map((p) => ({
       id: p.id,
       productName: p.packName || productNameById.get(p.productId) || 'Exam Pack',
-      categoryName: '', // resolved from Firestore on the client if needed
+      categoryId: p.categoryId ?? '',   // Firestore category doc id — Flutter uses this to navigate
+      categoryName: '',                  // resolved from Firestore on the client if needed
       purchasedAt: p.createdAt.toISOString(),
       paymentId: p.paymentId ?? '',
     }));
@@ -121,6 +122,7 @@ export async function GET(req: NextRequest) {
     const subjectPacksPayload = subjectPackPurchases.map((p) => ({
       id: p.id,
       productName: p.packName || productNameById.get(p.productId) || 'Subject Pack',
+      subjectId: p.subjectId ?? '',     // Firestore subject doc id — Flutter uses this to navigate
       subjectName: '',
       purchasedAt: p.createdAt.toISOString(),
       paymentId: p.paymentId ?? '',

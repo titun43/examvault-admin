@@ -16,9 +16,10 @@
 // rest of the admin panel). No server-side firebase-admin needed.
 // =============================================================================
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import {
   collection,
+  onSnapshot,
   addDoc,
   deleteDoc,
   doc,
@@ -41,7 +42,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Loader2, Database, Trash2, CheckCircle2, AlertTriangle, Sparkles } from 'lucide-react';
+import { Loader2, Database, Trash2, CheckCircle2, AlertTriangle, Sparkles, Activity } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   SEED_CATEGORIES,
@@ -56,12 +57,43 @@ interface LogEntry {
   detail?: string;
 }
 
+// Expected counts after a successful seed. Used by the status panel to tell
+// the user at a glance whether data is present, partial, or missing.
+const EXPECTED: Record<string, { label: string; min: number }> = {
+  categories:       { label: 'Categories',       min: 8 },  // 7 seeded + Indian Railways
+  subjects:         { label: 'Subjects',         min: 14 },
+  tests:            { label: 'Tests',            min: 14 },
+  questions:        { label: 'Questions',         min: 70 },
+  banners:          { label: 'Banners',          min: 5 },
+  announcements:    { label: 'Announcements',    min: 8 },
+  upcoming_exams:   { label: 'Upcoming Exams',   min: 10 },
+};
+
 export default function DataSeed() {
   const [seeding, setSeeding] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirm2, setDeleteConfirm2] = useState(false);
+  // Live counts for each content collection. Updated in real-time via
+  // onSnapshot so the admin can see exactly what's in Firestore right now —
+  // no more guessing whether the seed ran.
+  const [counts, setCounts] = useState<Record<string, number>>({
+    categories: 0, subjects: 0, tests: 0, questions: 0,
+    banners: 0, announcements: 0, upcoming_exams: 0,
+  });
+
+  useEffect(() => {
+    const cols = Object.keys(EXPECTED);
+    const unsubs = cols.map((name) =>
+      onSnapshot(
+        collection(db, name),
+        (snap) => setCounts((prev) => ({ ...prev, [name]: snap.size })),
+        () => {},
+      ),
+    );
+    return () => unsubs.forEach((u) => u());
+  }, []);
 
   const updateLog = (step: string, status: LogEntry['status'], detail?: string) => {
     setLog((prev) => {
@@ -408,6 +440,61 @@ export default function DataSeed() {
           </p>
         </div>
       </div>
+
+      {/* ===================== Live Data Status ===================== */}
+      <Card className="border-slate-200">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Activity className="w-4 h-4 text-slate-600" />
+            <h3 className="text-sm font-semibold text-slate-900">Current Data in Firestore (live)</h3>
+            <span className="text-xs text-slate-400 ml-auto">updates in real-time</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+            {Object.entries(EXPECTED).map(([key, exp]) => {
+              const n = counts[key] || 0;
+              const ok = n >= exp.min;
+              const partial = n > 0 && n < exp.min;
+              return (
+                <div
+                  key={key}
+                  className={`rounded-lg border p-2.5 text-center ${
+                    ok
+                      ? 'border-emerald-200 bg-emerald-50'
+                      : partial
+                        ? 'border-amber-200 bg-amber-50'
+                        : 'border-red-200 bg-red-50'
+                  }`}
+                  title={`Expected ≥ ${exp.min}`}
+                >
+                  <div className={`text-2xl font-bold ${ok ? 'text-emerald-700' : partial ? 'text-amber-700' : 'text-red-700'}`}>
+                    {n}
+                  </div>
+                  <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">{exp.label}</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">
+                    {ok ? '✓ ready' : partial ? 'partial' : 'missing'}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          {(counts.categories || 0) === 0 ? (
+            <p className="text-xs text-red-600 mt-3 flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              No categories found. Click <span className="font-semibold">“Seed Data”</span> below to populate the app.
+            </p>
+          ) : (counts.subjects || 0) === 0 ? (
+            <p className="text-xs text-amber-700 mt-3 flex items-center gap-1">
+              <AlertTriangle className="w-3.5 h-3.5" />
+              Categories exist but no subjects. The seed may have partially failed — click <span className="font-semibold">“Seed Data”</span> again (it’s safe, it skips existing docs).
+            </p>
+          ) : (
+            <p className="text-xs text-emerald-700 mt-3 flex items-center gap-1">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              Data is present. If the user app still shows “0 subjects”, pull-to-refresh inside the category — Firestore streams should sync automatically.
+            </p>
+          )}
+        </CardContent>
+      </Card>
 
       {/* ===================== Cards ===================== */}
       <div className="grid gap-4 md:grid-cols-2">

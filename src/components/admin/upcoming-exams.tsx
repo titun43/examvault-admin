@@ -60,6 +60,8 @@ import {
   Layers,
   Download,
   FileSpreadsheet,
+  Globe,
+  ExternalLink,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -74,6 +76,8 @@ interface UpcomingExam {
   applicationEndDate?: any;
   notificationUrl?: string;
   syllabusUrl?: string;
+  officialUrl?: string;     // Official website / info page link
+  applyUrl?: string;        // Direct application / registration link
   imageUrl?: string;
   description?: string;
   tags?: string[];
@@ -97,6 +101,8 @@ const emptyForm = {
   applicationEndDate: '',
   notificationUrl: '',
   syllabusUrl: '',
+  officialUrl: '',
+  applyUrl: '',
   imageUrl: '',
   description: '',
   tags: '',
@@ -139,10 +145,10 @@ export default function UpcomingExams() {
 
   const BULK_SAMPLE = '[{"name":"SSC CGL 2024","organization":"Staff Selection Commission","examDate":"2024-12-15T00:00:00.000Z","applicationStartDate":"2024-10-01T00:00:00.000Z","applicationEndDate":"2024-10-31T00:00:00.000Z","description":"Combined Graduate Level","isPublished":true,"order":1},{"name":"IBPS PO 2024","organization":"IBPS","examDate":"2024-11-20T00:00:00.000Z","description":"Probationary Officer exam","isPublished":true,"order":2}]';
 
-  const CSV_HEADERS = ['name', 'organization', 'categoryId', 'examDate', 'applicationStartDate', 'applicationEndDate', 'notificationUrl', 'syllabusUrl', 'description', 'order', 'isPublished'];
+  const CSV_HEADERS = ['name', 'organization', 'categoryId', 'examDate', 'applicationStartDate', 'applicationEndDate', 'notificationUrl', 'syllabusUrl', 'officialUrl', 'applyUrl', 'description', 'order', 'isPublished'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['SSC CGL 2024', 'Staff Selection Commission', '', '2024-12-15', '2024-10-01', '2024-10-31', '', '', 'Combined Graduate Level', 1, true],
-    ['IBPS PO 2024', 'IBPS', '', '2024-11-20', '', '', '', '', 'Probationary Officer exam', 2, true],
+    ['SSC CGL 2024', 'Staff Selection Commission', '', '2024-12-15', '2024-10-01', '2024-10-31', '', '', 'https://ssc.nic.in', 'https://ssc.nic.in/apply', 'Combined Graduate Level', 1, true],
+    ['IBPS PO 2024', 'IBPS', '', '2024-11-20', '', '', '', '', 'https://ibps.in', 'https://ibps.in/apply', 'Probationary Officer exam', 2, true],
   ];
 
   const handleBulkImport = async () => {
@@ -261,6 +267,8 @@ export default function UpcomingExams() {
       applicationEndDate: item.applicationEndDate ? toDateTimeInputValue(item.applicationEndDate) : '',
       notificationUrl: item.notificationUrl || '',
       syllabusUrl: item.syllabusUrl || '',
+      officialUrl: item.officialUrl || '',
+      applyUrl: item.applyUrl || '',
       imageUrl: item.imageUrl || '',
       description: item.description || '',
       tags: Array.isArray(item.tags) ? item.tags.join(', ') : '',
@@ -310,6 +318,8 @@ export default function UpcomingExams() {
         applicationEndDate: form.applicationEndDate ? new Date(form.applicationEndDate) : null,
         notificationUrl: form.notificationUrl.trim() || null,
         syllabusUrl: form.syllabusUrl.trim() || null,
+        officialUrl: form.officialUrl.trim() || null,
+        applyUrl: form.applyUrl.trim() || null,
         imageUrl: form.imageUrl || null,
         description: form.description.trim() || null,
         tags: tagsArray,
@@ -518,6 +528,16 @@ export default function UpcomingExams() {
                             <EyeOff className="w-3 h-3 mr-1" /> Draft
                           </Badge>
                         )}
+                        {item.officialUrl && (
+                          <Badge variant="outline" className="bg-sky-950/40 text-sky-400 border-sky-800/50">
+                            <Globe className="w-3 h-3 mr-1" /> Official
+                          </Badge>
+                        )}
+                        {item.applyUrl && (
+                          <Badge variant="outline" className="bg-amber-950/40 text-amber-400 border-amber-800/50">
+                            <ExternalLink className="w-3 h-3 mr-1" /> Apply
+                          </Badge>
+                        )}
                       </div>
                       <p className="text-slate-400 text-xs mt-2">
                         Exam: <span className="text-white font-medium">{formatDate(item.examDate)}</span>
@@ -660,6 +680,28 @@ export default function UpcomingExams() {
                   placeholder="https://..."
                   className="bg-slate-800 border-slate-700"
                 />
+              </div>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-2">
+                <Label>Official Link</Label>
+                <Input
+                  value={form.officialUrl}
+                  onChange={(e) => setForm({ ...form, officialUrl: e.target.value })}
+                  placeholder="https://official-website..."
+                  className="bg-slate-800 border-slate-700"
+                />
+                <p className="text-[11px] text-slate-500">Official website / info page</p>
+              </div>
+              <div className="space-y-2">
+                <Label>Apply Link</Label>
+                <Input
+                  value={form.applyUrl}
+                  onChange={(e) => setForm({ ...form, applyUrl: e.target.value })}
+                  placeholder="https://apply-here..."
+                  className="bg-slate-800 border-slate-700"
+                />
+                <p className="text-[11px] text-slate-500">Direct application / registration URL</p>
               </div>
             </div>
             <div className="space-y-2">

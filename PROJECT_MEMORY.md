@@ -1106,4 +1106,91 @@ model treats missing fields as null → no buttons shown).
 
 ---
 
-*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — Upcoming Exams Official Link + Apply Link added to both repos. Admin `25d34d6` + Flutter `d6fcd8f` (v1.45.0+61) pushed. Both repos 0/0 sync. Dev server running on port 3000.*
+## 20. Session Log — Seed data expanded to A-Z + Current Affairs (session `web-f5c52b64...`, continued)
+
+**User request (verbatim):** "AKHON SEED DATA UPDATE KORO,NEW DIYE A-Z SOB DIYE JEMON
+Current Affairs, KONO KICHU JATE BAD NA PORE ,SOB INDIAN REAL USER JONNO"
+
+**Meaning:** Update the seed data with new comprehensive A-Z content — everything, nothing
+should be missing, for real Indian users. Specifically mentioned **Current Affairs** as a
+must-have (it was completely absent from the previous seed).
+
+### What changed (admin commit `a1e187b`, pushed to `titun43/examvault-admin`)
+
+**`src/lib/seed-data.ts`** (1590 → 2945 lines, +1355 lines):
+- **6 new categories** added to `SEED_CATEGORIES` (13 total now, + Indian Railways pre-existing):
+  1. Defence (NDA/CDS/AFCAT) — 🎖️
+  2. Teaching (CTET/TET) — 📚
+  3. General Insurance (GIC/NIACL/UIIC) — 🏦
+  4. Police & Paramilitary (SI/Constable) — 🚔
+  5. Rajasthan (RPSC) — 🐪
+  6. Maharashtra (MPSC) — 🏞️
+  Each with 2 subjects, 1 test per subject, 5 questions per test = 12 new subjects, 12 new
+  tests, 60 new questions (all with real Indian exam content, 4 options, explanations).
+- **`SEED_CURRENT_AFFAIRS`** — NEW export, 15 real 2025 entries covering all 6 categories
+  (National, International, Sports, Economy, Science, Technology). Includes: Republic Day
+  2025 (Indonesian President as chief guest), Delhi Elections 2025, ICC Champions Trophy
+  win, Union Budget 2025 (no tax up to ₹12L), RBI repo rate cut to 6.25%, ISRO 100th launch
+  (GSLV-F15/NVS-02), ISRO SPADEX space docking success (India = 4th nation), Tata-PSMC
+  ₹91,000 crore semiconductor fab at Dholera, IndiaAI Mission 10,000 GPU tender, etc.
+  5 marked `isImportant: true`.
+- **`officialUrl` + `applyUrl`** added to `SeedUpcomingExam` interface + all 10 existing
+  upcoming exam entries (real exam-board URLs: ssc.gov.in, ibps.in, upsc.gov.in,
+  licindia.in, apsc.nic.in, wbpsc.gov.in, uppsc.up.nic.in, rrbcdg.gov.in, sbi.co.in).
+
+**`src/components/admin/data-seed.tsx`** (+110 / -71 lines):
+- Imported `SEED_CURRENT_AFFAIRS`.
+- Added `current_affairs` to the `EXPECTED` map (min: 15) + live counts state.
+- Updated EXPECTED minimums: subjects 14→26, tests 14→26, questions 70→130.
+- Added **Step 5: Current Affairs** seeding — idempotent (checks by title), writes all
+  fields matching the admin current-affairs component + Flutter `CurrentAffairModel`
+  (date, title, summary, content, source, category, categoryId, isImportant, tags, pdfUrl,
+  imageUrl, isPublished:true, timestamps).
+- Added `officialUrl` + `applyUrl` to the upcoming exams Firestore write payload.
+- Renumbered old Step 5 (Sync counts) → Step 6.
+- Updated summary toast (now shows 13/26/26/130/5/8/10/15).
+- Updated live-status grid: `lg:grid-cols-7` → `lg:grid-cols-8` to fit the Current Affairs tile.
+- Updated seed card description + bullet list (lists all 13 categories by name + mentions
+  official/apply links + current affairs categories).
+
+### Final seeded content totals
+
+| Collection | Count | Notes |
+|------------|-------|-------|
+| categories | 13 + Indian Railways | 7 original + 6 new |
+| subjects | 26 | 14 original + 12 new |
+| tests | 26 | 14 original + 12 new |
+| questions | 130 | 70 original + 60 new |
+| banners | 5 | unchanged |
+| announcements | 8 | unchanged |
+| upcoming_exams | 10 | all now have officialUrl + applyUrl |
+| current_affairs | 15 | NEW — real 2025 events |
+
+### How to activate (user action required)
+
+1. Vercel auto-deploys admin commit `a1e187b`.
+2. Admin opens the **Data Seed** page → clicks **Seed Data** ONE more time. The button is
+   idempotent — it will NOT create duplicates. It will:
+   - Add the 6 new categories + their subjects/tests/questions (new slugs, so no conflicts).
+   - Add the 15 current affairs entries (new titles, so no conflicts).
+   - **IMPORTANT:** existing upcoming exams will be SKIPPED (name match), so they will NOT
+     get the new `officialUrl`/`applyUrl` fields automatically. To get the links on existing
+     exams, the admin should either:
+     - (a) Manually edit each exam in the Upcoming Exams section and paste the links (Task 7-a
+       added the form fields), OR
+     - (b) Delete the `upcoming_exams` collection via "Delete All Content" and re-seed (the
+       seed now writes officialUrl + applyUrl for all 10 exams).
+   - Re-sync subjectCount/testCount on all categories/subjects.
+3. The Flutter app needs NO changes — it already reads all these collections. Pull-to-refresh
+   after the admin re-seeds.
+
+### Repo sync state
+
+| Repo | HEAD | origin/main | Sync |
+|------|------|-------------|------|
+| examvault-admin | `a1e187b` | `a1e187b` | 0/0 ✅ |
+| examvault (Flutter) | `d6fcd8f` | `d6fcd8f` | 0/0 ✅ (no change this task) |
+
+---
+
+*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — Seed data expanded to A-Z: 13 categories, 26 subjects, 26 tests, 130 questions, 15 current affairs (NEW), 10 upcoming exams with official+apply links. Admin `a1e187b` pushed. Flutter unchanged (`d6fcd8f`). Both repos 0/0 sync. Dev server running on port 3000.*

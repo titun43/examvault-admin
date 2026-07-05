@@ -43,7 +43,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { Loader2, Database, Trash2, CheckCircle2, AlertTriangle, Sparkles, Activity } from 'lucide-react';
+import { Loader2, Database, Trash2, CheckCircle2, AlertTriangle, Sparkles, Activity, RefreshCw } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   SEED_CATEGORIES,
@@ -75,6 +75,7 @@ const EXPECTED: Record<string, { label: string; min: number }> = {
 export default function DataSeed() {
   const [seeding, setSeeding] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [log, setLog] = useState<LogEntry[]>([]);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [deleteConfirm2, setDeleteConfirm2] = useState(false);
@@ -108,6 +109,82 @@ export default function DataSeed() {
       }
       return [...prev, { step, status, detail }];
     });
+  };
+
+  // ===========================================================================
+  // SYNC COUNTS OPERATION (standalone — recomputes subjectCount & testCount)
+  // ===========================================================================
+  // The Flutter user app reads `category.subjectCount` and `subject.testCount`
+  // directly from Firestore. If these fields are missing or stale (which can
+  // happen when data is added via seed, bulk-import, or manual edit and the
+  // auto-sync on the Categories/Subjects page silently failed — its
+  // batch.commit().catch(() => {}) swallows errors), the user app shows
+  // "0 Subjects" on category cards even though the subjects actually exist.
+  //
+  // This button is a reliable one-click fix: it fetches ALL categories,
+  // subjects, and tests fresh, computes the real counts, and writes them
+  // back in batches with proper error handling. Safe to run anytime.
+  // ===========================================================================
+  const handleSyncCounts = async () => {
+    setSyncing(true);
+    try {
+      toast.info('Syncing counts…');
+      const [allCatsSnap, allSubjectsSnap, allTestsSnap] = await Promise.all([
+        getDocs(collection(db, 'categories')),
+        getDocs(collection(db, 'subjects')),
+        getDocs(collection(db, 'tests')),
+      ]);
+
+      // Count subjects per category (by categoryId field on each subject doc)
+      const subjCountByCat: Record<string, number> = {};
+      allSubjectsSnap.forEach((d) => {
+        const catId = (d.data() as any)?.categoryId;
+        if (catId) subjCountByCat[catId] = (subjCountByCat[catId] || 0) + 1;
+      });
+
+      // Count tests per subject (by subjectId field on each test doc)
+      const testCountBySubj: Record<string, number> = {};
+      allTestsSnap.forEach((d) => {
+        const sId = (d.data() as any)?.subjectId;
+        if (sId) testCountBySubj[sId] = (testCountBySubj[sId] || 0) + 1;
+      });
+
+      // Write back category.subjectCount
+      let catsFixed = 0;
+      const catBatch = writeBatch(db);
+      allCatsSnap.forEach((d) => {
+        const correct = subjCountByCat[d.id] || 0;
+        const stored = (d.data() as any)?.subjectCount ?? -1;
+        if (stored !== correct) {
+          catBatch.update(d.ref, { subjectCount: correct, updatedAt: serverTimestamp() });
+          catsFixed++;
+        }
+      });
+      if (catsFixed > 0) await catBatch.commit();
+
+      // Write back subject.testCount
+      let subjsFixed = 0;
+      const subjBatch = writeBatch(db);
+      allSubjectsSnap.forEach((d) => {
+        const correct = testCountBySubj[d.id] || 0;
+        const stored = (d.data() as any)?.testCount ?? -1;
+        if (stored !== correct) {
+          subjBatch.update(d.ref, { testCount: correct, updatedAt: serverTimestamp() });
+          subjsFixed++;
+        }
+      });
+      if (subjsFixed > 0) await subjBatch.commit();
+
+      toast.success(
+        `Synced ✓ ${catsFixed} categor${catsFixed === 1 ? 'y' : 'ies'} + ${subjsFixed} subject${subjsFixed === 1 ? '' : 's'} updated. Pull-to-refresh in the user app to see the counts.`,
+      );
+    } catch (e) {
+      console.error('[syncCounts]', e);
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      toast.error(`Sync failed: ${msg}`);
+    } finally {
+      setSyncing(false);
+    }
   };
 
   // ===========================================================================
@@ -154,6 +231,10 @@ export default function DataSeed() {
             isPremium: cat.isPremium,
             premiumPrice: cat.premiumPrice,
             premiumDurationMonths: cat.premiumDurationMonths,
+            // Defensive: ensure the field exists immediately so the Flutter
+            // app never reads a missing subjectCount (defaults to 0). Step 6
+            // below will overwrite with the real count.
+            subjectCount: 0,
             createdAt: serverTimestamp(),
             updatedAt: serverTimestamp(),
           });
@@ -179,6 +260,8 @@ export default function DataSeed() {
               icon: subj.icon,
               description: subj.description,
               order: subj.order,
+              // Defensive: ensure the field exists immediately.
+              testCount: 0,
               createdAt: serverTimestamp(),
               updatedAt: serverTimestamp(),
             });
@@ -595,7 +678,7 @@ export default function DataSeed() {
       </Card>
 
       {/* ===================== Cards ===================== */}
-      <div className="grid gap-4 md:grid-cols-2">
+      <div className="grid gap-4 md:grid-cols-3">
         {/* ---- Seed Card ---- */}
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardContent className="p-6">
@@ -618,7 +701,7 @@ export default function DataSeed() {
             </ul>
             <Button
               onClick={handleSeed}
-              disabled={seeding || deleting}
+              disabled={seeding || deleting || syncing}
               className="w-full bg-emerald-600 hover:bg-emerald-700"
             >
               {seeding ? (
@@ -630,6 +713,49 @@ export default function DataSeed() {
                 <>
                   <Sparkles className="w-4 h-4 mr-2" />
                   Seed Data
+                </>
+              )}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* ---- Sync Counts Card ---- */}
+        <Card className="border-sky-200 bg-sky-50/50">
+          <CardContent className="p-6">
+            <div className="flex items-center gap-3 mb-3">
+              <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center">
+                <RefreshCw className="w-5 h-5 text-sky-700" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-900">Sync Subject / Test Counts</h3>
+                <p className="text-xs text-slate-500">Fixes “0 subjects” on category cards</p>
+              </div>
+            </div>
+            <p className="text-sm text-slate-600 mb-3">
+              Recomputes <code className="text-xs bg-sky-100 px-1 rounded">subjectCount</code> on every
+              category and <code className="text-xs bg-sky-100 px-1 rounded">testCount</code> on every
+              subject from the live subjects / tests collections, then writes the correct values back
+              to Firestore.
+            </p>
+            <ul className="text-sm text-slate-600 space-y-1 mb-4">
+              <li>• Run this after seeding, bulk-import, or manual edits</li>
+              <li>• Use it if the user app shows “0 Subjects” on any category</li>
+              <li>• Safe to run anytime — only writes docs whose count is stale</li>
+            </ul>
+            <Button
+              onClick={handleSyncCounts}
+              disabled={seeding || deleting || syncing}
+              className="w-full bg-sky-600 hover:bg-sky-700"
+            >
+              {syncing ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Syncing...
+                </>
+              ) : (
+                <>
+                  <RefreshCw className="w-4 h-4 mr-2" />
+                  Sync Counts Now
                 </>
               )}
             </Button>
@@ -658,7 +784,7 @@ export default function DataSeed() {
             </ul>
             <Button
               onClick={() => setDeleteDialogOpen(true)}
-              disabled={seeding || deleting}
+              disabled={seeding || deleting || syncing}
               variant="destructive"
               className="w-full"
             >
@@ -670,14 +796,14 @@ export default function DataSeed() {
       </div>
 
       {/* ===================== Progress Log ===================== */}
-      {(seeding || deleting || log.length > 0) && (
+      {(seeding || deleting || syncing || log.length > 0) && (
         <Card>
           <CardContent className="p-4">
             <h4 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
               <Loader2
-                className={`w-4 h-4 ${(seeding || deleting) ? 'animate-spin' : 'hidden'}`}
+                className={`w-4 h-4 ${(seeding || deleting || syncing) ? 'animate-spin' : 'hidden'}`}
               />
-              {seeding ? 'Seeding progress' : deleting ? 'Deletion progress' : 'Last operation log'}
+              {seeding ? 'Seeding progress' : deleting ? 'Deletion progress' : syncing ? 'Syncing counts' : 'Last operation log'}
             </h4>
             <div className="space-y-1.5 max-h-80 overflow-y-auto">
               {log.map((entry, idx) => (

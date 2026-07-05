@@ -31,6 +31,13 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
 import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import {
   Plus,
   Pencil,
   Trash2,
@@ -38,10 +45,221 @@ import {
   Image as ImageIcon,
   X,
   Link2,
+  ArrowRight,
   Calendar,
   ImageUp,
 } from 'lucide-react';
 import { toast } from 'sonner';
+
+// ---- Banner action-button model (matches Flutter lib/models/action_button.dart) ----
+// Each banner can have up to TWO CTA buttons. Each button is either an
+// "external" link (opens a URL in the browser) or an "inApp" navigation
+// (navigates inside the app to a named screen, optionally with params).
+interface ActionButton {
+  label: string;
+  type: 'external' | 'inApp';
+  url: string | null;     // for type='external'
+  screen: string | null;  // for type='inApp' — one of IN_APP_SCREENS values
+  params: Record<string, any> | null; // for type='inApp' — e.g. {testId: 'xxx'}
+}
+
+// Supported in-app screens (kept in sync with the Flutter ActionButton model).
+const IN_APP_SCREENS: { value: string; label: string; paramKey?: string; paramLabel?: string }[] = [
+  { value: 'testSeries', label: 'Test Series' },
+  { value: 'dailyQuiz', label: 'Daily Quiz' },
+  { value: 'upcomingExams', label: 'Upcoming Exams' },
+  { value: 'currentAffairs', label: 'Current Affairs' },
+  { value: 'announcements', label: 'Announcements' },
+  { value: 'leaderboard', label: 'Leaderboard (Ranks)' },
+  { value: 'premium', label: 'Premium / Upgrade' },
+  { value: 'category', label: 'Specific Category', paramKey: 'categoryId', paramLabel: 'Category ID' },
+  { value: 'subject', label: "Specific Subject's Tests", paramKey: 'subjectId', paramLabel: 'Subject ID' },
+  { value: 'test', label: 'Specific Test', paramKey: 'testId', paramLabel: 'Test ID' },
+];
+
+// Form-state shape for a single button editor (flat, editable strings).
+interface BannerButtonForm {
+  label: string;
+  type: 'external' | 'inApp';
+  url: string;
+  screen: string;
+  paramValue: string; // ID entered for category/subject/test screens
+}
+
+interface BannerFormState {
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+  link: string;        // legacy, kept for backward-compat (mirrored from primaryButton on save)
+  linkLabel: string;   // legacy, kept for backward-compat (mirrored from primaryButton on save)
+  primaryButton: BannerButtonForm;
+  secondaryButton: BannerButtonForm;
+  order: number;
+  isActive: boolean;
+  startsAt: string;
+  endsAt: string;
+}
+
+const emptyButtonForm: BannerButtonForm = {
+  label: '',
+  type: 'external',
+  url: '',
+  screen: '',
+  paramValue: '',
+};
+
+function extractParamValue(
+  params: Record<string, any> | null | undefined,
+  screen: string | null | undefined,
+): string {
+  if (!params || !screen) return '';
+  const def = IN_APP_SCREENS.find((s) => s.value === screen);
+  if (!def?.paramKey) return '';
+  return params[def.paramKey] != null ? String(params[def.paramKey]) : '';
+}
+
+function buttonFormFromAction(btn: ActionButton | null | undefined): BannerButtonForm {
+  if (!btn) return { ...emptyButtonForm };
+  return {
+    label: btn.label || '',
+    type: btn.type === 'inApp' ? 'inApp' : 'external',
+    url: btn.url || '',
+    screen: btn.screen || '',
+    paramValue: extractParamValue(btn.params, btn.screen),
+  };
+}
+
+function buildButtonFirestoreMap(btn: BannerButtonForm): ActionButton | null {
+  const label = btn.label.trim();
+  if (!label) return null;
+  if (btn.type === 'inApp') {
+    const screen = btn.screen;
+    const def = IN_APP_SCREENS.find((s) => s.value === screen);
+    let params: Record<string, any> | null = null;
+    const paramValue = btn.paramValue.trim();
+    if (def?.paramKey && paramValue) {
+      params = { [def.paramKey]: paramValue };
+    }
+    return {
+      label,
+      type: 'inApp',
+      url: null,
+      screen: screen || null,
+      params,
+    };
+  }
+  return {
+    label,
+    type: 'external',
+    url: btn.url.trim() || null,
+    screen: null,
+    params: null,
+  };
+}
+
+function ButtonEditor({
+  title,
+  button,
+  onChange,
+  onClear,
+}: {
+  title: string;
+  button: BannerButtonForm;
+  onChange: (next: BannerButtonForm) => void;
+  onClear: () => void;
+}) {
+  const screenDef = IN_APP_SCREENS.find((s) => s.value === button.screen);
+  const needsParam = button.type === 'inApp' && !!screenDef?.paramKey;
+  const paramLabel = screenDef?.paramLabel || 'ID';
+
+  return (
+    <div className="rounded-lg border border-slate-700 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-slate-200 font-medium">{title}</Label>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-slate-400 hover:bg-slate-800"
+          onClick={onClear}
+        >
+          <X className="w-3.5 h-3.5 mr-1" /> Clear
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-2">
+          <Label>Label</Label>
+          <Input
+            value={button.label}
+            onChange={(e) => onChange({ ...button, label: e.target.value })}
+            placeholder="e.g. Apply Now"
+            className="bg-slate-800 border-slate-700"
+          />
+        </div>
+        <div className="space-y-2">
+          <Label>Action Type</Label>
+          <Select
+            value={button.type}
+            onValueChange={(v) => onChange({ ...button, type: v as 'external' | 'inApp' })}
+          >
+            <SelectTrigger className="bg-slate-800 border-slate-700 w-full">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-800 border-slate-700">
+              <SelectItem value="external">External Link</SelectItem>
+              <SelectItem value="inApp">In-App Screen</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {button.type === 'external' ? (
+        <div className="space-y-2">
+          <Label>URL</Label>
+          <Input
+            value={button.url}
+            onChange={(e) => onChange({ ...button, url: e.target.value })}
+            placeholder="https://..."
+            className="bg-slate-800 border-slate-700"
+          />
+        </div>
+      ) : (
+        <>
+          <div className="space-y-2">
+            <Label>Screen</Label>
+            <Select
+              value={button.screen}
+              onValueChange={(v) => onChange({ ...button, screen: v, paramValue: '' })}
+            >
+              <SelectTrigger className="bg-slate-800 border-slate-700 w-full">
+                <SelectValue placeholder="Select a screen" />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-700">
+                {IN_APP_SCREENS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {needsParam ? (
+            <div className="space-y-2">
+              <Label>{paramLabel}</Label>
+              <Input
+                value={button.paramValue}
+                onChange={(e) => onChange({ ...button, paramValue: e.target.value })}
+                placeholder={`Enter ${paramLabel.toLowerCase()}`}
+                className="bg-slate-800 border-slate-700"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500">No parameters needed</p>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
 
 interface Banner {
   id: string;
@@ -50,6 +268,8 @@ interface Banner {
   imageUrl?: string;
   link?: string;
   linkLabel?: string;
+  primaryButton?: ActionButton | null;
+  secondaryButton?: ActionButton | null;
   order?: number;
   isActive?: boolean;
   startsAt?: any;
@@ -58,12 +278,14 @@ interface Banner {
   updatedAt?: any;
 }
 
-const emptyForm = {
+const emptyForm: BannerFormState = {
   title: '',
   subtitle: '',
   imageUrl: '',
   link: '',
   linkLabel: '',
+  primaryButton: { ...emptyButtonForm },
+  secondaryButton: { ...emptyButtonForm },
   order: 0,
   isActive: true,
   startsAt: '',
@@ -107,12 +329,26 @@ export default function Banners() {
   };
 
   const openEdit = (item: Banner) => {
+    // Read new primaryButton/secondaryButton into form state. If primaryButton
+    // is absent but a legacy link exists, prefill the primary editor from the
+    // legacy link/linkLabel so editing an old banner shows the existing link
+    // as Button 1.
+    const primaryButton: BannerButtonForm = item.primaryButton
+      ? buttonFormFromAction(item.primaryButton)
+      : item.link
+        ? { ...emptyButtonForm, label: item.linkLabel || '', type: 'external', url: item.link }
+        : { ...emptyButtonForm };
+    const secondaryButton: BannerButtonForm = item.secondaryButton
+      ? buttonFormFromAction(item.secondaryButton)
+      : { ...emptyButtonForm };
     setForm({
       title: item.title || '',
       subtitle: item.subtitle || '',
       imageUrl: item.imageUrl || '',
       link: item.link || '',
       linkLabel: item.linkLabel || '',
+      primaryButton,
+      secondaryButton,
       order: item.order || 0,
       isActive: item.isActive !== false,
       startsAt: item.startsAt ? toDateTimeInputValue(item.startsAt) : '',
@@ -148,12 +384,24 @@ export default function Banners() {
     }
     setSaving(true);
     try {
+      const primaryButton = buildButtonFirestoreMap(form.primaryButton);
+      const secondaryButton = buildButtonFirestoreMap(form.secondaryButton);
+      // Mirror the primary external button into the legacy link/linkLabel
+      // fields so old app builds that still read `link`/`linkLabel` keep
+      // working. If the primary button is empty or is an in-app button,
+      // clear the legacy fields.
+      const legacyLink =
+        primaryButton && primaryButton.type === 'external' ? primaryButton.url : null;
+      const legacyLinkLabel =
+        primaryButton && primaryButton.type === 'external' ? primaryButton.label : null;
       const data: Record<string, any> = {
         title: form.title.trim(),
         subtitle: form.subtitle.trim() || null,
         imageUrl: form.imageUrl,
-        link: form.link.trim() || null,
-        linkLabel: form.linkLabel.trim() || null,
+        link: legacyLink,
+        linkLabel: legacyLinkLabel,
+        primaryButton,
+        secondaryButton,
         order: Number(form.order) || 0,
         isActive: !!form.isActive,
         startsAt: form.startsAt ? new Date(form.startsAt) : null,
@@ -348,7 +596,27 @@ export default function Banners() {
                   <p className="text-slate-500 text-xs mt-1 line-clamp-1">{item.subtitle}</p>
                 )}
                 <div className="flex items-center gap-1.5 flex-wrap mt-2">
-                  {item.link && (
+                  {item.primaryButton && (
+                    <Badge variant="outline" className="bg-slate-800 text-slate-400 border-slate-700">
+                      {item.primaryButton.type === 'external' ? (
+                        <Link2 className="w-3 h-3 mr-1" />
+                      ) : (
+                        <ArrowRight className="w-3 h-3 mr-1" />
+                      )}{' '}
+                      {item.primaryButton.label}
+                    </Badge>
+                  )}
+                  {item.secondaryButton && (
+                    <Badge variant="outline" className="bg-slate-800 text-slate-400 border-slate-700">
+                      {item.secondaryButton.type === 'external' ? (
+                        <Link2 className="w-3 h-3 mr-1" />
+                      ) : (
+                        <ArrowRight className="w-3 h-3 mr-1" />
+                      )}{' '}
+                      {item.secondaryButton.label}
+                    </Badge>
+                  )}
+                  {!item.primaryButton && item.link && (
                     <Badge variant="outline" className="bg-slate-800 text-slate-400 border-slate-700">
                       <Link2 className="w-3 h-3 mr-1" /> {item.linkLabel || 'Link'}
                     </Badge>
@@ -441,25 +709,19 @@ export default function Banners() {
                 className="bg-slate-800 border-slate-700"
               />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Link URL</Label>
-                <Input
-                  value={form.link}
-                  onChange={(e) => setForm({ ...form, link: e.target.value })}
-                  placeholder="https://..."
-                  className="bg-slate-800 border-slate-700"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Link Label</Label>
-                <Input
-                  value={form.linkLabel}
-                  onChange={(e) => setForm({ ...form, linkLabel: e.target.value })}
-                  placeholder="Subscribe"
-                  className="bg-slate-800 border-slate-700"
-                />
-              </div>
+            <div className="space-y-3">
+              <ButtonEditor
+                title="Button 1 (Primary)"
+                button={form.primaryButton}
+                onChange={(next) => setForm({ ...form, primaryButton: next })}
+                onClear={() => setForm({ ...form, primaryButton: { ...emptyButtonForm } })}
+              />
+              <ButtonEditor
+                title="Button 2 (Secondary)"
+                button={form.secondaryButton}
+                onChange={(next) => setForm({ ...form, secondaryButton: next })}
+                onClear={() => setForm({ ...form, secondaryButton: { ...emptyButtonForm } })}
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">

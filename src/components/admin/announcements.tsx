@@ -51,6 +51,7 @@ import {
   Eye,
   EyeOff,
   Link2,
+  ArrowRight,
   Clock,
   Layers,
   Download,
@@ -61,6 +62,38 @@ import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
 type AnnouncementType = 'info' | 'success' | 'warning' | 'error' | 'promo';
 
+type ButtonType = 'external' | 'inApp';
+
+type InAppScreen =
+  | 'testSeries'
+  | 'dailyQuiz'
+  | 'upcomingExams'
+  | 'currentAffairs'
+  | 'announcements'
+  | 'leaderboard'
+  | 'premium'
+  | 'category'
+  | 'subject'
+  | 'test';
+
+// Firestore shape for an announcement action button (matches Flutter `lib/models/action_button.dart`).
+interface ActionButton {
+  label: string;
+  type: ButtonType;
+  url: string | null;
+  screen: string | null;
+  params: Record<string, any> | null;
+}
+
+// Flat form-state shape for a button being edited (strings are easier to bind to inputs).
+interface AnnouncementButtonFormState {
+  label: string;
+  type: ButtonType;
+  url: string;
+  screen: string;
+  params: Record<string, string>;
+}
+
 interface Announcement {
   id: string;
   title: string;
@@ -69,6 +102,8 @@ interface Announcement {
   imageUrl?: string;
   link?: string;
   linkLabel?: string;
+  primaryButton?: ActionButton | null;
+  secondaryButton?: ActionButton | null;
   isPinned?: boolean;
   isPublished?: boolean;
   order?: number;
@@ -85,6 +120,71 @@ const TYPE_STYLES: Record<AnnouncementType, { badge: string; dot: string; label:
   promo: { badge: 'bg-purple-950/60 text-purple-400 border-purple-800/50', dot: 'bg-purple-400', label: 'Promo' },
 };
 
+// In-app screen options shown in the button editor's Screen dropdown.
+// paramKey/paramLabel are only set for screens that need a parameter.
+const IN_APP_SCREENS: {
+  value: InAppScreen;
+  label: string;
+  paramKey?: 'categoryId' | 'subjectId' | 'testId';
+  paramLabel?: string;
+}[] = [
+  { value: 'testSeries', label: 'Test Series' },
+  { value: 'dailyQuiz', label: 'Daily Quiz' },
+  { value: 'upcomingExams', label: 'Upcoming Exams' },
+  { value: 'currentAffairs', label: 'Current Affairs' },
+  { value: 'announcements', label: 'Announcements' },
+  { value: 'leaderboard', label: 'Leaderboard (Ranks)' },
+  { value: 'premium', label: 'Premium / Upgrade' },
+  { value: 'category', label: 'Specific Category', paramKey: 'categoryId', paramLabel: 'Category ID' },
+  { value: 'subject', label: "Specific Subject's Tests", paramKey: 'subjectId', paramLabel: 'Subject ID' },
+  { value: 'test', label: 'Specific Test', paramKey: 'testId', paramLabel: 'Test ID' },
+];
+
+const emptyButtonForm: AnnouncementButtonFormState = {
+  label: '',
+  type: 'external',
+  url: '',
+  screen: '',
+  params: {},
+};
+
+// Convert a stored ActionButton (Firestore shape) → flat form-state shape.
+const buttonToFormState = (b?: ActionButton | null): AnnouncementButtonFormState => {
+  if (!b) return { ...emptyButtonForm, params: {} };
+  const storedParams: Record<string, any> =
+    b.params && typeof b.params === 'object' ? { ...b.params } : {};
+  const params: Record<string, string> = {};
+  Object.keys(storedParams).forEach((k) => {
+    const v = storedParams[k];
+    params[k] = v == null ? '' : String(v);
+  });
+  return {
+    label: b.label || '',
+    type: b.type === 'inApp' ? 'inApp' : 'external',
+    url: b.url || '',
+    screen: b.screen || '',
+    params,
+  };
+};
+
+// Build an ActionButton Firestore map from form state. Returns null if label is empty (= no button).
+const buildButtonPayload = (b: AnnouncementButtonFormState): ActionButton | null => {
+  const label = b.label.trim();
+  if (!label) return null;
+  if (b.type === 'external') {
+    return { label, type: 'external', url: b.url.trim(), screen: null, params: null };
+  }
+  // inApp
+  const screen = b.screen || '';
+  let params: Record<string, any> | null = null;
+  const meta = IN_APP_SCREENS.find((s) => s.value === screen);
+  if (meta?.paramKey) {
+    const v = (b.params[meta.paramKey] || '').trim();
+    params = v ? { [meta.paramKey]: v } : null;
+  }
+  return { label, type: 'inApp', url: null, screen: screen || null, params };
+};
+
 const emptyForm = {
   title: '',
   message: '',
@@ -92,11 +192,125 @@ const emptyForm = {
   imageUrl: '',
   link: '',
   linkLabel: '',
+  primaryButton: { ...emptyButtonForm, params: {} } as AnnouncementButtonFormState,
+  secondaryButton: { ...emptyButtonForm, params: {} } as AnnouncementButtonFormState,
   isPinned: false,
   isPublished: true,
   order: 0,
   expiresAt: '',
 };
+
+// Reusable single-button editor used for both Button 1 (primary) and Button 2 (secondary).
+function ButtonEditor({
+  title,
+  button,
+  onChange,
+  onClear,
+}: {
+  title: string;
+  button: AnnouncementButtonFormState;
+  onChange: (next: AnnouncementButtonFormState) => void;
+  onClear: () => void;
+}) {
+  const isExternal = button.type === 'external';
+  const screenMeta = IN_APP_SCREENS.find((s) => s.value === button.screen);
+  const paramKey = screenMeta?.paramKey;
+  const paramLabel = screenMeta?.paramLabel;
+  const needsParam = !!paramKey && !!paramLabel;
+
+  return (
+    <div className="rounded-lg border border-slate-700 bg-slate-900/30 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <Label className="text-slate-300 font-medium">{title}</Label>
+        <Button
+          type="button"
+          size="sm"
+          variant="ghost"
+          className="h-7 px-2 text-slate-400 hover:bg-slate-800"
+          onClick={onClear}
+        >
+          <X className="w-3.5 h-3.5 mr-1" /> Clear
+        </Button>
+      </div>
+      <div className="grid grid-cols-2 gap-3">
+        <div className="space-y-1.5">
+          <Label className="text-xs text-slate-500">Label</Label>
+          <Input
+            value={button.label}
+            onChange={(e) => onChange({ ...button, label: e.target.value })}
+            placeholder="e.g. Apply Now"
+            className="bg-slate-800 border-slate-700"
+          />
+        </div>
+        <div className="space-y-1.5">
+          <Label className="text-xs text-slate-500">Action Type</Label>
+          <Select
+            value={button.type}
+            onValueChange={(v) => onChange({ ...button, type: v as ButtonType })}
+          >
+            <SelectTrigger className="bg-slate-800 border-slate-700">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent className="bg-slate-800 border-slate-700">
+              <SelectItem value="external">External Link</SelectItem>
+              <SelectItem value="inApp">In-App Screen</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+      {isExternal ? (
+        <div className="space-y-1.5">
+          <Label className="text-xs text-slate-500">URL</Label>
+          <Input
+            value={button.url}
+            onChange={(e) => onChange({ ...button, url: e.target.value })}
+            placeholder="https://..."
+            className="bg-slate-800 border-slate-700"
+          />
+        </div>
+      ) : (
+        <div className="space-y-3">
+          <div className="space-y-1.5">
+            <Label className="text-xs text-slate-500">Screen</Label>
+            <Select
+              value={button.screen || undefined}
+              onValueChange={(v) => onChange({ ...button, screen: v })}
+            >
+              <SelectTrigger className="bg-slate-800 border-slate-700">
+                <SelectValue placeholder="Select a screen..." />
+              </SelectTrigger>
+              <SelectContent className="bg-slate-800 border-slate-700">
+                {IN_APP_SCREENS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {s.label}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {needsParam && paramKey && paramLabel ? (
+            <div className="space-y-1.5">
+              <Label className="text-xs text-slate-500">{paramLabel}</Label>
+              <Input
+                value={button.params[paramKey] || ''}
+                onChange={(e) =>
+                  onChange({
+                    ...button,
+                    params: { ...button.params, [paramKey]: e.target.value },
+                  })
+                }
+                placeholder={`Enter ${paramLabel.toLowerCase()}...`}
+                className="bg-slate-800 border-slate-700"
+              />
+            </div>
+          ) : (
+            <p className="text-xs text-slate-500 italic">No parameters needed.</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 export default function Announcements() {
   const [items, setItems] = useState<Announcement[]>([]);
@@ -220,6 +434,22 @@ export default function Announcements() {
   };
 
   const openEdit = (item: Announcement) => {
+    const hasPrimary = item.primaryButton !== undefined && item.primaryButton !== null;
+    const hasSecondary = item.secondaryButton !== undefined && item.secondaryButton !== null;
+    // Backward-compat: if no primaryButton map is set but a legacy link exists,
+    // prefill Button 1 from the legacy link/linkLabel so editing an old announcement
+    // surfaces the existing link as a primary external button.
+    const primaryForm: AnnouncementButtonFormState = hasPrimary
+      ? buttonToFormState(item.primaryButton)
+      : item.link
+        ? {
+            label: item.linkLabel || '',
+            type: 'external',
+            url: item.link,
+            screen: '',
+            params: {},
+          }
+        : { ...emptyButtonForm, params: {} };
     setForm({
       title: item.title || '',
       message: item.message || '',
@@ -227,6 +457,10 @@ export default function Announcements() {
       imageUrl: item.imageUrl || '',
       link: item.link || '',
       linkLabel: item.linkLabel || '',
+      primaryButton: primaryForm,
+      secondaryButton: hasSecondary
+        ? buttonToFormState(item.secondaryButton)
+        : { ...emptyButtonForm, params: {} },
       isPinned: !!item.isPinned,
       isPublished: item.isPublished !== false,
       order: item.order || 0,
@@ -262,13 +496,26 @@ export default function Announcements() {
     }
     setSaving(true);
     try {
+      const primaryPayload = buildButtonPayload(form.primaryButton);
+      const secondaryPayload = buildButtonPayload(form.secondaryButton);
+      // Mirror the primary external button into legacy `link` + `linkLabel` so older
+      // app builds (which fall back to those fields when no `primaryButton` map exists)
+      // keep working. If primary is empty or in-app, clear the legacy fields.
+      let legacyLink: string | null = null;
+      let legacyLabel: string | null = null;
+      if (primaryPayload && primaryPayload.type === 'external') {
+        legacyLink = primaryPayload.url || null;
+        legacyLabel = primaryPayload.label || null;
+      }
       const data: Record<string, any> = {
         title: form.title.trim(),
         message: form.message.trim(),
         type: form.type,
         imageUrl: form.imageUrl || null,
-        link: form.link.trim() || null,
-        linkLabel: form.linkLabel.trim() || null,
+        link: legacyLink,
+        linkLabel: legacyLabel,
+        primaryButton: primaryPayload,
+        secondaryButton: secondaryPayload,
         isPinned: !!form.isPinned,
         isPublished: !!form.isPublished,
         order: Number(form.order) || 0,
@@ -487,8 +734,45 @@ export default function Announcements() {
                             <Clock className="w-3 h-3 mr-1" /> Expired
                           </Badge>
                         )}
-                        {item.link && (
-                          <Badge variant="outline" className="bg-slate-800 text-slate-400 border-slate-700">
+                        {item.primaryButton && (
+                          <Badge
+                            variant="outline"
+                            className="bg-slate-800 text-slate-300 border-slate-700 max-w-[160px]"
+                            title={item.primaryButton.label}
+                          >
+                            {item.primaryButton.type === 'external' ? (
+                              <Link2 className="w-3 h-3 mr-1 shrink-0" />
+                            ) : (
+                              <ArrowRight className="w-3 h-3 mr-1 shrink-0" />
+                            )}
+                            <span className="truncate">
+                              {item.primaryButton.label ||
+                                (item.primaryButton.type === 'external' ? 'Link' : 'Screen')}
+                            </span>
+                          </Badge>
+                        )}
+                        {item.secondaryButton && (
+                          <Badge
+                            variant="outline"
+                            className="bg-slate-800/60 text-slate-400 border-slate-700 max-w-[160px]"
+                            title={item.secondaryButton.label}
+                          >
+                            {item.secondaryButton.type === 'external' ? (
+                              <Link2 className="w-3 h-3 mr-1 shrink-0" />
+                            ) : (
+                              <ArrowRight className="w-3 h-3 mr-1 shrink-0" />
+                            )}
+                            <span className="truncate">
+                              {item.secondaryButton.label ||
+                                (item.secondaryButton.type === 'external' ? 'Link' : 'Screen')}
+                            </span>
+                          </Badge>
+                        )}
+                        {!item.primaryButton && !item.secondaryButton && item.link && (
+                          <Badge
+                            variant="outline"
+                            className="bg-slate-800 text-slate-400 border-slate-700"
+                          >
                             <Link2 className="w-3 h-3 mr-1" /> Link
                           </Badge>
                         )}
@@ -597,25 +881,27 @@ export default function Announcements() {
                 </Button>
               </div>
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-2">
-                <Label>Link URL</Label>
-                <Input
-                  value={form.link}
-                  onChange={(e) => setForm({ ...form, link: e.target.value })}
-                  placeholder="https://..."
-                  className="bg-slate-800 border-slate-700"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label>Link Label</Label>
-                <Input
-                  value={form.linkLabel}
-                  onChange={(e) => setForm({ ...form, linkLabel: e.target.value })}
-                  placeholder="Apply Now"
-                  className="bg-slate-800 border-slate-700"
-                />
-              </div>
+            <div className="space-y-2">
+              <Label className="text-slate-300">Action Buttons</Label>
+              <p className="text-xs text-slate-500 -mt-1">
+                Up to 2 CTA buttons. External links open in the browser; in-app screens navigate inside the app.
+              </p>
+              <ButtonEditor
+                title="Button 1 (Primary)"
+                button={form.primaryButton}
+                onChange={(next) => setForm({ ...form, primaryButton: next })}
+                onClear={() =>
+                  setForm({ ...form, primaryButton: { ...emptyButtonForm, params: {} } })
+                }
+              />
+              <ButtonEditor
+                title="Button 2 (Secondary)"
+                button={form.secondaryButton}
+                onChange={(next) => setForm({ ...form, secondaryButton: next })}
+                onClear={() =>
+                  setForm({ ...form, secondaryButton: { ...emptyButtonForm, params: {} } })
+                }
+              />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2">

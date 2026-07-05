@@ -1034,4 +1034,76 @@ the REAL root cause. After re-reading ALL the actual current code from scratch
 
 ---
 
-*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — REAL fix for "category paid but tests still locked": 3-layer fix (grantEntitlement auto-create Product + verify idempotency checks entitlementExists + Flutter clears stale test cache). Admin `507e5ba` + Flutter `a8d1da4` pushed. Both repos 0/0 sync. Dev server running on port 3000.*
+## 19. Session Log — Upcoming Exams: Official Link + Apply Link (session `web-f5c52b64...`, continued)
+
+**User request (verbatim):** "AKHON UPCOMING ADMIN +USER APP APP DUITA URL SEI ULR HOBE
+OFFICIAL LINK APPLY LINK"
+
+**Meaning:** Add TWO new optional URL fields to the Upcoming Exam feature, in BOTH
+the admin panel (Next.js) and the user app (Flutter): an **Official Link** (the
+exam's official website / info page) and an **Apply Link** (the direct application /
+registration URL). Both fields must be editable in the admin form and tappable in
+the user app (open in the device browser).
+
+### What changed
+
+**Admin (Next.js, commit `25d34d6`, pushed to `titun43/examvault-admin`):**
+`src/components/admin/upcoming-exams.tsx`:
+- Added `officialUrl?: string` + `applyUrl?: string` to the `UpcomingExam` interface.
+- Added both to `emptyForm`, `openEdit` (form population), and `handleSave` (writes
+  to Firestore; `null` when blank so existing exams are unaffected).
+- Added two new form inputs in the Add/Edit dialog: "Official Link" + "Apply Link",
+  each with a placeholder + helper caption.
+- Added `Globe` + `ExternalLink` lucide icons; added sky "Official" + amber "Apply"
+  pill badges on each exam card (shown only when the respective URL is set).
+- Added `officialUrl` + `applyUrl` to the bulk-import CSV headers + sample rows.
+- `bun run lint` clean; dev server log clean (HTTP 200, no errors).
+
+**Flutter (commit `d6fcd8f`, v1.45.0+61, pushed to `titun43/examvault`):**
+- `lib/models/upcoming_exam_model.dart` — added `officialUrl` + `applyUrl` nullable
+  String fields (declarations, constructor, `fromFirestore`, `toFirestore`).
+- `lib/screens/upcoming_exams/upcoming_exams_screen.dart` — redesigned the
+  `_UpcomingExamCard` action area: a full-width **Apply Now** `ElevatedButton.icon`
+  (`Icons.how_to_reg`, `AppTheme.primaryColor` background) + a `Wrap` of secondary
+  `TextButton.icon`s (Official `Icons.language`, Notification, Syllabus). Each
+  renders only when its URL is present; the whole area renders only if ≥1 URL is
+  set. Each button uses a 3-step launch fallback (externalApplication →
+  inAppBrowserView → SnackBar). Also fixed a prior bug where Syllabus was hidden
+  whenever Notification was absent (the old Row was gated on notificationUrl).
+- `lib/screens/home/home_screen.dart` (`_buildUpcomingExamMiniCard`) — added an
+  **Apply** quick-action chip on the mini card (shown only when `applyUrl` is set).
+  Tapping the chip launches the URL directly; the rest of the card still opens the
+  full `UpcomingExamsScreen` (Task 6's InkWell ripple fix preserved — the inner
+  GestureDetector wins hit-testing on the chip).
+- `pubspec.yaml` — version `1.44.6+60` → `1.45.0+61`.
+- Flutter SDK not installed in sandbox → verified via bracket-balance check only.
+
+### Firestore field names (the contract between admin + Flutter)
+
+Both sides agree on these two new optional fields on `upcoming_exams/{id}` docs:
+- `officialUrl` (string | null) — Official website / info page
+- `applyUrl` (string | null) — Direct application / registration URL
+
+Both are optional. Existing docs without these fields are unaffected (the Flutter
+model treats missing fields as null → no buttons shown).
+
+### How to activate the feature (user action required)
+
+1. **Vercel** auto-deploys admin commit `25d34d6`.
+2. **Admin:** open the Upcoming Exams section → click Edit on each exam → paste the
+   Official Link + Apply Link → Save. (No re-seed needed — fields are read live from
+   Firestore.)
+3. **User app:** rebuild the APK from Flutter commit `d6fcd8f` (`flutter pub get` +
+   `flutter build apk`). The Apply Now + Official buttons appear immediately on
+   exams whose URLs the admin has filled in.
+
+### Repo sync state (verified clean after push)
+
+| Repo | HEAD | origin/main | Sync |
+|------|------|-------------|------|
+| examvault-admin | `25d34d6` | `25d34d6` | 0/0 ✅ |
+| examvault (Flutter) | `d6fcd8f` | `d6fcd8f` | 0/0 ✅ |
+
+---
+
+*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — Upcoming Exams Official Link + Apply Link added to both repos. Admin `25d34d6` + Flutter `d6fcd8f` (v1.45.0+61) pushed. Both repos 0/0 sync. Dev server running on port 3000.*

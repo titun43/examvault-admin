@@ -16,7 +16,6 @@ import {
   ClipboardList,
   Loader2,
   TrendingUp,
-  Cloud,
 } from 'lucide-react';
 
 interface Stats {
@@ -115,23 +114,6 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
-      {/* Hero */}
-      <Card className="bg-gradient-to-br from-emerald-600 via-green-700 to-teal-800 border-0 overflow-hidden relative">
-        <CardContent className="p-6 sm:p-8 relative z-10">
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h2 className="text-2xl sm:text-3xl font-bold text-white mb-2">Welcome back, Admin!</h2>
-              <p className="text-emerald-100 text-sm sm:text-base max-w-xl">
-                Everything you add here syncs to the ExamVault Flutter app instantly via Firestore.
-                Users see new categories, tests, announcements & banners in real-time.
-              </p>
-            </div>
-            <Cloud className="w-12 h-12 text-emerald-200/50 hidden sm:block animate-pulse" />
-          </div>
-        </CardContent>
-        <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_right,rgba(255,255,255,0.15),transparent_50%)]" />
-      </Card>
-
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard label="Categories" value={stats.categories} icon={FolderTree} color="bg-blue-950/50 text-blue-400" loading={loading} />

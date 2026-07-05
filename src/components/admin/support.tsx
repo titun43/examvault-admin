@@ -55,7 +55,7 @@ interface Ticket {
 }
 interface Message {
   id: string;
-  sender: 'user' | 'admin';
+  sender: 'user' | 'admin' | 'system';
   text: string;
   createdAt: Timestamp | null;
 }
@@ -238,7 +238,11 @@ export default function Support() {
                           </p>
                           <p className="text-xs text-slate-500 truncate mt-1">
                             <span className="text-slate-400">
-                              {t.lastSender === 'admin' ? 'You: ' : 'User: '}
+                              {t.lastSender === 'admin'
+                                ? 'You: '
+                                : t.lastSender === 'system'
+                                  ? ''
+                                  : 'User: '}
                             </span>
                             {t.lastMessage || 'No messages'}
                           </p>
@@ -309,9 +313,15 @@ function ChatPanel({ ticket }: { ticket: Ticket }) {
       (snap) => {
         const list: Message[] = snap.docs.map((d) => {
           const data = d.data() as any;
+          const sender: Message['sender'] =
+            data.sender === 'admin'
+              ? 'admin'
+              : data.sender === 'system'
+                ? 'system'
+                : 'user';
           return {
             id: d.id,
-            sender: data.sender === 'admin' ? 'admin' : 'user',
+            sender,
             text: data.text ?? '',
             createdAt: data.createdAt ?? null,
           };
@@ -367,8 +377,24 @@ function ChatPanel({ ticket }: { ticket: Ticket }) {
     try {
       const next: TicketStatus =
         ticket.status === 'open' ? 'resolved' : 'open';
+      // System message so the user can SEE the status change in their chat
+      // (previously reopening from admin gave the user no visible signal).
+      const systemText =
+        next === 'resolved'
+          ? '✓ Conversation marked as resolved by support'
+          : '↻ Conversation reopened by support';
+      await addDoc(
+        collection(db, 'support_tickets', ticket.id, 'messages'),
+        {
+          sender: 'system',
+          text: systemText,
+          createdAt: serverTimestamp(),
+        }
+      );
       await updateDoc(doc(db, 'support_tickets', ticket.id), {
         status: next,
+        lastMessage: systemText,
+        lastSender: 'system',
         updatedAt: serverTimestamp(),
       });
       toast.success(
@@ -435,8 +461,19 @@ function ChatPanel({ ticket }: { ticket: Ticket }) {
           </div>
         ) : (
           messages.map((m) => {
+            const isSystem = m.sender === 'system';
             const isAdmin = m.sender === 'admin';
             const d = tsToDate(m.createdAt);
+            // System events (resolve / reopen) render as a centered pill.
+            if (isSystem) {
+              return (
+                <div key={m.id} className="flex justify-center">
+                  <span className="inline-block px-3 py-1 rounded-full bg-slate-800/80 text-slate-300 text-[11px] font-semibold text-center max-w-[90%]">
+                    {m.text}
+                  </span>
+                </div>
+              );
+            }
             return (
               <div
                 key={m.id}

@@ -26,6 +26,7 @@ const Products = dynamic(() => import('@/components/admin/products'), { ssr: fal
 const Notifications = dynamic(() => import('@/components/admin/notifications'), { ssr: false });
 const PremiumPlans = dynamic(() => import('@/components/admin/premium-plans'), { ssr: false });
 const PaymentSettings = dynamic(() => import('@/components/admin/payment-settings'), { ssr: false });
+const DataSeed = dynamic(() => import('@/components/admin/data-seed'), { ssr: false });
 
 function AdminContent() {
   const { currentSection } = useAppStore();
@@ -48,6 +49,7 @@ function AdminContent() {
     case 'notifications': return <Notifications />;
     case 'premium-plans': return <PremiumPlans />;
     case 'payment-settings': return <PaymentSettings />;
+    case 'data-seed': return <DataSeed />;
     default: return <Dashboard />;
   }
 }

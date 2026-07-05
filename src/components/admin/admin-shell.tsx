@@ -30,6 +30,7 @@ import {
   Search,
   Download,
   Smartphone,
+  Database,
 } from 'lucide-react';
 
 interface NavItem {
@@ -79,6 +80,12 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'products', label: 'Products', icon: Package },
       { id: 'premium-plans', label: 'Premium Plans', icon: Gem },
       { id: 'payment-settings', label: 'Payment Settings', icon: Settings },
+    ],
+  },
+  {
+    title: 'Tools',
+    items: [
+      { id: 'data-seed', label: 'Data Seed', icon: Database },
     ],
   },
 ];

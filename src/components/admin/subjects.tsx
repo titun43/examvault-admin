@@ -62,6 +62,12 @@ export default function Subjects() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Live test count per subject. Computed from the tests collection so the
+  // number is always accurate, and stale `testCount` values are written back
+  // to subject docs to keep Firestore consistent.
+  const [testCountMap, setTestCountMap] = useState<Record<string, number>>({});
+  const itemsRef = useRef<Subject[]>([]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   const BULK_SAMPLE = '[{"name":"Quantitative Aptitude","description":"Math for competitive exams","icon":"🔢","categoryId":"<paste existing category id>","order":1,"isActive":true},{"name":"Reasoning","description":"Logical reasoning","icon":"🧩","categoryId":"<paste existing category id>","order":2,"isActive":true}]';
 
@@ -143,7 +149,28 @@ export default function Subjects() {
       setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Category));
     });
 
-    return () => { u1(); u2(); };
+    // Live test counts → { subjectId: count }. Kept in state for instant
+    // display, and stale `testCount` values are written back to subject docs.
+    const u3 = onSnapshot(collection(db, 'tests'), (snap) => {
+      const map: Record<string, number> = {};
+      snap.docs.forEach((d) => {
+        const subjId = (d.data() as any)?.subjectId;
+        if (subjId) map[subjId] = (map[subjId] || 0) + 1;
+      });
+      setTestCountMap(map);
+      const batch = writeBatch(db);
+      let needsCommit = false;
+      itemsRef.current.forEach((s) => {
+        const correct = map[s.id] || 0;
+        if ((s.testCount || 0) !== correct) {
+          batch.update(doc(db, 'subjects', s.id), { testCount: correct, updatedAt: serverTimestamp() });
+          needsCommit = true;
+        }
+      });
+      if (needsCommit) batch.commit().catch(() => {});
+    });
+
+    return () => { u1(); u2(); u3(); };
   }, []);
 
   const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -342,7 +369,7 @@ export default function Subjects() {
                       </td>
                       <td className="p-4"><Badge variant="outline" className="border-slate-700 text-slate-300">{categoryName(item.categoryId)}</Badge></td>
                       <td className="p-4 text-slate-500 text-xs">/{item.slug}</td>
-                      <td className="p-4 text-center text-slate-400">{item.testCount || 0}</td>
+                      <td className="p-4 text-center text-slate-400">{testCountMap[item.id] || 0}</td>
                       <td className="p-4 text-center text-slate-400">{item.order || 0}</td>
                       <td className="p-4">
                         <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">

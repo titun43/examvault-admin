@@ -128,6 +128,13 @@ export default function Categories() {
   // Re-sync premium flags across all categories (repairs legacy broken data).
   const [resyncing, setResyncing] = useState(false);
   const [resyncOpen, setResyncOpen] = useState(false);
+  // Live subject count per category. Computed from the subjects collection so
+  // the number is always accurate (manual add, bulk import, seed — all count).
+  // Also written back to each category doc's `subjectCount` field so the
+  // Flutter app (which reads `category.subjectCount`) stays in sync.
+  const [subjectCountMap, setSubjectCountMap] = useState<Record<string, number>>({});
+  const itemsRef = useRef<Category[]>([]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   const BULK_SAMPLE = '[{"name":"SSC","description":"Staff Selection Commission exams","icon":"📋","color":"#10b981","order":1,"isActive":true},{"name":"Banking","description":"Bank PO/Clerk exams","icon":"🏦","color":"#f59e0b","order":2,"isActive":true}]';
 
@@ -231,7 +238,30 @@ export default function Categories() {
       setItems(list);
       setLoading(false);
     }, () => setLoading(false));
-    return () => unsub();
+
+    // Live subject counts → { categoryId: count }. Kept in state for instant
+    // display AND any stale `subjectCount` values are written back to the
+    // category docs so the Flutter app shows the right number.
+    const unsubSubjects = onSnapshot(collection(db, 'subjects'), (snap) => {
+      const map: Record<string, number> = {};
+      snap.docs.forEach((d) => {
+        const catId = (d.data() as any)?.categoryId;
+        if (catId) map[catId] = (map[catId] || 0) + 1;
+      });
+      setSubjectCountMap(map);
+      const batch = writeBatch(db);
+      let needsCommit = false;
+      itemsRef.current.forEach((cat) => {
+        const correct = map[cat.id] || 0;
+        if ((cat.subjectCount || 0) !== correct) {
+          batch.update(doc(db, 'categories', cat.id), { subjectCount: correct, updatedAt: serverTimestamp() });
+          needsCommit = true;
+        }
+      });
+      if (needsCommit) batch.commit().catch(() => {});
+    });
+
+    return () => { unsub(); unsubSubjects(); };
   }, []);
 
   const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -622,7 +652,7 @@ export default function Categories() {
                           <Crown className="w-3 h-3 mr-1" /> ₹{item.premiumPrice || 0}
                         </Badge>
                       ) : null}
-                      <Badge variant="outline" className="text-slate-500 border-slate-700 shrink-0">{item.subjectCount || 0} subjects</Badge>
+                      <Badge variant="outline" className="text-slate-500 border-slate-700 shrink-0">{subjectCountMap[item.id] || 0} subjects</Badge>
                     </div>
                     {item.description && <p className="text-slate-500 text-xs mt-1 line-clamp-2">{item.description}</p>}
                     <p className="text-slate-600 text-[10px] mt-1">/{item.slug}</p>

@@ -1233,3 +1233,24 @@ Recent feature work shipped in this session cycle:
 - firebase CLI is installed globally (npm install -g firebase-tools) but `firebase login` requires browser auth — rules must be deployed by the user via Firebase Console UI (https://console.firebase.google.com/project/examvaultnew/firestore/rules) or by running `firebase login` + `firebase deploy --only firestore:rules --project examvaultnew` on their machine.
 - Admin panel dev server: `bun run dev` on port 3000. Lint: `bun run lint`. Do NOT run `bun run build`.
 - All shared work records live in /home/z/my-project/worklog.md (this file). Append-only; do not overwrite.
+
+---
+Task ID: upcoming-exams-share
+Agent: main
+Task: Add Share button to Upcoming Exams list card (mirror Current Affairs pattern)
+
+Work Log:
+- User reported: "Upcoming Exams View All" list screen has no Share button, but Current Affairs list does.
+- Located the gap: lib/screens/upcoming_exams/upcoming_exams_screen.dart had no share usage, while lib/screens/current_affairs/current_affairs_screen.dart line 220 already used ShareHelper.shareCurrentAffair(affair).
+- Confirmed ShareHelper.shareExam(exam) already exists (lib/utils/share_helper.dart line 54) — same helper used by the Upcoming Exam detail screen's AppBar action.
+- Added import for share_helper.dart to upcoming_exams_screen.dart.
+- Added a new Padding(child: Row[Spacer via mainAxisAlignment.end, TextButton.icon Share]) as the last child of the card's outer Column — so the Share button appears at the bottom of every exam card, always visible (even when no apply/official/notification/syllabus URLs are set).
+- Tapping it calls ShareHelper.shareExam(exam) which builds share text with exam name, date, apply link (if any) + appends the ExamVault Play Store URL.
+- Verified with flutter analyze: 0 errors (only pre-existing withOpacity deprecation infos).
+- Bumped version: 1.49.1+74 → 1.49.2+75.
+- Committed + pushed: 186fea6..115dfa7 main -> main (titun43/examvault).
+
+Stage Summary:
+- Upcoming Exams "View All" list screen now has a Share button on every exam card, matching the Current Affairs list pattern.
+- Share text includes the Play Store link so recipients can download the app.
+- Both list screens (Upcoming Exams + Current Affairs) and both detail screens (Upcoming Exam Detail + Current Affair Detail) now have working Share buttons with the app link footer.

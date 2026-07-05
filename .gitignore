@@ -70,8 +70,6 @@ Caddyfile
 mini-services/
 examples/
 skills/
-worklog.md
-WORKLOG.md
 CHECKPOINT.md
 
 # Old Flutter source (kept locally for reference, NOT part of admin web)

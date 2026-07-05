@@ -1254,3 +1254,87 @@ Stage Summary:
 - Upcoming Exams "View All" list screen now has a Share button on every exam card, matching the Current Affairs list pattern.
 - Share text includes the Play Store link so recipients can download the app.
 - Both list screens (Upcoming Exams + Current Affairs) and both detail screens (Upcoming Exam Detail + Current Affair Detail) now have working Share buttons with the app link footer.
+
+---
+Task ID: support-cleanup-and-system-messages
+Agent: main
+Task: (1) Delete "Welcome back, Admin!" hero card on admin dashboard.
+      (2) Delete the APK download link above it in the admin shell header.
+      (3) Fix user-side support list so resolved tickets sink to the bottom.
+      (4) Make admin resolve/reopen visible to the user (previously gave no signal).
+
+Work Log:
+- User reported (Bengali): resolved conversations still show at the top of the
+  user's list ("resolve korar niche thake na"), and admin reopening a ticket
+  gives the user no notification ("admin theke reopen kora hoi seta user
+  kachche kichu ase na"). Also asked to delete the "Welcome back, Admin!" +
+  Firestore-sync hero card and the APK download link that sat above it on the
+  admin page.
+- Confirmed the admin page lives in the Next.js project (titun43/examvault-admin),
+  NOT the Flutter project. Located the hero text in
+  src/components/admin/dashboard.tsx (lines 119-133) and the APK link in
+  src/components/admin/admin-shell.tsx header (lines 281-294).
+
+- Next.js admin panel changes (commit 9a57148 on titun43/examvault-admin):
+  * dashboard.tsx — removed the entire emerald gradient Hero Card
+    ("Welcome back, Admin!" + "Everything you add here syncs to the ExamVault
+    Flutter app…"). Dashboard now starts directly with the Stats Grid.
+    Removed the now-unused `Cloud` import from lucide-react.
+  * admin-shell.tsx — removed the green "Download APK" badge (<a href=
+    "/examvault-1.23.0.apk">) from the top-right header cluster. Header now
+    shows only: email + Administrator label, avatar, logout. Removed the
+    now-unused `Smartphone` and `Download` lucide imports.
+  * support.tsx — upgraded `Message.sender` type to 'user' | 'admin' | 'system'
+    so status-change events render distinctly. `toggleResolved()` now also
+    writes a system message into the messages subcollection before flipping
+    status, and denormalizes lastMessage/lastSender='system' so the list
+    preview shows the event. Chat panel renders system messages as a centered
+    pill (slate-800/80 rounded-full), separate from user-left / admin-right
+    chat bubbles. Ticket-list preview no longer prefixes system events with
+    "You: " or "User: ".
+
+- Flutter app changes (commit 34a0ce0 on titun43/examvault):
+  * lib/models/support_message_model.dart — added `MessageSender.system` to
+    the enum. fromFirestore() now maps sender strings 'admin'/'system'/'user'
+    via a switch. toFirestore() serializes back to the same strings.
+  * lib/screens/support/help_support_screen.dart:
+      - _TicketList: replaced the raw `snapshot.data?.docs` with a
+        client-sorted copy. Open tickets sort to the top, Resolved sink to
+        the bottom; within each group, newer `updatedAt` first. This is what
+        makes a just-resolved conversation immediately drop down on the
+        user's side.
+      - _TicketTile: lastSender icon now branches three ways — admin
+        (support_agent), system (info_outline), user (person).
+      - _MessageBubble: when `message.sender == MessageSender.system`, render
+        a centered grey pill (no avatar, no timestamp) so it reads as a
+        status event, not chat from either party.
+  * No other screens touched. The user's existing reopen-on-reply behavior
+    (line ~466, sending a message sets status='open') is preserved — so a
+    user following up on a resolved ticket auto-reopens it, and admin sees
+    the new message bubble to the top.
+
+- Verified with `bun run lint` (0 errors) and `flutter analyze` (0 errors,
+  only pre-existing withOpacity deprecation infos). Dev server compiled
+  cleanly throughout.
+
+- Pushed both repos:
+    examvault (Flutter):  115dfa7..34a0ce0  main -> main
+    examvault-admin:      4a4bc53..9a57148  main -> main
+
+Stage Summary:
+- Admin dashboard no longer shows the "Welcome back, Admin!" hero card or the
+  APK download badge in the header. The dashboard starts directly with the
+  Stats Grid + Quick Tips.
+- User-side Help & Support list now sorts OPEN tickets above RESOLVED ones
+  (newest first within each group), so resolved conversations sink out of
+  the way as the user expects.
+- Admin resolve/reopen now emits a system message into the chat. Both the
+  user app and the admin panel render these as a centered pill, e.g.
+  "✓ Conversation marked as resolved by support" /
+  "↻ Conversation reopened by support". This closes the "admin reopened but
+  user saw nothing" gap — the user now sees the status change inline in the
+  conversation, in real-time via Firestore onSnapshot.
+- The SupportMessageModel now supports three senders (user/admin/system) on
+  both sides. Backward compatible: old messages without 'system' fall back
+  to 'user' correctly.
+- Both repos synced to origin/main (0/0 ahead/behind).

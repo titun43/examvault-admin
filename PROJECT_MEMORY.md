@@ -1194,3 +1194,71 @@ must-have (it was completely absent from the previous seed).
 ---
 
 *Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — Seed data expanded to A-Z: 13 categories, 26 subjects, 26 tests, 130 questions, 15 current affairs (NEW), 10 upcoming exams with official+apply links. Admin `a1e187b` pushed. Flutter unchanged (`d6fcd8f`). Both repos 0/0 sync. Dev server running on port 3000.*
+
+---
+
+## Session web-f5c52b64 (cont.) — Support cleanup + system messages
+
+### What changed
+
+**Admin panel (titun43/examvault-admin) — HEAD: `9a57148`**
+- `src/components/admin/dashboard.tsx`: deleted the emerald gradient hero card
+  ("Welcome back, Admin!" + Firestore-sync paragraph). Dashboard now opens
+  directly with the Stats Grid. Removed unused `Cloud` lucide import.
+- `src/components/admin/admin-shell.tsx`: deleted the green "Download APK"
+  badge from the top-right header cluster (was linking to
+  `/examvault-1.23.0.apk`). Header now shows only email + Administrator label,
+  avatar, logout. Removed unused `Smartphone` and `Download` lucide imports.
+- `src/components/admin/support.tsx`: `Message.sender` type widened to
+  `'user' | 'admin' | 'system'`. `toggleResolved()` now writes a system
+  message into the messages subcollection before flipping status, and sets
+  `lastMessage` + `lastSender='system'` on the ticket doc. Chat panel renders
+  system messages as a centered slate pill (not a left/right bubble). Ticket
+  list preview no longer prefixes system events with "You: "/"User: ".
+
+**Flutter app (titun43/examvault) — HEAD: `34a0ce0`**
+- `lib/models/support_message_model.dart`: added `MessageSender.system` to
+  the enum. `fromFirestore` / `toFirestore` map 'system' <-> enum both ways.
+- `lib/screens/support/help_support_screen.dart`:
+  - `_TicketList`: client-side sort — OPEN on top, RESOLVED sinks to bottom,
+    newest `updatedAt` first within each group. Fixes "resolve korar niche
+    thake na" (resolved tickets no longer linger at the top).
+  - `_TicketTile`: lastSender icon branches 3 ways (admin / system / user).
+  - `_MessageBubble`: system sender renders as a centered grey pill — no
+    avatar, no timestamp — so it reads as a status event, not chat.
+
+### Why this matters
+
+Previously, when admin clicked "Resolve" or "Reopen" on a ticket, only the
+`status` field flipped. The user got **no visible signal** — they had to
+infer the change from the small OPEN/RESOLVED chip on the list tile. Now
+every resolve/reopen also drops a system message into the chat, so the user
+sees e.g. "✓ Conversation marked as resolved by support" inline in the
+conversation, in real-time via Firestore onSnapshot. The user's existing
+auto-reopen-on-reply behavior is preserved (sending a message still sets
+`status='open'`).
+
+### Repo sync state
+
+| Repo | HEAD | origin/main | Sync |
+|------|------|-------------|------|
+| examvault-admin | `9a57148` | `9a57148` | 0/0 ✅ |
+| examvault (Flutter) | `34a0ce0` | `34a0ce0` | 0/0 ✅ |
+
+### Firestore schema additions
+
+- `support_tickets/{ticketId}/messages/{messageId}` now accepts `sender: 'system'`
+  in addition to `'user'` / `'admin'`. No rules change needed — the existing
+  parent-ticket ownership rule already covers all senders.
+
+### Files touched this session
+
+| File | Repo | Change |
+|------|------|--------|
+| `src/components/admin/dashboard.tsx` | admin | removed hero card + Cloud import |
+| `src/components/admin/admin-shell.tsx` | admin | removed APK badge + Smartphone/Download imports |
+| `src/components/admin/support.tsx` | admin | system sender type + toggleResolved writes system msg + centered pill render |
+| `lib/models/support_message_model.dart` | flutter | added MessageSender.system + switch on from/toFirestore |
+| `lib/screens/support/help_support_screen.dart` | flutter | client-side sort (open first) + system pill bubble + 3-way tile icon |
+
+*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — Admin hero/APK deleted, support list sorts resolved to bottom, admin resolve/reopen emits visible system message in chat. Admin `9a57148` + Flutter `34a0ce0` pushed. Both repos 0/0 sync.*

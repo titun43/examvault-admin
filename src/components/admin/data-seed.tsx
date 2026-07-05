@@ -50,6 +50,7 @@ import {
   SEED_BANNERS,
   SEED_ANNOUNCEMENTS,
   SEED_UPCOMING_EXAMS,
+  SEED_CURRENT_AFFAIRS,
 } from '@/lib/seed-data';
 
 interface LogEntry {
@@ -62,12 +63,13 @@ interface LogEntry {
 // the user at a glance whether data is present, partial, or missing.
 const EXPECTED: Record<string, { label: string; min: number }> = {
   categories:       { label: 'Categories',       min: 8 },  // 7 seeded + Indian Railways
-  subjects:         { label: 'Subjects',         min: 14 },
-  tests:            { label: 'Tests',            min: 14 },
-  questions:        { label: 'Questions',         min: 70 },
+  subjects:         { label: 'Subjects',         min: 26 },
+  tests:            { label: 'Tests',            min: 26 },
+  questions:        { label: 'Questions',         min: 130 },
   banners:          { label: 'Banners',          min: 5 },
   announcements:    { label: 'Announcements',    min: 8 },
   upcoming_exams:   { label: 'Upcoming Exams',   min: 10 },
+  current_affairs:  { label: 'Current Affairs',  min: 15 },
 };
 
 export default function DataSeed() {
@@ -81,7 +83,7 @@ export default function DataSeed() {
   // no more guessing whether the seed ran.
   const [counts, setCounts] = useState<Record<string, number>>({
     categories: 0, subjects: 0, tests: 0, questions: 0,
-    banners: 0, announcements: 0, upcoming_exams: 0,
+    banners: 0, announcements: 0, upcoming_exams: 0, current_affairs: 0,
   });
 
   useEffect(() => {
@@ -122,6 +124,7 @@ export default function DataSeed() {
     let bannersAdded = 0;
     let announcementsAdded = 0;
     let upcomingExamsAdded = 0;
+    let currentAffairsAdded = 0;
 
     try {
       // -------------------------------------------------------------------
@@ -342,6 +345,8 @@ export default function DataSeed() {
             applicationEndDate: new Date(exam.applicationEndDate),
             notificationUrl: exam.notificationUrl,
             syllabusUrl: exam.syllabusUrl,
+            officialUrl: exam.officialUrl || null,
+            applyUrl: exam.applyUrl || null,
             imageUrl: exam.imageUrl,
             description: exam.description,
             tags: exam.tags,
@@ -356,7 +361,37 @@ export default function DataSeed() {
       updateLog('Upcoming Exams (10)', 'done', `${upcomingExamsAdded} added`);
 
       // -------------------------------------------------------------------
-      // Step 5: Sync counts (subjectCount on categories, testCount on subjects)
+      // Step 5: Current Affairs (15 real 2025 entries)
+      // -------------------------------------------------------------------
+      updateLog('Current Affairs (15)', 'pending');
+      for (const ca of SEED_CURRENT_AFFAIRS) {
+        const existing = await getDocs(
+          query(collection(db, 'current_affairs'), where('title', '==', ca.title)),
+        );
+        if (existing.empty) {
+          await addDoc(collection(db, 'current_affairs'), {
+            date: new Date(ca.date),
+            title: ca.title,
+            summary: ca.summary,
+            content: ca.content,
+            source: ca.source || null,
+            category: ca.category || null,
+            categoryId: ca.categoryId || null,
+            isImportant: !!ca.isImportant,
+            tags: ca.tags || [],
+            pdfUrl: ca.pdfUrl || null,
+            imageUrl: ca.imageUrl || null,
+            isPublished: true,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          currentAffairsAdded++;
+        }
+      }
+      updateLog('Current Affairs (15)', 'done', `${currentAffairsAdded} added`);
+
+      // -------------------------------------------------------------------
+      // Step 6: Sync counts (subjectCount on categories, testCount on subjects)
       // The Flutter app reads `category.subjectCount` and `subject.testCount`
       // directly from Firestore. If these are 0 (the default), the user app
       // shows "0 Subjects" on category cards and "0" in the Tests column —
@@ -406,13 +441,14 @@ export default function DataSeed() {
       // Done
       // -------------------------------------------------------------------
       const summary = [
-        `${categoriesAdded}/7 categories`,
-        `${subjectsAdded}/14 subjects`,
-        `${testsAdded}/14 tests`,
-        `${questionsAdded}/70 questions`,
+        `${categoriesAdded}/13 categories`,
+        `${subjectsAdded}/26 subjects`,
+        `${testsAdded}/26 tests`,
+        `${questionsAdded}/130 questions`,
         `${bannersAdded}/5 banners`,
         `${announcementsAdded}/8 announcements`,
         `${upcomingExamsAdded}/10 upcoming exams`,
+        `${currentAffairsAdded}/15 current affairs`,
       ].join(' • ');
       toast.success(`Seed complete: ${summary}`);
       updateLog('✅ Done', 'done', summary);
@@ -494,9 +530,11 @@ export default function DataSeed() {
             Data Seed Manager
           </h2>
           <p className="text-slate-500 mt-1 text-sm max-w-2xl">
-            Seed the app with real Indian exam-prep data (LIC, SSC, Banking, UPSC,
-            Assam, West Bengal, Uttar Pradesh), or wipe all content collections to
-            start fresh. Indian Railways category is preserved if it already exists.
+            Seed the app with real Indian exam-prep data — 13 categories (LIC, SSC,
+            Banking, UPSC, Assam, WB, UP, Defence, Teaching, Insurance, Police,
+            Rajasthan, Maharashtra), 26 subjects, 26 tests, 130 questions, 15 current
+            affairs, 5 banners, 8 announcements, 10 upcoming exams with official +
+            apply links. Indian Railways category is preserved if it already exists.
           </p>
         </div>
       </div>
@@ -509,7 +547,7 @@ export default function DataSeed() {
             <h3 className="text-sm font-semibold text-slate-900">Current Data in Firestore (live)</h3>
             <span className="text-xs text-slate-400 ml-auto">updates in real-time</span>
           </div>
-          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
             {Object.entries(EXPECTED).map(([key, exp]) => {
               const n = counts[key] || 0;
               const ok = n >= exp.min;
@@ -571,11 +609,12 @@ export default function DataSeed() {
               </div>
             </div>
             <ul className="text-sm text-slate-600 space-y-1 mb-4">
-              <li>• 7 categories (LIC, SSC, Banking, UPSC, Assam, WB, UP)</li>
-              <li>• 14 subjects + 14 tests + 70 questions</li>
+              <li>• 13 categories (LIC, SSC, Banking, UPSC, Assam, WB, UP, Defence, Teaching, Insurance, Police, Rajasthan, Maharashtra)</li>
+              <li>• 26 subjects + 26 tests + 130 questions</li>
               <li>• 5 banners (homepage promotional)</li>
               <li>• 8 announcements (exam notifications)</li>
-              <li>• 10 upcoming exams (real 2025-2026 dates)</li>
+              <li>• 10 upcoming exams (real 2025-2026 dates + official/apply links)</li>
+              <li>• 15 current affairs (real 2025 events — National, International, Sports, Economy, Science, Technology)</li>
             </ul>
             <Button
               onClick={handleSeed}

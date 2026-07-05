@@ -129,10 +129,11 @@ export default function DataSeed() {
     setSyncing(true);
     try {
       toast.info('Syncing counts…');
-      const [allCatsSnap, allSubjectsSnap, allTestsSnap] = await Promise.all([
+      const [allCatsSnap, allSubjectsSnap, allTestsSnap, allQuestionsSnap] = await Promise.all([
         getDocs(collection(db, 'categories')),
         getDocs(collection(db, 'subjects')),
         getDocs(collection(db, 'tests')),
+        getDocs(collection(db, 'questions')),
       ]);
 
       // Count subjects per category (by categoryId field on each subject doc)
@@ -147,6 +148,13 @@ export default function DataSeed() {
       allTestsSnap.forEach((d) => {
         const sId = (d.data() as any)?.subjectId;
         if (sId) testCountBySubj[sId] = (testCountBySubj[sId] || 0) + 1;
+      });
+
+      // Count questions per test (by testId field on each question doc)
+      const qCountByTest: Record<string, number> = {};
+      allQuestionsSnap.forEach((d) => {
+        const tId = (d.data() as any)?.testId;
+        if (tId) qCountByTest[tId] = (qCountByTest[tId] || 0) + 1;
       });
 
       // Write back category.subjectCount
@@ -175,8 +183,22 @@ export default function DataSeed() {
       });
       if (subjsFixed > 0) await subjBatch.commit();
 
+      // Write back test.questionCount — the Flutter app shows "N Questions"
+      // on every test card. Without this, seeded tests show "0 Questions".
+      let testsFixed = 0;
+      const testBatch = writeBatch(db);
+      allTestsSnap.forEach((d) => {
+        const correct = qCountByTest[d.id] || 0;
+        const stored = (d.data() as any)?.questionCount ?? -1;
+        if (stored !== correct) {
+          testBatch.update(d.ref, { questionCount: correct, updatedAt: serverTimestamp() });
+          testsFixed++;
+        }
+      });
+      if (testsFixed > 0) await testBatch.commit();
+
       toast.success(
-        `Synced ✓ ${catsFixed} categor${catsFixed === 1 ? 'y' : 'ies'} + ${subjsFixed} subject${subjsFixed === 1 ? '' : 's'} updated. Pull-to-refresh in the user app to see the counts.`,
+        `Synced ✓ ${catsFixed} categor${catsFixed === 1 ? 'y' : 'ies'} + ${subjsFixed} subject${subjsFixed === 1 ? '' : 's'} + ${testsFixed} test${testsFixed === 1 ? '' : 's'} updated. Pull-to-refresh in the user app to see the counts.`,
       );
     } catch (e) {
       console.error('[syncCounts]', e);
@@ -297,6 +319,11 @@ export default function DataSeed() {
                 isPremium: test.isPremium,
                 price: test.price,
                 attemptCount: 0,
+                // Defensive: ensure the field exists immediately so the
+                // Flutter app never reads a missing questionCount (defaults
+                // to 0, showing "0 Questions"). Step 6 overwrites with the
+                // real count after all questions are added.
+                questionCount: 0,
                 createdAt: serverTimestamp(),
                 updatedAt: serverTimestamp(),
               });
@@ -518,7 +545,28 @@ export default function DataSeed() {
         }
       });
       if (subjsFixed > 0) await subjBatch.commit();
-      updateLog('Syncing counts', 'done', `${catsFixed} categories + ${subjsFixed} subjects updated`);
+      // Write back test.questionCount — the Flutter app reads
+      // `test.questionCount` directly to show "N Questions" on test cards.
+      // The seed creates test docs with questionCount: 0 then adds questions
+      // separately, so without this write-back every test shows "0 Questions".
+      const allQuestionsSnap = await getDocs(collection(db, 'questions'));
+      const qCountByTest: Record<string, number> = {};
+      allQuestionsSnap.forEach((d) => {
+        const tId = (d.data() as any)?.testId;
+        if (tId) qCountByTest[tId] = (qCountByTest[tId] || 0) + 1;
+      });
+      let testsFixed = 0;
+      const testBatch = writeBatch(db);
+      allTestsSnap.forEach((d) => {
+        const correct = qCountByTest[d.id] || 0;
+        const stored = (d.data() as any)?.questionCount ?? -1;
+        if (stored !== correct) {
+          testBatch.update(d.ref, { questionCount: correct, updatedAt: serverTimestamp() });
+          testsFixed++;
+        }
+      });
+      if (testsFixed > 0) await testBatch.commit();
+      updateLog('Syncing counts', 'done', `${catsFixed} categories + ${subjsFixed} subjects + ${testsFixed} tests updated`);
 
       // -------------------------------------------------------------------
       // Done
@@ -727,19 +775,19 @@ export default function DataSeed() {
                 <RefreshCw className="w-5 h-5 text-sky-700" />
               </div>
               <div>
-                <h3 className="font-semibold text-slate-900">Sync Subject / Test Counts</h3>
-                <p className="text-xs text-slate-500">Fixes “0 subjects” on category cards</p>
+                <h3 className="font-semibold text-slate-900">Sync Subject / Test / Question Counts</h3>
+                <p className="text-xs text-slate-500">Fixes “0 subjects” &amp; “0 Questions” on cards</p>
               </div>
             </div>
             <p className="text-sm text-slate-600 mb-3">
               Recomputes <code className="text-xs bg-sky-100 px-1 rounded">subjectCount</code> on every
-              category and <code className="text-xs bg-sky-100 px-1 rounded">testCount</code> on every
-              subject from the live subjects / tests collections, then writes the correct values back
-              to Firestore.
+              category, <code className="text-xs bg-sky-100 px-1 rounded">testCount</code> on every
+              subject, and <code className="text-xs bg-sky-100 px-1 rounded">questionCount</code> on
+              every test from the live collections, then writes the correct values back to Firestore.
             </p>
             <ul className="text-sm text-slate-600 space-y-1 mb-4">
               <li>• Run this after seeding, bulk-import, or manual edits</li>
-              <li>• Use it if the user app shows “0 Subjects” on any category</li>
+              <li>• Use it if the user app shows “0 Subjects” or “0 Questions”</li>
               <li>• Safe to run anytime — only writes docs whose count is stale</li>
             </ul>
             <Button

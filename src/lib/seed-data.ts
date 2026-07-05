@@ -1266,6 +1266,10 @@ export const SEED_CATEGORIES: SeedCategory[] = [
 // =============================================================================
 
 const nextYear = new Date().getFullYear() + 1;
+// Banner start date — MUST be in the past so the Flutter app's `isVisible`
+// check (now.isBefore(startsAt) → hidden) passes immediately. Banners that
+// start in the future are silently hidden from users.
+const bannerStart = '2024-01-01T00:00:00.000Z';
 
 export const SEED_BANNERS: SeedBanner[] = [
   {
@@ -1276,7 +1280,7 @@ export const SEED_BANNERS: SeedBanner[] = [
     linkLabel: 'Start Practicing',
     order: 1,
     isActive: true,
-    startsAt: `${nextYear}-01-01T00:00:00.000Z`,
+    startsAt: bannerStart,
     endsAt: `${nextYear + 1}-12-31T23:59:59.000Z`,
   },
   {
@@ -1287,7 +1291,7 @@ export const SEED_BANNERS: SeedBanner[] = [
     linkLabel: 'Unlock Now',
     order: 2,
     isActive: true,
-    startsAt: `${nextYear}-01-01T00:00:00.000Z`,
+    startsAt: bannerStart,
     endsAt: `${nextYear + 1}-12-31T23:59:59.000Z`,
   },
   {
@@ -1298,7 +1302,7 @@ export const SEED_BANNERS: SeedBanner[] = [
     linkLabel: 'Explore Plans',
     order: 3,
     isActive: true,
-    startsAt: `${nextYear}-01-01T00:00:00.000Z`,
+    startsAt: bannerStart,
     endsAt: `${nextYear + 1}-12-31T23:59:59.000Z`,
   },
   {
@@ -1309,7 +1313,7 @@ export const SEED_BANNERS: SeedBanner[] = [
     linkLabel: 'View Tests',
     order: 4,
     isActive: true,
-    startsAt: `${nextYear}-01-01T00:00:00.000Z`,
+    startsAt: bannerStart,
     endsAt: `${nextYear + 1}-12-31T23:59:59.000Z`,
   },
   {
@@ -1320,7 +1324,7 @@ export const SEED_BANNERS: SeedBanner[] = [
     linkLabel: 'Browse States',
     order: 5,
     isActive: true,
-    startsAt: `${nextYear}-01-01T00:00:00.000Z`,
+    startsAt: bannerStart,
     endsAt: `${nextYear + 1}-12-31T23:59:59.000Z`,
   },
 ];

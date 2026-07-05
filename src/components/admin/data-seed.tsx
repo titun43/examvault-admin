@@ -21,6 +21,7 @@ import {
   collection,
   onSnapshot,
   addDoc,
+  updateDoc,
   deleteDoc,
   doc,
   getDocs,
@@ -254,24 +255,36 @@ export default function DataSeed() {
         const existing = await getDocs(
           query(collection(db, 'banners'), where('title', '==', banner.title)),
         );
+        const payload = {
+          subtitle: banner.subtitle,
+          imageUrl: banner.imageUrl,
+          link: banner.link,
+          linkLabel: banner.linkLabel,
+          order: banner.order,
+          isActive: banner.isActive,
+          // IMPORTANT: startsAt MUST be in the past, otherwise the Flutter
+          // app's BannerModel.isVisible check (now.isBefore(startsAt) →
+          // hidden) will hide the banner from users. We always overwrite
+          // the dates here so any previously-seeded banner with a bad
+          // future start date gets repaired on re-seed.
+          startsAt: new Date(banner.startsAt),
+          endsAt: new Date(banner.endsAt),
+          updatedAt: serverTimestamp(),
+        };
         if (existing.empty) {
           await addDoc(collection(db, 'banners'), {
             title: banner.title,
-            subtitle: banner.subtitle,
-            imageUrl: banner.imageUrl,
-            link: banner.link,
-            linkLabel: banner.linkLabel,
-            order: banner.order,
-            isActive: banner.isActive,
-            startsAt: new Date(banner.startsAt),
-            endsAt: new Date(banner.endsAt),
+            ...payload,
             createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
           });
           bannersAdded++;
+        } else {
+          // Banner exists — repair its dates + fields in case it was
+          // seeded before the startsAt fix.
+          await updateDoc(existing.docs[0].ref, payload);
         }
       }
-      updateLog('Banners (5)', 'done', `${bannersAdded} added`);
+      updateLog('Banners (5)', 'done', `${bannersAdded} added (existing ones date-repaired)`);
 
       // -------------------------------------------------------------------
       // Step 3: Announcements
@@ -341,6 +354,53 @@ export default function DataSeed() {
         }
       }
       updateLog('Upcoming Exams (10)', 'done', `${upcomingExamsAdded} added`);
+
+      // -------------------------------------------------------------------
+      // Step 5: Sync counts (subjectCount on categories, testCount on subjects)
+      // The Flutter app reads `category.subjectCount` and `subject.testCount`
+      // directly from Firestore. If these are 0 (the default), the user app
+      // shows "0 Subjects" on category cards and "0" in the Tests column —
+      // even though the subjects/tests actually exist. This step computes the
+      // real counts from the subjects/tests collections and writes them back.
+      // -------------------------------------------------------------------
+      updateLog('Syncing counts', 'pending');
+      const allSubjectsSnap = await getDocs(collection(db, 'subjects'));
+      const subjCountByCat: Record<string, number> = {};
+      allSubjectsSnap.forEach((d) => {
+        const catId = (d.data() as any)?.categoryId;
+        if (catId) subjCountByCat[catId] = (subjCountByCat[catId] || 0) + 1;
+      });
+      const allTestsSnap = await getDocs(collection(db, 'tests'));
+      const testCountBySubj: Record<string, number> = {};
+      allTestsSnap.forEach((d) => {
+        const sId = (d.data() as any)?.subjectId;
+        if (sId) testCountBySubj[sId] = (testCountBySubj[sId] || 0) + 1;
+      });
+      // Write back category.subjectCount
+      let catsFixed = 0;
+      const catBatch = writeBatch(db);
+      allCatsSnap.forEach((d) => {
+        const correct = subjCountByCat[d.id] || 0;
+        const stored = (d.data() as any)?.subjectCount ?? -1;
+        if (stored !== correct) {
+          catBatch.update(d.ref, { subjectCount: correct, updatedAt: serverTimestamp() });
+          catsFixed++;
+        }
+      });
+      if (catsFixed > 0) await catBatch.commit();
+      // Write back subject.testCount
+      let subjsFixed = 0;
+      const subjBatch = writeBatch(db);
+      allSubjectsSnap.forEach((d) => {
+        const correct = testCountBySubj[d.id] || 0;
+        const stored = (d.data() as any)?.testCount ?? -1;
+        if (stored !== correct) {
+          subjBatch.update(d.ref, { testCount: correct, updatedAt: serverTimestamp() });
+          subjsFixed++;
+        }
+      });
+      if (subjsFixed > 0) await subjBatch.commit();
+      updateLog('Syncing counts', 'done', `${catsFixed} categories + ${subjsFixed} subjects updated`);
 
       // -------------------------------------------------------------------
       // Done

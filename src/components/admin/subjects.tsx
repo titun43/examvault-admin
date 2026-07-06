@@ -36,6 +36,7 @@ interface Subject {
   description?: string;
   order?: number;
   testCount?: number;
+  premiumPrice?: number;
 }
 
 interface Category {
@@ -44,7 +45,7 @@ interface Category {
   icon?: string;
 }
 
-const emptyForm = { name: '', categoryId: '', slug: '', icon: '', description: '', order: 0 };
+const emptyForm = { name: '', categoryId: '', slug: '', icon: '', description: '', order: 0, premiumPrice: 0 };
 
 export default function Subjects() {
   const [items, setItems] = useState<Subject[]>([]);
@@ -181,6 +182,7 @@ export default function Subjects() {
     setForm({
       name: item.name, categoryId: item.categoryId, slug: item.slug,
       icon: item.icon || '', description: item.description || '', order: item.order || 0,
+      premiumPrice: item.premiumPrice ?? 0,
     });
     setEditingId(item.id);
     setDialogOpen(true);
@@ -198,6 +200,13 @@ export default function Subjects() {
         icon: form.icon || null,
         description: form.description || null,
         order: Number(form.order) || 0,
+        // Subject Pack price (INR). 0 = not purchasable individually.
+        // When > 0, the Flutter test_list_screen shows an "Unlock this subject
+        // for ₹X" banner. The admin should ALSO create a matching SUBJECT_PACK
+        // Product in the Products section (refId = this subject's id) with the
+        // same price — the backend uses the Product price as the server-side
+        // authority.
+        premiumPrice: Math.max(0, Number(form.premiumPrice) || 0),
       };
       if (editingId) {
         await updateDoc(doc(db, 'subjects', editingId), { ...data, updatedAt: serverTimestamp() });
@@ -422,6 +431,22 @@ export default function Subjects() {
             <div className="space-y-2">
               <Label>Slug</Label>
               <Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="auto-generated" className="bg-slate-800 border-slate-700" />
+            </div>
+            <div className="space-y-2">
+              <Label>Subject Pack Price (INR)</Label>
+              <Input
+                type="number"
+                min={0}
+                value={form.premiumPrice}
+                onChange={(e) => setForm({ ...form, premiumPrice: Number(e.target.value) })}
+                placeholder="0 = not sold individually"
+                className="bg-slate-800 border-slate-700"
+              />
+              <p className="text-slate-500 text-[10px]">
+                Set &gt; 0 to let users unlock ALL tests in this subject as a one-time
+                purchase. You must also create a matching SUBJECT_PACK product in the
+                Products section with the same price (server-side authority).
+              </p>
             </div>
             <div className="space-y-2">
               <Label>Description</Label>

@@ -1426,3 +1426,83 @@ Stage Summary:
   Razorpay subject-pack purchase. On success, all tests in that subject
   flip to "Start" instantly. The admin must also create a matching
   SUBJECT_PACK Product in the Products section (server-side price authority).
+
+---
+Task ID: products-dropdown-selectors
+Agent: main
+Task: Replace manual Category ID / Subject ID text inputs in the admin Products
+page (Exam Packs + Subject Packs) with live dropdown selectors populated from
+Firestore, so the admin never has to copy/paste Firestore doc IDs by hand.
+
+Work Log:
+- Read current src/components/admin/products.tsx (731 lines). Confirmed the
+  Add/Edit dialog used plain <Input> fields for refId (Subject ID / Category
+  ID) and a comma-separated <Input> for Exam Pack subjectIds.
+- Studied the existing dropdown pattern in src/components/admin/subjects.tsx:
+  onSnapshot(collection(db, 'categories')) → setCategories([...]) + a
+  <Select> bound to form.categoryId. Reused the exact same pattern for
+  consistency.
+- Added imports: useMemo from react; collection + onSnapshot from
+  firebase/firestore; db from '@/lib/firebase'; Checkbox from
+  '@/components/ui/checkbox'; ChevronsUpDown from lucide-react.
+- Added CategoryOption + SubjectOption interfaces (id, name, icon, and for
+  subjects: categoryId).
+- Added useEffect that opens two onSnapshot listeners (categories + subjects)
+  on mount, sorts each alphabetically by name, and stores them in state.
+  Cleanup unsubscribes both. Wrapped in try/catch so a Firestore auth gap
+  doesn't crash the page — dropdowns just render empty.
+- Added two useMemo derived values:
+    * examPackSubjects = subjects filtered by the currently-selected
+      category (form.refId) — powers the Exam Pack checkbox list.
+    * selectedSubjectIds = parsed from form.subjectIds comma string —
+      drives checkbox checked state + the "N selected" counter.
+- Replaced the Subject ID / Category ID <Input> with a <Select>:
+    * SUBJECT_PACK tab: dropdown of ALL subjects, each rendered as
+      "Category › Subject" (with icon) so duplicate subject names across
+      categories don't confuse the admin. Selecting sets form.refId to
+      the Firestore subject doc id.
+    * EXAM_PACK tab: dropdown of ALL categories. Selecting sets form.refId
+      AND clears form.subjectIds (previously-picked subjects belonged to
+      the old category and would be invalid).
+  Below the dropdown, a helper line shows the resolved Firestore ID as a
+  green code chip (or a hint when nothing is selected).
+- Replaced the Exam Pack "Subject IDs" comma <Input> with a checkbox list:
+    * If no category selected → dashed amber hint "Select a category above".
+    * If category has zero subjects → dashed grey hint "No subjects found".
+    * Otherwise → scrollable (max-h-48) list of subjects in that category,
+      each row = Checkbox + name + truncated id. Checking/unchecking
+      rebuilds the form.subjectIds comma string.
+    * "Select all" / "Clear" quick-action links above the list.
+    * "N selected" counter in the label row.
+    * Collapsible <details> "Advanced: raw subject IDs" preserves the old
+      raw-input escape hatch for power users who need to add subjects that
+      live outside the selected category.
+- Updated the file header comment to describe the new dropdown-based UX.
+- Ran `bun run lint` → 0 errors.
+- Verified via Agent Browser:
+    * Dev server compiled successfully: "GET / 200 in 12.5s".
+    * Login page ("ExamVault Admin — Content Management Panel") rendered
+      with Email/Password fields, no console errors, no page errors.
+    * HMR + Fast Refresh confirmed working.
+    * Full click-through of the Products dialog dropdowns could not be
+      performed because admin Firebase credentials are not available in
+      this sandbox. The dropdown code mirrors the proven pattern already
+      in use in subjects.tsx (which has shipped and works), and the
+      successful compile + lint confirm TypeScript validity.
+
+Stage Summary:
+- Admins no longer need to copy/paste Firestore doc IDs when creating
+  Exam Packs or Subject Packs. The Add/Edit dialog now shows:
+    - Subject Pack tab → a searchable <Select> of all subjects, labeled
+      "Category › Subject" to disambiguate duplicates.
+    - Exam Pack tab → a <Select> of all categories, followed by a
+      scrollable checkbox list of that category's subjects (with
+      Select all / Clear shortcuts + an Advanced raw-ID input fallback).
+- Both dropdowns are populated by live Firestore onSnapshot listeners, so
+  newly-added categories/subjects appear in the dropdowns in real time
+  without a page reload.
+- Selecting a new category in the Exam Pack tab automatically clears the
+  previously-picked subjects (they belonged to the old category).
+- The resolved Firestore doc ID is shown as a green chip beneath each
+  dropdown so admins can still verify exactly what was selected.
+- Lint clean (0 errors). Build clean (GET / 200). Ready to push.

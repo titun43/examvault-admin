@@ -9,21 +9,29 @@
 //                       optional subjectIds[] list)
 //
 // Each tab shows a table of products + an "Add Product" button. Add/Edit dialog
-// has: name, description, refId (with type-specific hint), price (₹),
-// isActive switch, and for EXAM_PACK a comma-separated subjectIds input.
+// has: name, description, refId (picked from a live dropdown of Firestore
+// categories / subjects — no more manual ID copy/paste), price (₹),
+// isActive switch, and for EXAM_PACK a checkbox list of subjects filtered by
+// the chosen category (with an "Advanced" raw-ID input for edge cases).
 //
 // Delete is gated by a confirmation dialog. The backend refuses to delete a
 // product that has existing purchases (returns 400 with a clear message); we
 // surface that error and suggest deactivating instead.
 // =============================================================================
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import {
+  collection,
+  onSnapshot,
+} from 'firebase/firestore';
+import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Card, CardContent } from '@/components/ui/card';
 import {
   Dialog,
@@ -79,6 +87,7 @@ import {
   KeyRound,
   BookOpen,
   FolderTree,
+  ChevronsUpDown,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { useAdminToken, clearAdminToken } from '@/lib/admin-token';
@@ -104,6 +113,20 @@ interface Product {
 
 interface ListResponse {
   products: Product[];
+}
+
+// ---- Firestore category / subject options for dropdowns -----------------
+interface CategoryOption {
+  id: string;
+  name: string;
+  icon?: string;
+}
+
+interface SubjectOption {
+  id: string;
+  categoryId: string;
+  name: string;
+  icon?: string;
 }
 
 // ============================================================================
@@ -143,6 +166,80 @@ function ProductsInner() {
     subjectIds: '',
   };
   const [form, setForm] = useState<ProductForm>(emptyForm);
+
+  // ---- Live Firestore categories + subjects for the dropdown selectors ----
+  // These power the Subject/Category dropdowns in the Add/Edit dialog so the
+  // admin never has to manually copy/paste Firestore doc IDs.
+  const [categories, setCategories] = useState<CategoryOption[]>([]);
+  const [subjects, setSubjects] = useState<SubjectOption[]>([]);
+  const [optionsLoading, setOptionsLoading] = useState(true);
+
+  useEffect(() => {
+    let u1: (() => void) | undefined;
+    let u2: (() => void) | undefined;
+    try {
+      u1 = onSnapshot(collection(db, 'categories'), (snap) => {
+        const list = snap.docs.map((d) => {
+          const data = d.data() as {
+            name?: string;
+            icon?: string;
+          };
+          return {
+            id: d.id,
+            name: data.name?.trim() || 'Untitled',
+            icon: data.icon,
+          };
+        });
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        setCategories(list);
+      });
+      u2 = onSnapshot(collection(db, 'subjects'), (snap) => {
+        const list = snap.docs.map((d) => {
+          const data = d.data() as {
+            name?: string;
+            icon?: string;
+            categoryId?: string;
+          };
+          return {
+            id: d.id,
+            categoryId: data.categoryId ?? '',
+            name: data.name?.trim() || 'Untitled',
+            icon: data.icon,
+          };
+        });
+        list.sort((a, b) => a.name.localeCompare(b.name));
+        setSubjects(list);
+      });
+    } catch (e) {
+      // Firestore may not be reachable (e.g. admin not signed in yet).
+      // Dropdowns will simply render empty — the admin can still type IDs
+      // manually if needed. We surface nothing to keep the page usable.
+      console.warn('[products] Firestore options load failed', e);
+    } finally {
+      setOptionsLoading(false);
+    }
+    return () => {
+      u1?.();
+      u2?.();
+    };
+  }, []);
+
+  // Subjects belonging to the currently-selected category (Exam Pack tab).
+  // Used to populate the multi-select checkbox list.
+  const examPackSubjects = useMemo(
+    () => subjects.filter((s) => s.categoryId === form.refId),
+    [subjects, form.refId],
+  );
+
+  // Already-selected subject IDs (parsed from the comma form field).
+  const selectedSubjectIds = useMemo(
+    () =>
+      form.subjectIds
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean),
+    [form.subjectIds],
+  );
 
   const fetchList = useCallback(async () => {
     setLoading(true);
@@ -572,23 +669,95 @@ function ProductsInner() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="space-y-1.5">
                 <Label className="text-slate-200">
-                  {tab === 'SUBJECT_PACK' ? 'Subject ID *' : 'Category ID *'}
+                  {tab === 'SUBJECT_PACK' ? 'Subject *' : 'Category (Exam) *'}
                 </Label>
-                <Input
-                  value={form.refId}
-                  onChange={(e) => setForm({ ...form, refId: e.target.value })}
-                  placeholder={
-                    tab === 'SUBJECT_PACK'
-                      ? 'Firestore subjectId'
-                      : 'Firestore categoryId'
-                  }
-                  className="bg-slate-950/60 border-slate-700 text-white font-mono text-xs"
-                />
-                <p className="text-[11px] text-slate-500">
-                  {tab === 'SUBJECT_PACK'
-                    ? 'Firestore subject doc ID this pack unlocks.'
-                    : 'Firestore category (exam) doc ID this pack unlocks.'}
-                </p>
+
+                {tab === 'SUBJECT_PACK' ? (
+                  // -------- Subject Pack: dropdown of subjects --------
+                  // Renders as "Category › Subject" so duplicate subject names
+                  // across categories don't get confused.
+                  <Select
+                    value={form.refId}
+                    onValueChange={(v) => setForm({ ...form, refId: v })}
+                  >
+                    <SelectTrigger className="bg-slate-950/60 border-slate-700 text-white">
+                      <SelectValue
+                        placeholder={
+                          optionsLoading
+                            ? 'Loading subjects…'
+                            : subjects.length === 0
+                              ? 'No subjects found'
+                              : 'Select a subject…'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border-slate-700 text-white max-h-72">
+                      {subjects.map((s) => {
+                        const cat = categories.find(
+                          (c) => c.id === s.categoryId,
+                        );
+                        return (
+                          <SelectItem key={s.id} value={s.id}>
+                            {cat ? (
+                              <span className="text-slate-400">{cat.name} › </span>
+                            ) : null}
+                            <span className="text-slate-100">
+                              {s.icon ? `${s.icon} ` : ''}
+                              {s.name}
+                            </span>
+                          </SelectItem>
+                        );
+                      })}
+                    </SelectContent>
+                  </Select>
+                ) : (
+                  // -------- Exam Pack: dropdown of categories --------
+                  <Select
+                    value={form.refId}
+                    onValueChange={(v) =>
+                      // Switching category invalidates previously-picked
+                      // subjects (they belonged to the old category).
+                      setForm({ ...form, refId: v, subjectIds: '' })
+                    }
+                  >
+                    <SelectTrigger className="bg-slate-950/60 border-slate-700 text-white">
+                      <SelectValue
+                        placeholder={
+                          optionsLoading
+                            ? 'Loading categories…'
+                            : categories.length === 0
+                              ? 'No categories found'
+                              : 'Select a category…'
+                        }
+                      />
+                    </SelectTrigger>
+                    <SelectContent className="bg-slate-900 border-slate-700 text-white max-h-72">
+                      {categories.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.icon ? `${c.icon} ` : ''}
+                          <span className="text-slate-100">{c.name}</span>
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+
+                {/* Show the resolved Firestore doc ID so admins can still
+                    verify what's selected. */}
+                {form.refId ? (
+                  <p className="text-[11px] text-slate-500">
+                    Firestore ID:{' '}
+                    <code className="text-emerald-300 bg-emerald-950/40 px-1 py-0.5 rounded">
+                      {form.refId}
+                    </code>
+                  </p>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    {tab === 'SUBJECT_PACK'
+                      ? 'Pick the subject this pack unlocks.'
+                      : 'Pick the exam category this pack unlocks.'}
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1.5">
@@ -615,19 +784,106 @@ function ProductsInner() {
 
             {tab === 'EXAM_PACK' && (
               <div className="space-y-1.5">
-                <Label className="text-slate-200">Subject IDs</Label>
-                <Input
-                  value={form.subjectIds}
-                  onChange={(e) =>
-                    setForm({ ...form, subjectIds: e.target.value })
-                  }
-                  placeholder="subject1, subject2, subject3"
-                  className="bg-slate-950/60 border-slate-700 text-white font-mono text-xs"
-                />
+                <div className="flex items-center justify-between">
+                  <Label className="text-slate-200">Subjects included</Label>
+                  <span className="text-[11px] text-slate-500">
+                    {selectedSubjectIds.length} selected
+                  </span>
+                </div>
+
+                {!form.refId ? (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-950/40 border border-dashed border-slate-700 text-[12px] text-amber-300/80">
+                    <ChevronsUpDown className="w-3.5 h-3.5 shrink-0" />
+                    Select a category above to see its subjects here.
+                  </div>
+                ) : examPackSubjects.length === 0 ? (
+                  <div className="flex items-center gap-2 p-3 rounded-lg bg-slate-950/40 border border-dashed border-slate-700 text-[12px] text-slate-400">
+                    <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                    No subjects found in this category. Add subjects first.
+                  </div>
+                ) : (
+                  <>
+                    <div className="flex items-center gap-2 mb-1">
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setForm({
+                            ...form,
+                            subjectIds: examPackSubjects
+                              .map((s) => s.id)
+                              .join(', '),
+                          })
+                        }
+                        className="text-[11px] text-emerald-300 hover:text-emerald-200 underline-offset-2 hover:underline"
+                      >
+                        Select all
+                      </button>
+                      <span className="text-slate-600">·</span>
+                      <button
+                        type="button"
+                        onClick={() => setForm({ ...form, subjectIds: '' })}
+                        className="text-[11px] text-slate-400 hover:text-slate-200 underline-offset-2 hover:underline"
+                      >
+                        Clear
+                      </button>
+                    </div>
+                    <div className="max-h-48 overflow-y-auto rounded-lg border border-slate-800 bg-slate-950/60 divide-y divide-slate-800/60">
+                      {examPackSubjects.map((s) => {
+                        const checked = selectedSubjectIds.includes(s.id);
+                        return (
+                          <label
+                            key={s.id}
+                            className="flex items-center gap-3 px-3 py-2 cursor-pointer hover:bg-slate-800/40"
+                          >
+                            <Checkbox
+                              checked={checked}
+                              onCheckedChange={(v) => {
+                                const next = v
+                                  ? [...selectedSubjectIds, s.id]
+                                  : selectedSubjectIds.filter(
+                                      (id) => id !== s.id,
+                                    );
+                                setForm({
+                                  ...form,
+                                  subjectIds: next.join(', '),
+                                });
+                              }}
+                            />
+                            <span className="text-sm text-slate-200">
+                              {s.icon ? `${s.icon} ` : ''}
+                              {s.name}
+                            </span>
+                            <code className="ml-auto text-[10px] text-slate-600 font-mono">
+                              {s.id.slice(0, 8)}…
+                            </code>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </>
+                )}
+
                 <p className="text-[11px] text-slate-500">
-                  Comma-separated Firestore subjectIds this exam pack grants
-                  (denormalized for fast access checks).
+                  Stored as a JSON array — grants access to all of these
+                  subjects and their tests. Subjects outside this category can
+                  still be added via comma-separated IDs if needed (advanced).
                 </p>
+                {/* Hidden helper: an advanced raw-input toggle so power users
+                    can still paste IDs for subjects that live outside the
+                    selected category. Collapsed by default. */}
+                <details className="text-[11px] text-slate-500">
+                  <summary className="cursor-pointer hover:text-slate-300">
+                    Advanced: raw subject IDs
+                  </summary>
+                  <Input
+                    value={form.subjectIds}
+                    onChange={(e) =>
+                      setForm({ ...form, subjectIds: e.target.value })
+                    }
+                    placeholder="subject1, subject2, subject3"
+                    className="mt-2 bg-slate-950/60 border-slate-700 text-white font-mono text-xs"
+                  />
+                </details>
               </div>
             )}
 

@@ -21,6 +21,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { BulkTextarea } from './bulk-textarea';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -527,12 +528,10 @@ export default function Questions() {
                 </Button>
               </div>
             </div>
-            <Textarea
+            <BulkTextarea
               value={bulkText}
-              onChange={(e) => setBulkText(e.target.value)}
-              rows={15}
+              onChange={setBulkText}
               placeholder='[{"testId":"...","question":"...","options":["A","B","C","D"],"correctAnswer":1}]'
-              className="bg-slate-800 border-slate-700 font-mono text-xs"
             />
             <p className="text-xs text-slate-500">
               Fields: <span className="text-slate-400">testId</span> (existing test id),{' '}

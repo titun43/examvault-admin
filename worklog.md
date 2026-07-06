@@ -1506,3 +1506,112 @@ Stage Summary:
 - The resolved Firestore doc ID is shown as a green chip beneath each
   dropdown so admins can still verify exactly what was selected.
 - Lint clean (0 errors). Build clean (GET / 200). Ready to push.
+
+---
+Task ID: bulk-upload + textarea-scroll + flutter-premium-guest-fix
+Agent: main
+Task: Three user-reported bugs in one session:
+  1. Admin bulk-add dialogs have no template UPLOAD feature (only download).
+  2. Pasting large text into the bulk-add textarea doesn't scroll — the box
+     grows beyond the viewport instead.
+  3. Flutter app: tapping the 3 premium plans does nothing ("kichui
+     hochche na").
+
+Work Log:
+
+Issue 1 + 2 (admin bulk-add): shared BulkTextarea component
+- Audited all 7 admin bulk-add dialogs via a research subagent
+  (categories, subjects, tests, questions, upcoming-exams,
+  current-affairs, announcements). Findings:
+    * All 7 already had "Download Template" / "Download CSV" / "Load
+      Sample" buttons. None had an <input type="file"> upload path.
+    * All 7 used the identical <Textarea rows={15} className="bg-slate-800
+      border-slate-700 font-mono text-xs" /> pattern.
+    * Root cause of the scroll bug: the base Textarea component
+      (/src/components/ui/textarea.tsx) bakes `field-sizing-content` into
+      its className. Tailwind v4 maps this to `field-sizing: content`,
+      which makes the textarea grow to fit its content instead of
+      presenting a scrollbar. Combined with no max-h cap on DialogContent,
+      pasting a large JSON blob blew the dialog out of the viewport.
+- Created /src/components/admin/bulk-textarea.tsx — a shared drop-in
+  replacement that:
+    * Overrides `field-sizing-content` with `field-sizing-fixed` so the
+      textarea respects its rows attribute and stays a fixed size.
+    * Adds `resize-y max-h-[50vh] overflow-y-auto` so long pastes scroll
+      INSIDE the box (and the admin can drag the corner to resize).
+    * Adds an "Upload File" button (hidden <input type="file"
+      accept=".json,.csv,.txt">) that reads the file via FileReader and
+      drops the text straight into the textarea. 1 MB size guard refuses
+      giant files with a toast.
+    * Adds a "Clear" button + a live char counter for at-a-glance size.
+    * Toasts success/error on file read.
+- Applied BulkTextarea to all 7 admin files. Each edit was identical:
+    1. Add `import { BulkTextarea } from './bulk-textarea';` directly
+       below the existing Textarea import.
+    2. Replace the entire <Textarea value={bulkText} ... /> block with
+       <BulkTextarea value={bulkText} onChange={setBulkText}
+       placeholder='...' /> (placeholder preserved per file).
+- Ran `bun run lint` → 0 errors.
+- Verified via Agent Browser: GET / 200 in 10.4s, no console errors,
+  no page errors. Login page renders correctly.
+
+Issue 3 (Flutter premium tap): guest-mode silent return
+- Investigated via a research subagent. Root cause confirmed:
+    * PremiumScreen._startPayment did `if (auth.user == null) return;`
+      — a SILENT early return with zero user feedback.
+    * A guest (browsing without signing in) can reach PremiumScreen from
+      at least 4 ungated entry points (home banner, test_list bottom
+      sheet, take_test Go Premium button, in_app_navigator banner action).
+    * The Subscribe button was always rendered enabled, so for a guest
+      it looked pressable but did nothing when tapped.
+    * Plan-card taps were ALSO working correctly (just toggling the radio
+      button visual), but a user expecting the checkout to open from a
+      card tap would also report "nothing happens" — perceptual bug.
+- Ruled out other hypotheses via the investigation:
+    * RazorpayService.startPayment never silent — every failure path
+      calls onError → snackbar.
+    * Backend /api/payments/create-order fully supports PREMIUM_SUBSCRIPTION
+      and tolerates empty planId (substitutes plan_<idempotencyKey>).
+    * No premium kill-switch in AppConfig.
+    * Seeded plans have valid planId (= Firestore doc id) and price > 0.
+- Fixed /home/z/work/examvault/lib/screens/premium/premium_screen.dart:
+    1. Added `import '../auth/login_screen.dart';`
+    2. Build method now reads `final auth = context.watch<AuthProvider>();`
+       so the UI rebuilds when the user signs in/out.
+    3. Replaced the Subscribe button with a conditional:
+         - Guest → amber warning banner ("Sign in to subscribe to Premium
+           and unlock all features.") + full-width OutlinedButton
+           "Sign In to Continue" that navigates to LoginScreen.
+         - Logged-in → existing ElevatedButton, but with clearer label:
+           "Subscribe to {Plan Name} • ₹{price}" (was just
+           "Subscribe for ₹{price}") so it's obvious WHICH plan is being
+           bought and that the card tap selected it.
+    4. _startPayment's silent `return` is now a snackbar with a
+       "Sign In" action that navigates to LoginScreen. Belt-and-braces
+       — the build method already swaps the button for guests, so this
+       branch only fires if the user taps before a rebuild.
+    5. Updated the file header doc-comment to explain the guest handling
+       (and removed the stale "falls back to hardcoded defaults" note
+       from the model doc that the audit flagged).
+- Flutter SDK is not available in this sandbox, so `flutter analyze`
+  could not be run. The code follows existing patterns (LoginScreen is
+  already imported and navigated to the same way in home_screen.dart's
+  paywall — verified by the investigation subagent).
+
+Stage Summary:
+- Admin bulk-add now supports template UPLOAD: in every bulk-add dialog
+  (Categories, Subjects, Tests, Questions, Upcoming Exams, Current
+  Affairs, Announcements), the admin sees an "Upload File" button next
+  to the existing Download Template / Download CSV / Load Sample buttons.
+  Clicking it opens a file picker (accepts .json/.csv/.txt up to 1 MB),
+  reads the file, and drops the text into the textarea. The workflow is
+  now: Download Template → fill offline → Upload File → Validate & Import.
+- Bulk textarea scrolling fixed: long pasted content now scrolls inside
+  a max-h-50vh box with a real scrollbar, instead of growing the dialog
+  beyond the viewport. The admin can also drag the corner to resize.
+- Flutter premium "tap does nothing" fixed: guests now see a clear
+  amber "Sign in to subscribe" banner + "Sign In to Continue" button
+  instead of a dead Subscribe button. Logged-in users see a clearer
+  "Subscribe to {Plan Name} • ₹{price}" label so the link between
+  card-tap (selection) and button-tap (checkout) is obvious.
+- Lint clean (0 errors). Build clean (GET / 200). Ready to push both repos.

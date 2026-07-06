@@ -3279,7 +3279,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: true,
     tags: ['Republic Day', 'Constitution 75 Years', 'India-Indonesia'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/84e49c724d7e.jpg',
   },
   {
     date: '2025-02-08T00:00:00.000Z',
@@ -3294,7 +3294,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['Delhi Elections', 'BJP', 'Assembly Elections 2025'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/59af5327998d.jpg',
   },
   {
     date: '2025-04-03T00:00:00.000Z',
@@ -3309,7 +3309,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['Waqf Bill', 'Parliament', 'Minority Rights'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/cbb8cc03f549.png',
   },
   // -------- INTERNATIONAL (3) --------
   {
@@ -3325,7 +3325,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['Pravasi Bharatiya Divas', 'Indian Diaspora', 'Bhubaneswar'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/6befdf406bee.jpg',
   },
   {
     date: '2025-04-04T00:00:00.000Z',
@@ -3340,7 +3340,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: true,
     tags: ['India-US', 'Trade Deal', 'Trump Tariffs'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/0af0e2f64ed0.jpg',
   },
   {
     date: '2025-01-06T00:00:00.000Z',
@@ -3355,7 +3355,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['BRICS', 'Indonesia', 'Multipolar World'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/913db1cc7650.jpg',
   },
   // -------- SPORTS (2) --------
   {
@@ -3371,7 +3371,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: true,
     tags: ['Cricket', 'Champions Trophy 2025', 'Rohit Sharma'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/00d8bee6c598.jpg',
   },
   {
     date: '2025-01-10T00:00:00.000Z',
@@ -3386,7 +3386,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['Chess', 'Gukesh D', 'Padma Bhushan 2025'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/2949f3fb2308.jpg',
   },
   // -------- ECONOMY (3) --------
   {
@@ -3402,7 +3402,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: true,
     tags: ['Union Budget 2025', 'Income Tax', 'Nirmala Sitharaman'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/ff202d419d67.jpg',
   },
   {
     date: '2025-02-07T00:00:00.000Z',
@@ -3417,7 +3417,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['RBI', 'Repo Rate', 'Monetary Policy'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/0803d2236d46.jpg',
   },
   {
     date: '2025-01-03T00:00:00.000Z',
@@ -3432,7 +3432,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['UPI', 'Digital Payments', 'NPCI'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/5791ce1eba3b.jpg',
   },
   // -------- SCIENCE (2) --------
   {
@@ -3448,7 +3448,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: true,
     tags: ['ISRO', 'NavIC', 'GSLV-F15'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/f13e488c20c4.jpg',
   },
   {
     date: '2025-01-16T00:00:00.000Z',
@@ -3463,7 +3463,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['ISRO', 'SPADEX', 'Space Docking'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/0d138617ba55.jpg',
   },
   // -------- TECHNOLOGY (2) --------
   {
@@ -3479,7 +3479,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['Semiconductors', 'Tata Electronics', 'Make in India'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/7ec3e1b6f345.jpg',
   },
   {
     date: '2025-03-04T00:00:00.000Z',
@@ -3494,7 +3494,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['IndiaAI Mission', 'Artificial Intelligence', 'GPUs'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/af731e70814b.jpg',
   },
   // -------- ASSAM-SPECIFIC 2025 CURRENT AFFAIRS (4) --------
   {
@@ -3510,7 +3510,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: true,
     tags: ['Assam Budget', 'Ajanta Neog', 'Orunodoi', 'Tea Industry', 'Employment'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/6b28b5f4c1bd.jpg',
   },
   {
     date: '2025-05-15T00:00:00.000Z',
@@ -3525,7 +3525,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: false,
     tags: ['Assam Floods', 'Brahmaputra', 'Kaziranga', 'Monsoon', 'ASDMA'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/309c387995e5.jpg',
   },
   {
     date: '2025-01-06T00:00:00.000Z',
@@ -3540,7 +3540,7 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: true,
     tags: ['Assam Accord', 'Clause 6', 'AASU', 'NRC', 'Assamese Identity'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/0d63190a5d10.jpg',
   },
   {
     date: '2025-03-18T00:00:00.000Z',
@@ -3555,6 +3555,6 @@ export const SEED_CURRENT_AFFAIRS: SeedCurrentAffair[] = [
     isImportant: true,
     tags: ['Assam', 'MMUA', 'Women Entrepreneurs', 'Orunodoi', 'ASRLM', 'Himanta Biswa Sarma'],
     pdfUrl: '',
-    imageUrl: '',
+    imageUrl: 'https://sfile.chatglm.cn/images-ppt/e83586f9232c.png',
   },
 ];

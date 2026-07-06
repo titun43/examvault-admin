@@ -9,6 +9,9 @@ import {
   deleteDoc,
   doc,
   serverTimestamp,
+  getDocs,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { deleteItems } from '@/lib/admin-firestore';
@@ -40,6 +43,7 @@ import {
   Crown,
   Check,
   X,
+  Sparkles,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -84,6 +88,73 @@ export default function PremiumPlans() {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
+  // Seeding default plans (one-click fix for "No Plans Available" in the
+  // Flutter app — the premium_plans collection is empty until the admin
+  // either adds plans manually or clicks this button).
+  const [seeding, setSeeding] = useState(false);
+  const [seedOpen, setSeedOpen] = useState(false);
+
+  /// The three standard ExamVault premium plans. Mirror the AppConfig.pricing
+  /// defaults documented in the Flutter app (₹99/mo, ₹249/qtr, ₹799/yr).
+  /// `planId` is filled with the Firestore doc id after addDoc (see handleSave
+  /// for the same pattern) — the Flutter app sends this as `productId` to the
+  /// create-order API, so it MUST be non-empty.
+  const DEFAULT_PLANS = [
+    {
+      name: 'Monthly',
+      price: 99,
+      durationMonths: 1,
+      durationLabel: '1 Month',
+      description: 'Best for short-term prep',
+      features: [
+        'Unlimited Mock Tests',
+        'Detailed Solutions',
+        'Performance Analytics',
+        'Previous Year Papers',
+        'Priority Support',
+      ],
+      isPopular: false,
+      isActive: true,
+      order: 1,
+    },
+    {
+      name: 'Quarterly',
+      price: 249,
+      durationMonths: 3,
+      durationLabel: '3 Months',
+      description: 'Save 16% vs monthly',
+      features: [
+        'Unlimited Mock Tests',
+        'Detailed Solutions',
+        'Performance Analytics',
+        'Previous Year Papers',
+        'Priority Support',
+        'Download PDFs',
+      ],
+      isPopular: true,
+      isActive: true,
+      order: 2,
+    },
+    {
+      name: 'Yearly',
+      price: 799,
+      durationMonths: 12,
+      durationLabel: '12 Months',
+      description: 'Best value — save 33%',
+      features: [
+        'Unlimited Mock Tests',
+        'Detailed Solutions',
+        'Performance Analytics',
+        'Previous Year Papers',
+        'Priority Support',
+        'Download PDFs',
+        'AI Insights',
+      ],
+      isPopular: false,
+      isActive: true,
+      order: 3,
+    },
+  ];
 
   useEffect(() => {
     const unsub = onSnapshot(
@@ -259,6 +330,71 @@ export default function PremiumPlans() {
     }
   };
 
+  /// Seeds the three default ExamVault premium plans (Monthly ₹99 /
+  /// Quarterly ₹249 / Yearly ₹799) — idempotent: skips any plan whose
+  /// `name` already exists in the collection. This is the one-click fix
+  /// for the Flutter app showing "No Plans Available" when the
+  /// `premium_plans` Firestore collection is empty.
+  const handleSeedDefaults = async () => {
+    setSeeding(true);
+    try {
+      // Fetch existing plan names so we can skip duplicates.
+      const existingSnap = await getDocs(collection(db, 'premium_plans'));
+      const existingNames = new Set(
+        existingSnap.docs.map(
+          (d) => ((d.data()?.name as string) || '').trim().toLowerCase()
+        )
+      );
+
+      let created = 0;
+      let skipped = 0;
+      for (const plan of DEFAULT_PLANS) {
+        if (existingNames.has(plan.name.toLowerCase())) {
+          skipped++;
+          continue;
+        }
+        const docRef = await addDoc(collection(db, 'premium_plans'), {
+          ...plan,
+          // Auto-fill planId with the Firestore doc id — the Flutter app
+          // sends this as `productId` to the create-order API.
+          planId: '',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        });
+        await updateDoc(docRef, { planId: docRef.id });
+        created++;
+      }
+
+      if (created > 0 && skipped > 0) {
+        toast.success(
+          `Seeded ${created} plan${created === 1 ? '' : 's'}. ${skipped} already existed (skipped).`
+        );
+      } else if (created > 0) {
+        toast.success(
+          `Seeded ${created} default plan${created === 1 ? '' : 's'}. Users will see them in the app now.`
+        );
+      } else {
+        toast.info('All default plans already exist — nothing to seed.');
+      }
+      setSeedOpen(false);
+    } catch (err: any) {
+      const msg = err?.message || '';
+      if (
+        msg.includes('permission') ||
+        msg.includes('insufficient') ||
+        msg.includes('PERMISSION_DENIED')
+      ) {
+        toast.error(
+          'Permission denied. Deploy the Firestore rules to allow admin writes.'
+        );
+      } else {
+        toast.error(msg || 'Seed failed');
+      }
+    } finally {
+      setSeeding(false);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-3">
@@ -268,9 +404,19 @@ export default function PremiumPlans() {
           </h3>
           <p className="text-slate-500 text-sm">Manage subscription plans shown to users</p>
         </div>
-        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
-          <Plus className="w-4 h-4 mr-1" /> Add Plan
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            onClick={() => setSeedOpen(true)}
+            variant="outline"
+            className="border-emerald-700/60 text-emerald-300 hover:bg-emerald-950/40"
+            title="One-click: create Monthly ₹99, Quarterly ₹249, Yearly ₹799 (skips existing names)"
+          >
+            <Sparkles className="w-4 h-4 mr-1" /> Seed Default Plans
+          </Button>
+          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+            <Plus className="w-4 h-4 mr-1" /> Add Plan
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -281,7 +427,26 @@ export default function PremiumPlans() {
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <Gem className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-            <p className="text-slate-500">No premium plans yet. Add your first one!</p>
+            <p className="text-slate-300 font-medium">No premium plans yet</p>
+            <p className="text-slate-500 text-sm mt-1 mb-5">
+              Users are seeing <span className="text-amber-300">&quot;No Plans Available&quot;</span> in the app.
+              Add a custom plan or seed the 3 defaults in one click.
+            </p>
+            <div className="flex items-center justify-center gap-2 flex-wrap">
+              <Button
+                onClick={() => setSeedOpen(true)}
+                className="bg-emerald-600 hover:bg-emerald-700 text-white"
+              >
+                <Sparkles className="w-4 h-4 mr-1" /> Seed Default Plans
+              </Button>
+              <Button
+                onClick={openAdd}
+                variant="outline"
+                className="border-slate-700 text-slate-300 hover:bg-slate-800"
+              >
+                <Plus className="w-4 h-4 mr-1" /> Add Custom Plan
+              </Button>
+            </div>
           </CardContent>
         </Card>
       ) : (
@@ -595,6 +760,41 @@ export default function PremiumPlans() {
             >
               {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
               Delete {selectedIds.size} plan{selectedIds.size === 1 ? '' : 's'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Seed Default Plans Confirmation */}
+      <AlertDialog open={seedOpen} onOpenChange={setSeedOpen}>
+        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2">
+              <Sparkles className="w-5 h-5 text-emerald-400" /> Seed default premium plans?
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-slate-400">
+              This creates the three standard ExamVault plans in Firestore so users stop seeing
+              <span className="text-amber-300"> "No Plans Available"</span> in the app:
+              <span className="block mt-2 text-slate-300">
+                • <span className="font-semibold">Monthly</span> — ₹99 / 1 month<br/>
+                • <span className="font-semibold">Quarterly</span> — ₹249 / 3 months <span className="text-amber-400">(Popular)</span><br/>
+                • <span className="font-semibold">Yearly</span> — ₹799 / 12 months
+              </span>
+              <span className="block mt-2 text-slate-500 text-xs">
+                Idempotent — any plan with a matching name is skipped. Safe to click multiple times.
+              </span>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleSeedDefaults}
+              disabled={seeding}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {seeding && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+              <Sparkles className="w-4 h-4 mr-1" />
+              Seed Plans
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

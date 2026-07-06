@@ -20,6 +20,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { BulkTextarea } from './bulk-textarea';
+import { resolveSubjectIdByName, resolveCategoryIdByName } from '@/lib/bulk-resolve';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -106,12 +107,12 @@ export default function Tests({ fixedType }: TestsProps = {}) {
   const fixedLabel = fixedType ? (TYPE_LABELS[fixedType] || fixedType) : null;
   const visibleItems = fixedType ? items.filter((t) => t.type === fixedType) : items;
 
-  const BULK_SAMPLE = '[{"title":"Mock Test 1","subjectId":"<paste existing subject id>","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0,"price":0},{"title":"Mock Test 2","subjectId":"<paste existing subject id>","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25,"price":29}]';
+  const BULK_SAMPLE = '[{"title":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0,"price":0},{"title":"SSC Mock 2","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25,"price":29}]';
 
-  const CSV_HEADERS = ['title', 'description', 'duration', 'totalMarks', 'passingMarks', 'difficulty', 'type', 'subjectId', 'categoryId', 'isPremium', 'isPublished'];
+  const CSV_HEADERS = ['title', 'description', 'duration', 'totalMarks', 'passingMarks', 'difficulty', 'type', 'subjectName', 'categoryName', 'isPremium', 'isPublished'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['Mock Test 1', 'General mock test', 60, 100, 40, 'medium', 'mock', '<paste existing subject id>', '', false, true],
-    ['Mock Test 2', 'Advanced mock test', 90, 150, 60, 'hard', 'mock', '<paste existing subject id>', '', true, true],
+    ['SSC Mock 1', 'Full mock test', 60, 100, 40, 'medium', 'mock', 'Quantitative Aptitude', 'SSC', false, true],
+    ['SSC Mock 2', 'Hard mock test', 90, 150, 60, 'hard', 'mock', 'Quantitative Aptitude', 'SSC', true, true],
   ];
 
   const handleBulkImport = async () => {
@@ -157,6 +158,79 @@ export default function Tests({ fixedType }: TestsProps = {}) {
     }
     setBulkSaving(true);
     try {
+      // ---- Name-based parent resolution ----
+      // Each row can use EITHER `subjectId` (explicit Firestore doc id —
+      // backward compatible) OR `subjectName` (resolved to id via Firestore
+      // lookup, optionally disambiguated by `categoryName`). If both are
+      // present, subjectId wins. If neither is present, the row is skipped.
+      //
+      // We ALSO resolve categoryName -> categoryId here so the row keeps a
+      // denormalized categoryId (the Test model stores subjectId only, but
+      // some downstream queries expect categoryId to be present too).
+      // -----------------------------------------------------------------
+      const skipList: { row: number; reason: string }[] = [];
+      const resolved: any[] = [];
+      // Per-import caches so we hit Firestore once per unique name.
+      const subjIdCache = new Map<string, string | null>();
+      const catIdCache = new Map<string, string | null>();
+
+      for (let i = 0; i < parsed.length; i++) {
+        const item = parsed[i];
+        const rowNo = i + 1;
+        let subjectId = (item.subjectId ?? '').toString().trim();
+        const subjName = (item.subjectName ?? '').toString().trim();
+        const catName = (item.categoryName ?? '').toString().trim();
+
+        // Cache key for subject: name + '||' + categoryName (disambiguator).
+        const subjKey = `${subjName.toLowerCase()}||${catName.toLowerCase()}`;
+
+        if (!subjectId && subjName) {
+          if (subjIdCache.has(subjKey)) {
+            subjectId = subjIdCache.get(subjKey) ?? '';
+          } else {
+            const r = await resolveSubjectIdByName(subjName, catName || undefined);
+            subjIdCache.set(subjKey, r.id);
+            subjectId = r.id ?? '';
+          }
+          if (!subjectId) {
+            skipList.push({
+              row: rowNo,
+              reason: `subject "${subjName}"${catName ? ` (in ${catName})` : ''} not found`,
+            });
+            continue;
+          }
+        }
+        if (!subjectId) {
+          skipList.push({ row: rowNo, reason: 'no subjectId or subjectName provided' });
+          continue;
+        }
+
+        const payload = { ...item };
+        payload.subjectId = subjectId;
+        delete payload.subjectName;
+        // Optionally denormalize categoryId if the admin gave categoryName.
+        // (Skip if the row already had categoryId — explicit wins.)
+        if (catName && !payload.categoryId) {
+          if (catIdCache.has(catName.toLowerCase())) {
+            const cid = catIdCache.get(catName.toLowerCase());
+            if (cid) payload.categoryId = cid;
+          } else {
+            const c = await resolveCategoryIdByName(catName);
+            catIdCache.set(catName.toLowerCase(), c.id);
+            if (c.id) payload.categoryId = c.id;
+          }
+        }
+        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+        resolved.push(payload);
+      }
+
+      if (resolved.length === 0) {
+        const sample = skipList.slice(0, 3).map((s) => `Row ${s.row}: ${s.reason}`).join('; ');
+        toast.error(`No rows to import. ${sample}${skipList.length > 3 ? ` (+${skipList.length - 3} more)` : ''}`);
+        return;
+      }
+
       // Build a subjectId -> category.isPremium lookup so imported tests
       // inherit premium status from their parent category. A test inside a
       // premium category MUST be premium, otherwise the Flutter fast-path
@@ -170,9 +244,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
 
       const batch = writeBatch(db);
       const colRef = collection(db, 'tests');
-      parsed.forEach((item) => {
-        const ref = doc(colRef);
-        const payload = { ...item };
+      resolved.forEach((payload) => {
         // Inherit premium from parent category. If the admin explicitly set
         // isPremium=false on a row whose category is premium, force it true.
         const sid = payload.subjectId;
@@ -180,15 +252,18 @@ export default function Tests({ fixedType }: TestsProps = {}) {
           if (!payload.isPremium) autoPremiumCount++;
           payload.isPremium = true;
         }
-        if (!payload.createdAt) payload.createdAt = serverTimestamp();
-        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+        const ref = doc(colRef);
         batch.set(ref, payload);
       });
       await batch.commit();
+      const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';
       const autoNote = autoPremiumCount > 0
         ? ` (${autoPremiumCount} auto-marked premium — parent category is premium)`
         : '';
-      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : '') + autoNote);
+      toast.success(`Imported ${resolved.length} test${resolved.length === 1 ? '' : 's'}${skippedNote}` + (isCsv ? ' (from CSV)' : '') + autoNote);
+      if (skipList.length > 0) {
+        console.warn('[tests bulk] skipped rows:', skipList);
+      }
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -752,11 +827,13 @@ export default function Tests({ fixedType }: TestsProps = {}) {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"title":"Mock Test 1","subjectId":"...","type":"mock","duration":60,"totalMarks":100}]'
+              placeholder='[{"title":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":60,"totalMarks":100}]'
             />
             <p className="text-xs text-slate-500">
               Fields: <span className="text-slate-400">title</span>,{' '}
-              <span className="text-slate-400">subjectId</span> (existing subject id),{' '}
+              <span className="text-slate-400 text-emerald-300">subjectName</span> (parent subject — recommended) or{' '}
+              <span className="text-slate-400">subjectId</span> (existing id),{' '}
+              <span className="text-slate-400 text-emerald-300">categoryName</span> (optional, disambiguates same-name subjects),{' '}
               <span className="text-slate-400">type</span> (mock | previousYear | dailyQuiz | practice | subjectwise),{' '}
               <span className="text-slate-400">duration</span> (min),{' '}
               <span className="text-slate-400">totalMarks</span>,{' '}
@@ -766,7 +843,16 @@ export default function Tests({ fixedType }: TestsProps = {}) {
               <span className="text-slate-400">isPremium</span> (boolean),{' '}
               <span className="text-slate-400">negativeMarking</span> (boolean),{' '}
               <span className="text-slate-400">negativeMarks</span> (number),{' '}
-              <span className="text-slate-400">price</span> (number, INR; 0 = free)
+              <span className="text-slate-400">price</span> (number, INR; 0 = free),{' '}
+              <span className="text-slate-400">instructions</span> (string),{' '}
+              <span className="text-slate-400">imageUrl</span> (URL string)
+            </p>
+            <p className="text-xs text-slate-500">
+              Tip: add subjects first, then bulk-add tests by{' '}
+              <code className="text-emerald-300">subjectName</code>{' '}
+              (+ optional <code className="text-emerald-300">categoryName</code>{' '}
+              if the same subject name exists in multiple categories). Tests
+              inside a premium category are auto-marked premium.
             </p>
           </div>
           <DialogFooter>

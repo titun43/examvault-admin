@@ -331,12 +331,12 @@ export default function Announcements() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const BULK_SAMPLE = '[{"title":"Welcome!","message":"Welcome to ExamVault","type":"info","isPinned":false,"isPublished":true,"order":1},{"title":"New Tests Added","message":"Check out new mock tests","type":"success","isPinned":true,"isPublished":true,"order":2}]';
+  const BULK_SAMPLE = '[{"title":"Welcome!","message":"Welcome to ExamVault","type":"info","imageUrl":"https://example.com/welcome-banner.png","isPinned":false,"isPublished":true,"order":1},{"title":"New Tests Added","message":"Check out new mock tests","type":"success","imageUrl":"https://example.com/new-tests-banner.png","isPinned":true,"isPublished":true,"order":2}]';
 
-  const CSV_HEADERS = ['title', 'message', 'type', 'link', 'linkLabel', 'order', 'isPinned', 'isPublished'];
+  const CSV_HEADERS = ['title', 'message', 'type', 'imageUrl', 'link', 'linkLabel', 'order', 'isPinned', 'isPublished'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['Welcome!', 'Welcome to ExamVault', 'info', '', '', 1, false, true],
-    ['New Tests Added', 'Check out new mock tests', 'success', 'https://example.com', 'Open', 2, true, true],
+    ['Welcome!', 'Welcome to ExamVault', 'info', 'https://example.com/welcome-banner.png', '', '', 1, false, true],
+    ['New Tests Added', 'Check out new mock tests', 'success', 'https://example.com/new-tests-banner.png', '', '', 2, true, true],
   ];
 
   const handleBulkImport = async () => {

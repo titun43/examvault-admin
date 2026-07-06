@@ -144,12 +144,12 @@ export default function CurrentAffairs() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const BULK_SAMPLE = '[{"date":"2024-01-15T00:00:00.000Z","title":"Sample News 1","summary":"Brief summary","content":"Full content here","source":"Newspaper","category":"National","isImportant":false,"tags":["india","politics"]},{"date":"2024-01-14T00:00:00.000Z","title":"Sample News 2","summary":"Brief summary 2","content":"Full content 2","source":"TV","category":"Sports","isImportant":true,"tags":["cricket"]}]';
+  const BULK_SAMPLE = '[{"date":"2024-01-15T00:00:00.000Z","title":"Sample News 1","summary":"Brief summary","content":"Full content here","source":"Newspaper","category":"National","imageUrl":"https://example.com/news1.jpg","isImportant":false,"tags":["india","politics"]},{"date":"2024-01-14T00:00:00.000Z","title":"Sample News 2","summary":"Brief summary 2","content":"Full content 2","source":"TV","category":"Sports","imageUrl":"https://example.com/news2.jpg","isImportant":true,"tags":["cricket"]}]';
 
-  const CSV_HEADERS = ['date', 'source', 'title', 'summary', 'content', 'category', 'tags', 'isImportant'];
+  const CSV_HEADERS = ['date', 'source', 'title', 'summary', 'content', 'category', 'imageUrl', 'tags', 'isImportant'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['2024-01-15', 'Newspaper', 'Sample News 1', 'Brief summary', 'Full content here', 'National', 'india,politics', false],
-    ['2024-01-14', 'TV', 'Sample News 2', 'Brief summary 2', 'Full content 2', 'Sports', 'cricket', true],
+    ['2024-01-15', 'Newspaper', 'Sample News 1', 'Brief summary', 'Full content here', 'National', 'https://example.com/news1.jpg', 'india,politics', false],
+    ['2024-01-14', 'TV', 'Sample News 2', 'Brief summary 2', 'Full content 2', 'Sports', 'https://example.com/news2.jpg', 'cricket', true],
   ];
 
   const handleBulkImport = async () => {

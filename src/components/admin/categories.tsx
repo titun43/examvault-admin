@@ -137,12 +137,12 @@ export default function Categories() {
   const itemsRef = useRef<Category[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
-  const BULK_SAMPLE = '[{"name":"SSC","description":"Staff Selection Commission exams","icon":"📋","color":"#10b981","order":1,"isActive":true},{"name":"Banking","description":"Bank PO/Clerk exams","icon":"🏦","color":"#f59e0b","order":2,"isActive":true}]';
+  const BULK_SAMPLE = '[{"name":"SSC","description":"Staff Selection Commission exams","icon":"📋","image":"https://example.com/ssc-banner.png","color":"#10b981","order":1,"isActive":true},{"name":"Banking","description":"Bank PO/Clerk exams","icon":"🏦","image":"https://example.com/banking-banner.png","color":"#f59e0b","order":2,"isActive":true}]';
 
-  const CSV_HEADERS = ['name', 'description', 'icon', 'color', 'order', 'isPremium', 'premiumPrice', 'isActive'];
+  const CSV_HEADERS = ['name', 'description', 'icon', 'image', 'color', 'order', 'isPremium', 'premiumPrice', 'isActive'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['SSC', 'Staff Selection Commission exams', '📋', '#10b981', 1, false, 0, true],
-    ['Banking', 'Bank PO/Clerk exams', '🏦', '#f59e0b', 2, true, 99, true],
+    ['SSC', 'Staff Selection Commission exams', '📋', 'https://example.com/ssc-banner.png', '#10b981', 1, false, 0, true],
+    ['Banking', 'Bank PO/Clerk exams', '🏦', 'https://example.com/banking-banner.png', '#f59e0b', 2, false, 0, true],
   ];
 
   const handleBulkImport = async () => {
@@ -852,9 +852,18 @@ export default function Categories() {
               Fields: <span className="text-slate-400">name</span>,{' '}
               <span className="text-slate-400">description</span>,{' '}
               <span className="text-slate-400">icon</span> (emoji),{' '}
+              <span className="text-slate-400">image</span> (URL string — banner image),{' '}
               <span className="text-slate-400">color</span> (hex),{' '}
               <span className="text-slate-400">order</span> (number),{' '}
+              <span className="text-slate-400">isPremium</span> (boolean),{' '}
+              <span className="text-slate-400">premiumPrice</span> (number, INR),{' '}
               <span className="text-slate-400">isActive</span> (boolean)
+            </p>
+            <p className="text-xs text-slate-500">
+              Tip: <code className="text-emerald-300">image</code> accepts a
+              direct URL (e.g. https://example.com/banner.png). Categories are
+              the root of the hierarchy — add them first, then bulk-add
+              subjects by <code className="text-emerald-300">categoryName</code>.
             </p>
           </div>
           <DialogFooter>

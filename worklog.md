@@ -1615,3 +1615,126 @@ Stage Summary:
   "Subscribe to {Plan Name} • ₹{price}" label so the link between
   card-tap (selection) and button-tap (checkout) is obvious.
 - Lint clean (0 errors). Build clean (GET / 200). Ready to push both repos.
+
+---
+Task ID: bulk-name-linking + image-url-support
+Agent: main
+Task: Two related upgrades to the admin bulk-add feature:
+  1. NAME-BASED PARENT LINKING — let templates link to parents by name
+     (categoryName / subjectName / testTitle) instead of by Firestore doc
+     id, so the top-down workflow works without copy/pasting ids:
+       categories -> subjects (by categoryName)
+                 -> tests (by subjectName + optional categoryName)
+                 -> questions (by testTitle + optional subjectName/categoryName)
+  2. IMAGE URL SUPPORT — every bulk template now accepts image URL fields
+     (image / imageUrl) directly, so the admin can paste a CDN URL instead
+     of uploading each image by hand.
+
+Work Log:
+
+Shared helper (new file): src/lib/bulk-resolve.ts
+- Exports: resolveCategoryIdByName, resolveSubjectIdByName,
+  resolveTestIdByName, validateParentRefs, invalidateBulkResolveCaches.
+- All resolvers: case-insensitive, whitespace-trimmed, backward
+  compatible (caller can still pass explicit id). Per-call Firestore
+  read with in-memory cache (Map) so a 100-row import hits each parent
+  collection only once per unique name.
+- Subject resolver takes optional categoryName disambiguator (handles
+  "Mathematics" existing in both SSC and WBCS). Test resolver takes
+  optional subjectName + categoryName for the same reason.
+
+subjects.tsx:
+- BULK_SAMPLE / CSV_HEADERS / CSV_SAMPLE_ROWS: replaced categoryId with
+  categoryName. Sample: "categoryName":"SSC".
+- handleBulkImport: per-row resolution loop. If row has categoryId, use
+  it (backward compat). Else if it has categoryName, resolve via the
+  helper (with cache). If neither, skip with a precise reason. Deletes
+  the categoryName helper field before writing to Firestore so junk
+  doesn't land in the doc. If 0 rows resolve, aborts with a toast
+  listing the first 3 skip reasons. On success, toast reports count +
+  skipped count.
+- Fields help text updated: categoryName highlighted emerald as the
+  recommended path, with a tip explaining the workflow.
+- Added resolveCategoryIdByName import.
+
+tests.tsx:
+- BULK_SAMPLE / CSV_HEADERS / CSV_SAMPLE_ROWS: replaced subjectId with
+  subjectName, replaced categoryId column with categoryName. Sample:
+  "subjectName":"Quantitative Aptitude","categoryName":"SSC".
+- handleBulkImport: per-row resolution loop. Resolves subjectName (with
+  optional categoryName disambiguator) → subjectId. Optionally also
+  resolves categoryName → categoryId and denormalizes it onto the row
+  (some downstream queries expect categoryId on Test docs). Preserves
+  the existing premium-inheritance logic (test inside a premium
+  category is auto-marked premium, with a count in the toast). Same
+  skip/abort/toast pattern as subjects.
+- CSV parser tweaked: isActive/subjectName/categoryName columns are
+  now properly typed (boolean for isActive, string for the names).
+- Fields help text + tip updated. imageUrl field documented.
+- Added resolveSubjectIdByName + resolveCategoryIdByName imports.
+
+questions.tsx:
+- BULK_SAMPLE / CSV_HEADERS / CSV_SAMPLE_ROWS: replaced testId with
+  testTitle + added subjectName + categoryName columns. Sample:
+  "testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude",
+  "categoryName":"SSC".
+- handleBulkImport: per-row resolution loop. Resolves testTitle (with
+  optional subjectName + categoryName disambiguators) → testId. CSV
+  fallback preserved: if a row has NO test reference at all (no testId,
+  no testTitle), it attaches to the currently-selected test in the
+  dropdown above (selectedTestId) — same as the old behaviour.
+- CSV parser tweak: the `if (selectedTestId && !obj.testId)` fallback
+  now also checks `!obj.testTitle` so a CSV row with a testTitle
+  column is NOT force-overwritten with the dropdown selection.
+- Fields help text + tip updated. imageUrl field documented.
+- Added resolveTestIdByName import.
+
+categories.tsx:
+- BULK_SAMPLE / CSV_HEADERS / CSV_SAMPLE_ROWS: added `image` field
+  (URL string) to the sample and CSV. Sample now shows
+  "image":"https://example.com/ssc-banner.png".
+- Fields help text: added `image` (URL string — banner image),
+  `isPremium`, `premiumPrice`. Added tip explaining image accepts a
+  direct URL and that categories are the root of the hierarchy.
+
+upcoming-exams.tsx:
+- BULK_SAMPLE / CSV_HEADERS / CSV_SAMPLE_ROWS: added `imageUrl` field
+  to JSON sample, CSV headers, and CSV sample rows. Sample also
+  includes notificationUrl + officialUrl for completeness.
+
+current-affairs.tsx:
+- BULK_SAMPLE / CSV_HEADERS / CSV_SAMPLE_ROWS: added `imageUrl` field.
+  Sample: "imageUrl":"https://example.com/news1.jpg".
+
+announcements.tsx:
+- BULK_SAMPLE / CSV_HEADERS / CSV_SAMPLE_ROWS: added `imageUrl` field.
+  Sample: "imageUrl":"https://example.com/welcome-banner.png".
+
+Verification:
+- `bun run lint` → 0 errors.
+- `npx tsc --noEmit` → 0 errors in any of the changed files (only
+  pre-existing errors in skills/ and src/lib/admin-firestore.ts which
+  were not touched by this task).
+- Agent Browser: dev server compiled cleanly ("GET / 200 in 7.7s"),
+  no console errors, no page errors. Login page renders correctly.
+
+Stage Summary:
+- The admin can now do the full top-down workflow without ever
+  copy/pasting a Firestore doc id:
+    1. Bulk-add categories (with image URLs)
+    2. Bulk-add subjects referencing categories by NAME
+    3. Bulk-add tests referencing subjects by NAME (+ optional category
+       name to disambiguate)
+    4. Bulk-add questions referencing tests by TITLE (+ optional
+       subject/category name to disambiguate)
+- Every bulk template accepts image URL fields directly — no per-row
+  image upload needed. The URL is stored as-is in Firestore (same as
+  if the admin had uploaded and the storage URL was saved).
+- Backward compatibility: old templates with explicit id fields
+  (categoryId / subjectId / testId) still work exactly as before. The
+  name fields are purely additive.
+- Error reporting: if a parent name can't be resolved, the row is
+  skipped (NOT silently dropped) and the toast reports "X imported,
+  Y skipped". The first 3 skip reasons are shown in the error toast
+  when 0 rows resolve; all skips are logged to console.warn.
+- Lint clean. Build clean. Ready to push.

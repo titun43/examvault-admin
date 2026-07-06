@@ -22,6 +22,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { BulkTextarea } from './bulk-textarea';
+import { resolveTestIdByName } from '@/lib/bulk-resolve';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -68,12 +69,12 @@ export default function Questions() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const BULK_SAMPLE = '[{"testId":"<paste existing test id>","question":"What is 2+2?","options":["3","4","5","6"],"correctAnswer":1,"explanation":"2+2=4","difficulty":"easy","marks":1},{"testId":"<paste existing test id>","question":"Capital of India?","options":["Mumbai","Delhi","Kolkata","Chennai"],"correctAnswer":1,"explanation":"New Delhi is the capital","difficulty":"easy","marks":1}]';
+  const BULK_SAMPLE = '[{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"What is 2+2?","options":["3","4","5","6"],"correctAnswer":1,"explanation":"2+2=4","difficulty":"easy","marks":1},{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"Capital of India?","options":["Mumbai","Delhi","Kolkata","Chennai"],"correctAnswer":1,"explanation":"New Delhi is the capital","difficulty":"easy","marks":1}]';
 
-  const CSV_HEADERS = ['question', 'option1', 'option2', 'option3', 'option4', 'correctAnswerIndex', 'explanation', 'subjectTopic', 'marks', 'isPremium'];
+  const CSV_HEADERS = ['testTitle', 'subjectName', 'categoryName', 'question', 'option1', 'option2', 'option3', 'option4', 'correctAnswerIndex', 'explanation', 'subjectTopic', 'marks', 'isPremium'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['What is 2+2?', '3', '4', '5', '6', 1, '2+2=4', 'Math', 1, false],
-    ['Capital of India?', 'Mumbai', 'Delhi', 'Kolkata', 'Chennai', 1, 'New Delhi is the capital', 'GK', 1, false],
+    ['SSC Mock 1', 'Quantitative Aptitude', 'SSC', 'What is 2+2?', '3', '4', '5', '6', 1, '2+2=4', 'Math', 1, false],
+    ['SSC Mock 1', 'Quantitative Aptitude', 'SSC', 'Capital of India?', 'Mumbai', 'Delhi', 'Kolkata', 'Chennai', 1, 'New Delhi is the capital', 'GK', 1, false],
   ];
 
   const handleBulkImport = async () => {
@@ -115,8 +116,12 @@ export default function Questions() {
             }
             if ('marks' in obj) obj.marks = Number(obj.marks) || 0;
             if ('isPremium' in obj) obj.isPremium = String(obj.isPremium).toLowerCase() === 'true';
-            // Attach to currently selected test (CSV doesn't carry testId)
-            if (selectedTestId && !obj.testId) obj.testId = selectedTestId;
+            // CSV fallback: only attach to selected test if the row has NO
+            // test reference at all (no testId AND no testTitle). If the row
+            // has a testTitle, let the resolution loop below handle it.
+            if (selectedTestId && !obj.testId && !obj.testTitle) {
+              obj.testId = selectedTestId;
+            }
             return obj;
           });
         isCsv = true;
@@ -131,17 +136,90 @@ export default function Questions() {
     }
     setBulkSaving(true);
     try {
-      const batch = writeBatch(db);
-      const colRef = collection(db, 'questions');
-      parsed.forEach((item) => {
-        const ref = doc(colRef);
+      // ---- Name-based parent resolution ----
+      // Each row can use EITHER `testId` (explicit Firestore doc id —
+      // backward compatible) OR `testTitle` (resolved to id via Firestore
+      // lookup, optionally disambiguated by `subjectName` + `categoryName`).
+      // If both are present, testId wins.
+      //
+      // IMPORTANT for CSV users: CSV rows do NOT carry a test reference, so
+      // they fall back to the currently-selected test in the dropdown above
+      // (selectedTestId). This preserves the previous CSV behaviour.
+      // -----------------------------------------------------------------
+      const skipList: { row: number; reason: string }[] = [];
+      const resolved: any[] = [];
+      const testIdCache = new Map<string, string | null>();
+
+      for (let i = 0; i < parsed.length; i++) {
+        const item = parsed[i];
+        const rowNo = i + 1;
+        let testId = (item.testId ?? '').toString().trim();
+        const testTitle = (item.testTitle ?? '').toString().trim();
+        const subjName = (item.subjectName ?? '').toString().trim();
+        const catName = (item.categoryName ?? '').toString().trim();
+
+        const testKey = `${testTitle.toLowerCase()}||${subjName.toLowerCase()}||${catName.toLowerCase()}`;
+
+        if (!testId && testTitle) {
+          if (testIdCache.has(testKey)) {
+            testId = testIdCache.get(testKey) ?? '';
+          } else {
+            const r = await resolveTestIdByName(
+              testTitle,
+              subjName || undefined,
+              catName || undefined,
+            );
+            testIdCache.set(testKey, r.id);
+            testId = r.id ?? '';
+          }
+          if (!testId) {
+            skipList.push({
+              row: rowNo,
+              reason: `test "${testTitle}"${subjName ? ` (in ${subjName}${catName ? ` / ${catName}` : ''})` : ''} not found`,
+            });
+            continue;
+          }
+        }
+        // CSV fallback: if no test reference at all, attach to selected test.
+        if (!testId && selectedTestId) {
+          testId = selectedTestId;
+        }
+        if (!testId) {
+          skipList.push({
+            row: rowNo,
+            reason: 'no testId, testTitle, or selected test in the dropdown',
+          });
+          continue;
+        }
+
         const payload = { ...item };
+        payload.testId = testId;
+        delete payload.testTitle;
+        delete payload.subjectName;
+        delete payload.categoryName;
         if (!payload.createdAt) payload.createdAt = serverTimestamp();
         if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+        resolved.push(payload);
+      }
+
+      if (resolved.length === 0) {
+        const sample = skipList.slice(0, 3).map((s) => `Row ${s.row}: ${s.reason}`).join('; ');
+        toast.error(`No rows to import. ${sample}${skipList.length > 3 ? ` (+${skipList.length - 3} more)` : ''}`);
+        return;
+      }
+
+      const batch = writeBatch(db);
+      const colRef = collection(db, 'questions');
+      resolved.forEach((payload) => {
+        const ref = doc(colRef);
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
+      const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';
+      toast.success(`Imported ${resolved.length} question${resolved.length === 1 ? '' : 's'}${skippedNote}` + (isCsv ? ' (from CSV)' : ''));
+      if (skipList.length > 0) {
+        console.warn('[questions bulk] skipped rows:', skipList);
+      }
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -531,16 +609,27 @@ export default function Questions() {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"testId":"...","question":"...","options":["A","B","C","D"],"correctAnswer":1}]'
+              placeholder='[{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"...","options":["A","B","C","D"],"correctAnswer":1}]'
             />
             <p className="text-xs text-slate-500">
-              Fields: <span className="text-slate-400">testId</span> (existing test id),{' '}
+              Fields: <span className="text-slate-400 text-emerald-300">testTitle</span> (parent test — recommended) or{' '}
+              <span className="text-slate-400">testId</span> (existing id),{' '}
+              <span className="text-slate-400 text-emerald-300">subjectName</span> +{' '}
+              <span className="text-slate-400 text-emerald-300">categoryName</span> (optional, disambiguates same-name tests),{' '}
               <span className="text-slate-400">question</span> (string),{' '}
               <span className="text-slate-400">options</span> (array of 4 strings),{' '}
               <span className="text-slate-400">correctAnswer</span> (0-based index),{' '}
               <span className="text-slate-400">explanation</span> (string),{' '}
               <span className="text-slate-400">difficulty</span> (easy | medium | hard),{' '}
-              <span className="text-slate-400">marks</span> (number)
+              <span className="text-slate-400">marks</span> (number),{' '}
+              <span className="text-slate-400">imageUrl</span> (URL string),{' '}
+              <span className="text-slate-400">isPremium</span> (boolean)
+            </p>
+            <p className="text-xs text-slate-500">
+              Tip: add tests first, then bulk-add questions by{' '}
+              <code className="text-emerald-300">testTitle</code>. For CSV
+              without a test column, questions attach to the test selected in
+              the dropdown above.
             </p>
           </div>
           <DialogFooter>

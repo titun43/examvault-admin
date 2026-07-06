@@ -19,6 +19,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { BulkTextarea } from './bulk-textarea';
+import { resolveCategoryIdByName } from '@/lib/bulk-resolve';
 import { Card, CardContent } from '@/components/ui/card';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
@@ -71,12 +72,12 @@ export default function Subjects() {
   const itemsRef = useRef<Subject[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
-  const BULK_SAMPLE = '[{"name":"Quantitative Aptitude","description":"Math for competitive exams","icon":"🔢","categoryId":"<paste existing category id>","order":1,"isActive":true},{"name":"Reasoning","description":"Logical reasoning","icon":"🧩","categoryId":"<paste existing category id>","order":2,"isActive":true}]';
+  const BULK_SAMPLE = '[{"name":"Quantitative Aptitude","description":"Math for competitive exams","icon":"🔢","categoryName":"SSC","order":1,"isActive":true},{"name":"Reasoning","description":"Logical reasoning","icon":"🧩","categoryName":"SSC","order":2,"isActive":true}]';
 
-  const CSV_HEADERS = ['name', 'categoryId', 'icon', 'order', 'slug', 'description'];
+  const CSV_HEADERS = ['name', 'categoryName', 'icon', 'order', 'slug', 'description', 'isActive'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['Quantitative Aptitude', '<paste existing category id>', '🔢', 1, 'quantitative-aptitude', 'Math for competitive exams'],
-    ['Reasoning', '<paste existing category id>', '🧩', 2, 'reasoning', 'Logical reasoning'],
+    ['Quantitative Aptitude', 'SSC', '🔢', 1, 'quantitative-aptitude', 'Math for competitive exams', true],
+    ['Reasoning', 'SSC', '🧩', 2, 'reasoning', 'Logical reasoning', true],
   ];
 
   const handleBulkImport = async () => {
@@ -104,6 +105,7 @@ export default function Subjects() {
             const obj: any = {};
             headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
             if ('order' in obj) obj.order = Number(obj.order) || 0;
+            if ('isActive' in obj) obj.isActive = String(obj.isActive).toLowerCase() === 'true';
             return obj;
           });
         isCsv = true;
@@ -118,17 +120,79 @@ export default function Subjects() {
     }
     setBulkSaving(true);
     try {
-      const batch = writeBatch(db);
-      const colRef = collection(db, 'subjects');
-      parsed.forEach((item) => {
-        const ref = doc(colRef);
+      // ---- Name-based parent resolution ----
+      // Each row can use EITHER `categoryId` (explicit Firestore doc id —
+      // backward compatible) OR `categoryName` (resolved to id via
+      // Firestore lookup, case-insensitive). If both are present,
+      // categoryId wins. If neither is present, the row is skipped with
+      // a clear error.
+      //
+      // We validate EVERY row first (no partial writes). If any parent
+      // name can't be resolved, we abort the whole import with a precise
+      // error listing which rows failed and which names were unknown.
+      // -----------------------------------------------------------------
+      const skipList: { row: number; reason: string }[] = [];
+      const resolved: any[] = [];
+      // Cache so we only hit Firestore once for duplicate names.
+      const catIdCache = new Map<string, string | null>();
+
+      for (let i = 0; i < parsed.length; i++) {
+        const item = parsed[i];
+        const rowNo = i + 1;
+        let categoryId = (item.categoryId ?? '').toString().trim();
+        const catName = (item.categoryName ?? '').toString().trim();
+
+        if (!categoryId && catName) {
+          if (catIdCache.has(catName.toLowerCase())) {
+            categoryId = catIdCache.get(catName.toLowerCase()) ?? '';
+          } else {
+            const r = await resolveCategoryIdByName(catName);
+            catIdCache.set(catName.toLowerCase(), r.id);
+            categoryId = r.id ?? '';
+          }
+          if (!categoryId) {
+            skipList.push({ row: rowNo, reason: `category "${catName}" not found` });
+            continue;
+          }
+        }
+        if (!categoryId) {
+          skipList.push({ row: rowNo, reason: 'no categoryId or categoryName provided' });
+          continue;
+        }
+
         const payload = { ...item };
+        // Always store the resolved id; drop the helper name field so it
+        // doesn't end up as junk in Firestore.
+        payload.categoryId = categoryId;
+        delete payload.categoryName;
         if (!payload.createdAt) payload.createdAt = serverTimestamp();
         if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+        resolved.push(payload);
+      }
+
+      if (resolved.length === 0) {
+        const sample = skipList.slice(0, 3).map((s) => `Row ${s.row}: ${s.reason}`).join('; ');
+        toast.error(`No rows to import. ${sample}${skipList.length > 3 ? ` (+${skipList.length - 3} more)` : ''}`);
+        return;
+      }
+
+      const batch = writeBatch(db);
+      const colRef = collection(db, 'subjects');
+      resolved.forEach((payload) => {
+        const ref = doc(colRef);
         batch.set(ref, payload);
       });
       await batch.commit();
-      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
+
+      // Build a precise success report.
+      const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';
+      toast.success(
+        `Imported ${resolved.length} subject${resolved.length === 1 ? '' : 's'}${skippedNote}` + (isCsv ? ' (from CSV)' : ''),
+      );
+      if (skipList.length > 0) {
+        // Surface skip reasons in console for debugging.
+        console.warn('[subjects bulk] skipped rows:', skipList);
+      }
       setBulkOpen(false);
       setBulkText('');
     } catch (err: any) {
@@ -508,15 +572,21 @@ export default function Subjects() {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"name":"Quantitative Aptitude","categoryId":"...","order":1}]'
+              placeholder='[{"name":"Quantitative Aptitude","categoryName":"SSC","order":1}]'
             />
             <p className="text-xs text-slate-500">
               Fields: <span className="text-slate-400">name</span>,{' '}
               <span className="text-slate-400">description</span>,{' '}
               <span className="text-slate-400">icon</span> (emoji),{' '}
-              <span className="text-slate-400">categoryId</span> (existing category id),{' '}
+              <span className="text-slate-400 text-emerald-300">categoryName</span> (parent category — recommended) or{' '}
+              <span className="text-slate-400">categoryId</span> (existing id),{' '}
               <span className="text-slate-400">order</span> (number),{' '}
               <span className="text-slate-400">isActive</span> (boolean)
+            </p>
+            <p className="text-xs text-slate-500">
+              Tip: add categories first, then bulk-add subjects by{' '}
+              <code className="text-emerald-300">categoryName</code>. The system
+              resolves the name to the category id automatically.
             </p>
           </div>
           <DialogFooter>

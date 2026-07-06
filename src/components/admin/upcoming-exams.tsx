@@ -144,12 +144,12 @@ export default function UpcomingExams() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const BULK_SAMPLE = '[{"name":"SSC CGL 2024","organization":"Staff Selection Commission","examDate":"2024-12-15T00:00:00.000Z","applicationStartDate":"2024-10-01T00:00:00.000Z","applicationEndDate":"2024-10-31T00:00:00.000Z","description":"Combined Graduate Level","isPublished":true,"order":1},{"name":"IBPS PO 2024","organization":"IBPS","examDate":"2024-11-20T00:00:00.000Z","description":"Probationary Officer exam","isPublished":true,"order":2}]';
+  const BULK_SAMPLE = '[{"name":"SSC CGL 2024","organization":"Staff Selection Commission","examDate":"2024-12-15T00:00:00.000Z","applicationStartDate":"2024-10-01T00:00:00.000Z","applicationEndDate":"2024-10-31T00:00:00.000Z","description":"Combined Graduate Level","imageUrl":"https://example.com/ssc-cgl-banner.png","notificationUrl":"https://ssc.nic.in/notification","officialUrl":"https://ssc.nic.in","isPublished":true,"order":1},{"name":"IBPS PO 2024","organization":"IBPS","examDate":"2024-11-20T00:00:00.000Z","description":"Probationary Officer exam","imageUrl":"https://example.com/ibps-po-banner.png","officialUrl":"https://ibps.in","isPublished":true,"order":2}]';
 
-  const CSV_HEADERS = ['name', 'organization', 'categoryId', 'examDate', 'applicationStartDate', 'applicationEndDate', 'notificationUrl', 'syllabusUrl', 'officialUrl', 'applyUrl', 'description', 'order', 'isPublished'];
+  const CSV_HEADERS = ['name', 'organization', 'imageUrl', 'categoryId', 'examDate', 'applicationStartDate', 'applicationEndDate', 'notificationUrl', 'syllabusUrl', 'officialUrl', 'applyUrl', 'description', 'order', 'isPublished'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['SSC CGL 2024', 'Staff Selection Commission', '', '2024-12-15', '2024-10-01', '2024-10-31', '', '', 'https://ssc.nic.in', 'https://ssc.nic.in/apply', 'Combined Graduate Level', 1, true],
-    ['IBPS PO 2024', 'IBPS', '', '2024-11-20', '', '', '', '', 'https://ibps.in', 'https://ibps.in/apply', 'Probationary Officer exam', 2, true],
+    ['SSC CGL 2024', 'Staff Selection Commission', 'https://example.com/ssc-cgl-banner.png', '', '2024-12-15', '2024-10-01', '2024-10-31', 'https://ssc.nic.in/notification', '', 'https://ssc.nic.in', 'https://ssc.nic.in/apply', 'Combined Graduate Level', 1, true],
+    ['IBPS PO 2024', 'IBPS', 'https://example.com/ibps-po-banner.png', '', '2024-11-20', '', '', '', '', 'https://ibps.in', 'https://ibps.in/apply', 'Probationary Officer exam', 2, true],
   ];
 
   const handleBulkImport = async () => {

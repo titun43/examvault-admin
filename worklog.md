@@ -1338,3 +1338,91 @@ Stage Summary:
   both sides. Backward compatible: old messages without 'system' fall back
   to 'user' correctly.
 - Both repos synced to origin/main (0/0 ahead/behind).
+
+---
+Task ID: p0-premium-no-plans + p2-subject-pack-wiring
+Agent: main
+Task: Fix two known issues from the system overview:
+  P0 — Flutter app shows "No Plans Available" on the Go Premium screen.
+  P2 — startSubjectPackPurchase is dead code (defined but never called).
+
+Work Log:
+
+P0: "No Plans Available" root cause + fix
+- Investigated Flutter premium_screen.dart: fetches plans via
+  FirestoreService.getActivePremiumPlans() which queries
+  `premium_plans` where `isActive == true`. If the collection is empty,
+  the screen shows an empty state ("No Plans Available Right Now") — it
+  NEVER falls back to hardcoded plans (the model doc comment is stale).
+- Checked Firestore rules: `premium_plans` match allows `read: if true` —
+  so rules are NOT the blocker.
+- Checked admin premium-plans.tsx: the handleSave logic is correct
+  (auto-fills planId with doc id if empty, validates price > 0).
+- Checked data-seed.tsx: it does NOT seed premium_plans — only categories,
+  subjects, tests, questions, current_affairs, upcoming_exams.
+- ROOT CAUSE: the `premium_plans` Firestore collection is simply empty —
+  the admin never added any plans manually and no seed tool existed for it.
+- FIX (admin premium-plans.tsx, commit d8af6e5):
+  * Added "Seed Default Plans" button next to "Add Plan" in the header.
+  * Added handleSeedDefaults() — fetches existing plan names, then creates
+    the 3 standard plans (Monthly ₹99/1mo, Quarterly ₹249/3mo [Popular],
+    Yearly ₹799/12mo) with auto-filled planId = Firestore doc id.
+    Idempotent: skips any plan whose name already exists.
+  * Enhanced the empty state to prominently show both "Seed Default Plans"
+    and "Add Custom Plan" buttons with a message explaining users see
+    "No Plans Available".
+  * Added a confirmation AlertDialog showing the 3 plans to be created.
+
+P2: startSubjectPackPurchase dead code — wiring
+- The method existed in razorpay_service.dart (line 310) with full
+  createOrder → checkout → verify flow, but NO screen called it.
+- The backend already supports SUBJECT_PACK (checkAccess tier 3,
+  grantEntitlement, price-resolver reads from Prisma Product). The admin
+  Products section already has a SUBJECT_PACK tab. So the only missing
+  piece was: (a) a price source on the Flutter side, (b) a UI trigger.
+- FIX — Flutter (commit 71c91df):
+  * subject_model.dart: added `premiumPrice` field (int, default 0).
+    Backward compatible — old docs without the field parse as 0.
+    Mirrors CategoryModel.premiumPrice for exam packs.
+  * test_list_screen.dart:
+    - Added _serverHasSubjectPackAccess flag (resolved on screen load
+      via AccessService.checkSubjectAccess, cached 60s).
+    - Added _fetchSubjectPackStatus() called in initState when
+      subject.premiumPrice > 0.
+    - Included _serverHasSubjectPackAccess in hasAccess + localHasAccess
+      checks so subject-pack buyers see "Start" on all tests.
+    - Added _buildSubjectPackBanner() — gradient banner with ₹X button,
+      shown when subject.premiumPrice > 0 AND user lacks subject access
+      AND user isn't premium.
+    - Added _purchaseSubjectPack() — full Razorpay flow mirroring
+      _purchaseTest: progress dialogs (Preparing/Verifying), cancellable,
+      safety timeout → My Purchases. On success:
+      AccessService.markSubjectPackPurchased cache write +
+      setState(_serverHasSubjectPackAccess = true) → banner hides +
+      all test cards flip to "Start" + PaymentSuccessDialog.
+- FIX — Admin (commit fcd6daa):
+  * subjects.tsx: added premiumPrice field to Subject interface,
+    emptyForm, openEdit, handleSave. Added "Subject Pack Price (INR)"
+    input to the add/edit form with help text explaining the admin should
+    also create a matching SUBJECT_PACK Product in the Products section.
+
+Verification:
+- Admin: `bun run lint` — 0 errors. Dev server compiled successfully
+  ("GET / 200 in 12.0s, compile: 11.6s, render: 463ms") — no runtime errors.
+- Flutter: SDK not installed in this sandbox — could not run `flutter analyze`.
+  Code follows existing patterns (_purchaseTest, _startExamPackPurchase)
+  and was manually reviewed for correctness.
+- Both repos pushed: admin d8af6e5..fcd6daa, Flutter 34a0ce0..71c91df.
+
+Stage Summary:
+- P0 FIXED: Admin can now click "Seed Default Plans" on the Premium Plans
+  page to create the 3 standard plans (Monthly/Quarterly/Yearly) in one
+  click. Once seeded, the Flutter app's Go Premium screen shows them
+  immediately (real-time Firestore onSnapshot). The empty state also
+  guides the admin to the seed button.
+- P2 FIXED: startSubjectPackPurchase is no longer dead code. When the
+  admin sets a premiumPrice > 0 on a subject, the Flutter test_list_screen
+  shows an "Unlock this subject for ₹X" banner. Tapping it starts the
+  Razorpay subject-pack purchase. On success, all tests in that subject
+  flip to "Start" instantly. The admin must also create a matching
+  SUBJECT_PACK Product in the Products section (server-side price authority).

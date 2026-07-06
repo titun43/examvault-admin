@@ -1262,3 +1262,64 @@ auto-reopen-on-reply behavior is preserved (sending a message still sets
 | `lib/screens/support/help_support_screen.dart` | flutter | client-side sort (open first) + system pill bubble + 3-way tile icon |
 
 *Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — Admin hero/APK deleted, support list sorts resolved to bottom, admin resolve/reopen emits visible system message in chat. Admin `9a57148` + Flutter `34a0ce0` pushed. Both repos 0/0 sync.*
+
+---
+
+## Session web-f5c52b64 (cont.) — P0 No Plans + P2 Subject Pack
+
+### P0: "No Plans Available" fix
+
+**Root cause:** `premium_plans` Firestore collection was empty — admin never
+added plans, data-seed didn't seed them. The Flutter premium_screen.dart
+shows "No Plans Available" empty state (NEVER falls back to hardcoded
+defaults despite the stale model doc comment).
+
+**Fix (admin `d8af6e5`):** Added "Seed Default Plans" button to
+`premium-plans.tsx`. One click creates:
+- Monthly ₹99 / 1 month
+- Quarterly ₹249 / 3 months (Popular)
+- Yearly ₹799 / 12 months
+
+Idempotent (skips by name match). planId auto-filled with Firestore doc id.
+Empty state also shows the seed button as primary CTA.
+
+### P2: Subject Pack purchase wired up
+
+**Was:** `startSubjectPackPurchase` defined in razorpay_service.dart but
+never called from any screen (dead code). Backend already supported it
+(checkAccess tier 3, grantEntitlement, price-resolver, Products SUBJECT_PACK tab).
+
+**Fix — Flutter (`71c91df`):**
+- `subject_model.dart`: added `premiumPrice` field (int, default 0)
+- `test_list_screen.dart`:
+  - `_serverHasSubjectPackAccess` flag (resolved via checkSubjectAccess)
+  - Banner: "Unlock all tests in {subject} — ₹X" (shown when premiumPrice > 0
+    AND no subject access AND not premium)
+  - `_purchaseSubjectPack()` — full Razorpay flow with progress dialogs
+  - On success: `markSubjectPackPurchased` cache + flag flip + success dialog
+
+**Fix — Admin (`fcd6daa`):**
+- `subjects.tsx`: added premiumPrice field to form + handleSave
+
+**Admin action required to activate:**
+1. Edit a subject → set premiumPrice > 0
+2. Go to Products → SUBJECT_PACK tab → create Product with refId = subjectId,
+   same price (server-side price authority)
+
+### Repo sync state
+
+| Repo | HEAD | origin/main | Sync |
+|------|------|-------------|------|
+| examvault-admin | `fcd6daa` | `fcd6daa` | 0/0 ✅ |
+| examvault (Flutter) | `71c91df` | `71c91df` | 0/0 ✅ |
+
+### Files touched this session
+
+| File | Repo | Change |
+|------|------|--------|
+| `src/components/admin/premium-plans.tsx` | admin | Seed Default Plans button + handleSeedDefaults + empty state CTA |
+| `src/components/admin/subjects.tsx` | admin | premiumPrice field in interface/form/handleSave |
+| `lib/models/subject_model.dart` | flutter | premiumPrice field (fromFirestore/toFirestore/copyWith) |
+| `lib/screens/tests/test_list_screen.dart` | flutter | _serverHasSubjectPackAccess + _fetchSubjectPackStatus + _buildSubjectPackBanner + _purchaseSubjectPack + hasAccess checks |
+
+*Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — P0 No Plans Available fixed (Seed Default Plans button). P2 startSubjectPackPurchase wired up (subject premiumPrice + banner + purchase flow). Admin `fcd6daa` + Flutter `71c91df` pushed. Both repos 0/0 sync.*

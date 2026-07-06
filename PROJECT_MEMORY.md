@@ -1323,3 +1323,64 @@ never called from any screen (dead code). Backend already supported it
 | `lib/screens/tests/test_list_screen.dart` | flutter | _serverHasSubjectPackAccess + _fetchSubjectPackStatus + _buildSubjectPackBanner + _purchaseSubjectPack + hasAccess checks |
 
 *Last updated: session `web-f5c52b64-3b4c-480b-bc68-e2de3096e2ee` — P0 No Plans Available fixed (Seed Default Plans button). P2 startSubjectPackPurchase wired up (subject premiumPrice + banner + purchase flow). Admin `fcd6daa` + Flutter `71c91df` pushed. Both repos 0/0 sync.*
+
+---
+
+## Session Update — Current Affairs Images (UI empty-space fix)
+
+**User reported:** User App (Flutter) current affairs individual/detail view
+তে উপরে অনেক খালি জায়গা থাকে (lots of empty space at top), কারণ
+current affairs items-এ image ছিল না — unlike Upcoming Exams যেখানে
+image আছে।
+
+**Root cause (data, not code):**
+- `src/components/admin/current-affairs.tsx`-এ image upload/preview/display
+  সাপোর্ট ইতিমধ্যেই সম্পূর্ণ ছিল (interface এ `imageUrl?`, form, handler,
+  save, list rendering)। Admin side-এ কোনো পরিবর্তন লাগেনি।
+- কিন্তু `src/lib/seed-data.ts`-এ **সব ১৯টি SEED_CURRENT_AFFAIRS item-এর
+  `imageUrl: ''` (empty) ছিল**, অথচ সব ১৪টি SEED_UPCOMING_EXAMS item-এ
+  আসল Unsplash image ছিল।
+- Flutter user app Firestore-থেকে `imageUrl` পড়ে detail view-এর উপরে
+  image দেখায় — যেহেতু field খালি ছিল, তাই খালি জায়গা দেখা যাচ্ছিল।
+
+**Fix (`5634f39`, pushed to origin/main):**
+- image-search skill (z-ai image-search CLI) ব্যবহার করে ১৯টি topically-
+  relevant, OSS-hosted, guaranteed-reachable image URL সংগ্রহ করা হয়েছে —
+  প্রতিটি current affairs item-এর বিষয় অনুযায়ী:
+  - Republic Day parade, Delhi elections/voting, Parliament (Waqf Bill),
+    Pravasi Bharatiya Divas convention, India-US flags/trade, BRICS summit,
+    cricket stadium (Champions Trophy), chess board (Gukesh), Union Budget
+    presentation, RBI building, UPI/QR payment, ISRO rocket launch x2,
+    semiconductor fab, AI data center, Assam tea garden, Brahmaputra flood,
+    Assam Accord protest, women entrepreneurs SHG.
+- সব ১৯টি item-এ `imageUrl: ''` → `imageUrl: 'https://sfile.chatglm.cn/...'`
+  প্রতিস্থাপন করা হয়েছে (lines 3282–3558)।
+- সব image URL OSS-hosted (sfile.chatglm.cn/images-ppt/...), HTTP 200
+  verified (7 sample URLs curl-tested, সব reachable)।
+
+**Verification:**
+- `bun run lint` → 0 errors ✅
+- `npx tsc --noEmit` → seed-data.ts-এ কোনো error নেই ✅
+- Structural check: ১৯/১৯ item-এ image, ০টি খালি, ১৯টি unique URL ✅
+- Dev server: `GET / 200 in 6.2s` (clean compile) ✅
+- Agent Browser: admin page পরিষ্কার render হচ্ছে, কোনো error নেই ✅
+
+**How to activate in user app:**
+Admin → Data Seed → current affairs seed করুন (বা নতুন item যোগ করার সময়
+image upload করুন)। Flutter user app Firestore-থেকে `imageUrl` পড়ে detail
+view-এর উপরে image দেখাবে — খালি জায়গা পূরণ হবে।
+
+### Updated repo sync state
+
+| Repo | HEAD | origin/main | Sync |
+|------|------|-------------|------|
+| examvault-admin | `5634f39` | `5634f39` | 0/0 ✅ |
+| examvault (Flutter) | `71c91df` | `71c91df` | 0/0 ✅ |
+
+### Files touched this session (addition)
+
+| File | Repo | Change |
+|------|------|--------|
+| `src/lib/seed-data.ts` | admin | 19 current affairs items: `imageUrl: ''` → real OSS image URLs (topically matched). Admin UI unchanged (already supported images). |
+
+*Last updated: session `web-f5c52b64` — Current Affairs detail view empty-space fix via seed data images. Admin `5634f39` pushed. Both repos 0/0 sync.*

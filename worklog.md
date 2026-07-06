@@ -1738,3 +1738,105 @@ Stage Summary:
   Y skipped". The first 3 skip reasons are shown in the error toast
   when 0 rows resolve; all skips are logged to console.warn.
 - Lint clean. Build clean. Ready to push.
+
+---
+Task ID: auto-count-live-question-count
+Agent: main
+Task: User reported "AUTO COUNT HOCHCHE NA" — after the bulk top-down
+  import workflow (categories → subjects → tests → questions), the
+  question count per test was not showing automatically on the Tests
+  admin page. Example: a category with 2 subjects, each subject with
+  2 tests, each test with 10 questions — the "Qs" column on the Tests
+  page showed 0 (or a stale number) instead of 10.
+
+Work Log:
+
+Root cause analysis:
+- Audited the three parent admin pages for live-count patterns:
+    * categories.tsx ALREADY had a live `subjectCountMap` built from
+      onSnapshot(questions→subjects) with writeback to category docs.
+    * subjects.tsx ALREADY had a live `testCountMap` built from
+      onSnapshot(tests) with writeback to subject docs.
+    * tests.tsx had NO live question count — it displayed
+      `{item.questionCount || 0}` straight from the stored Test doc
+      field. That field is only updated by questions.tsx's single-add
+      and single-delete paths. The questions.tsx BULK-import path
+      committed question docs but NEVER updated the parent test's
+      `questionCount` — so right after a bulk import, the Tests page
+      showed 0 questions for every test.
+- The Flutter user app reads `test.questionCount` directly (it does
+  not count questions itself), so the same stale field also broke the
+  user app's count display until someone opened the Tests admin page
+  (whose onSnapshot writeback would eventually fix it).
+
+Fix 1 — tests.tsx: live questionCountMap (mirrors categories/subjects)
+- Added `useRef` to the React import.
+- Added state `const [questionCountMap, setQuestionCountMap] =
+  useState<Record<string, number>>({});` plus
+  `const itemsRef = useRef<Test[]>([]); useEffect(() => { itemsRef.current
+  = items; }, [items]);` so the writeback can read the latest test docs.
+- Added a 4th onSnapshot listener `u4` on `collection(db, 'questions')`
+  inside the existing useEffect. It builds `{ testId: count }` from the
+  live snapshot, sets state for instant display, AND writes the correct
+  count back to every test doc whose stored `questionCount` has drifted
+  (via writeBatch, only when needsCommit). Updated the cleanup return
+  to `() => { u1(); u2(); u3(); u4(); }`.
+- Updated the "Qs" table cell from `{item.questionCount || 0}` to
+  `{questionCountMap[item.id] ?? item.questionCount ?? 0}` so the
+  display always shows the live count, falling back to the stored
+  field only before the first snapshot arrives.
+
+Fix 2 — questions.tsx bulk-import: sync questionCount on affected tests
+- Added `getDocs` to the firebase/firestore import.
+- After `await batch.commit();`, group the imported questions by testId
+  and, for each unique affected test, fetch the ABSOLUTE count via
+  `getDocs(query(collection(db,'questions'), where('testId','==',testId)))`
+  and write `questionCount: snap.size` to the test doc. Using absolute
+  count (not `increment(N)`) avoids races with the Tests page's own
+  onSnapshot writeback — both writebacks are idempotent and write the
+  same value. Errors per-test are caught and logged so one failed
+  count-sync doesn't fail the whole import.
+
+Fix 3 — subjects.tsx bulk-import: sync subjectCount on affected categories
+- Added `getDocs, query, where` to the firebase/firestore import.
+- After `await batch.commit();`, group imported subjects by categoryId
+  and write the absolute `subjectCount` to each affected category doc.
+  Same pattern as Fix 2.
+
+Fix 4 — tests.tsx bulk-import: sync testCount on affected subjects
+- Added `getDocs, query, where` to the firebase/firestore import.
+- After `await batch.commit();`, group imported tests by subjectId and
+  write the absolute `testCount` to each affected subject doc. Same
+  pattern as Fix 2.
+
+Verification:
+- `bun run lint` → 0 errors.
+- `npx tsc --noEmit` → 0 errors in any of the 3 changed files (the
+  only 3 remaining errors are pre-existing in skills/ and
+  src/lib/admin-firestore.ts, untouched by this task).
+- Agent Browser: dev server compiled cleanly (GET / 200 in 7.3s then
+  227ms on reuse), no console errors, no page errors. Login page
+  renders correctly. (Full Tests-page verification requires admin
+  login credentials, which the sandbox does not have — but the code
+  follows the exact same onSnapshot+writeback pattern already proven
+  in categories.tsx and subjects.tsx.)
+
+Stage Summary:
+- The "Qs" column on the Tests admin page now shows the LIVE question
+  count (computed from the questions collection), so it's always
+  accurate even immediately after a bulk question import. Stale
+  `questionCount` fields on test docs are also auto-repaired by the
+  onSnapshot writeback whenever the Tests page is open.
+- All three bulk-import paths (subjects, tests, questions) now also
+  sync the parent's denormalized count field immediately after commit,
+  so the Flutter user app (which reads category.subjectCount,
+  subject.testCount, and test.questionCount directly) sees the right
+  numbers without waiting for the admin to open the parent page.
+- Full hierarchy now auto-counts end-to-end:
+    categories → subjectCount (live, already worked)
+    subjects   → testCount    (live, already worked)
+    tests      → questionCount (live, NEW — was the bug)
+- Backward compatible: the single-add / single-delete paths in
+  questions.tsx, subjects.tsx, tests.tsx are unchanged and continue
+  to update the stored count field as before; the new live map +
+  writeback simply reconciles any drift they miss.

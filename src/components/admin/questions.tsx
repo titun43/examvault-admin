@@ -12,6 +12,7 @@ import {
   query,
   where,
   writeBatch,
+  getDocs,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAppStore } from '@/lib/store';
@@ -215,6 +216,40 @@ export default function Questions() {
         batch.set(ref, payload);
       });
       await batch.commit();
+
+      // ---- Sync questionCount on every affected test doc ----
+      // The Test model stores a denormalized `questionCount` field that the
+      // Flutter user app reads directly (it doesn't count questions itself).
+      // The single-add / single-delete paths below update this field, but
+      // bulk-import never did — so after a bulk import the count stayed at
+      // 0 (or stale) until someone opened the Tests admin page (whose own
+      // onSnapshot writeback would eventually fix it).
+      //
+      // We now write the ABSOLUTE count (via a fresh getDocs query per
+      // affected test) instead of `increment(N)` to avoid races with the
+      // Tests page's own writeback. Both writebacks are idempotent and
+      // write the same value, so order doesn't matter.
+      const affectedTestIds = Array.from(
+        new Set(resolved.map((r) => r.testId).filter(Boolean)),
+      );
+      await Promise.all(
+        affectedTestIds.map(async (testId) => {
+          try {
+            const qsnap = await getDocs(
+              query(collection(db, 'questions'), where('testId', '==', testId)),
+            );
+            await updateDoc(doc(db, 'tests', testId), {
+              questionCount: qsnap.size,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (e) {
+            // Don't fail the whole import if one test's count sync fails —
+            // the Tests admin page's onSnapshot will reconcile it later.
+            console.warn('[questions bulk] count sync failed for', testId, e);
+          }
+        }),
+      );
+
       const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';
       toast.success(`Imported ${resolved.length} question${resolved.length === 1 ? '' : 's'}${skippedNote}` + (isCsv ? ' (from CSV)' : ''));
       if (skipList.length > 0) {

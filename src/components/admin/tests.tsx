@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import {
   collection,
   onSnapshot,
@@ -10,6 +10,9 @@ import {
   doc,
   serverTimestamp,
   writeBatch,
+  getDocs,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { deleteItems } from '@/lib/admin-firestore';
@@ -102,6 +105,20 @@ export default function Tests({ fixedType }: TestsProps = {}) {
   const [bulkFreeOpen, setBulkFreeOpen] = useState(false);
   const [bulkFreeAllOpen, setBulkFreeAllOpen] = useState(false);
   const [bulkFreeing, setBulkFreeing] = useState(false);
+
+  // Live question count per test. Computed from the questions collection so
+  // the number is always accurate (manual add, bulk import, seed, deletes
+  // via other tabs — all count). The stored `questionCount` field on the
+  // Test doc is only updated by the questions.tsx single-add/delete path;
+  // bulk-import does NOT update it, so without this live map the "Qs"
+  // column would show 0 right after a bulk question import.
+  //
+  // We ALSO write the correct count back to each test doc whose stored
+  // `questionCount` has drifted, so the Flutter user app (which reads
+  // `test.questionCount`) stays in sync without a manual re-save.
+  const [questionCountMap, setQuestionCountMap] = useState<Record<string, number>>({});
+  const itemsRef = useRef<Test[]>([]);
+  useEffect(() => { itemsRef.current = items; }, [items]);
 
   // When fixedType is set, derive a filtered view + friendly labels.
   const fixedLabel = fixedType ? (TYPE_LABELS[fixedType] || fixedType) : null;
@@ -256,6 +273,34 @@ export default function Tests({ fixedType }: TestsProps = {}) {
         batch.set(ref, payload);
       });
       await batch.commit();
+
+      // ---- Sync testCount on every affected subject doc ----
+      // The Subject model stores a denormalized `testCount` field that the
+      // Flutter user app reads directly. The single-add / single-delete
+      // paths update this field, but bulk-import didn't — so the count
+      // stayed stale until someone opened the Subjects admin page (whose
+      // own onSnapshot writeback would eventually fix it). We now write the
+      // ABSOLUTE count via a fresh getDocs query per affected subject, so
+      // the Flutter app sees the right number immediately.
+      const affectedSubjectIds = Array.from(
+        new Set(resolved.map((r) => r.subjectId).filter(Boolean)),
+      );
+      await Promise.all(
+        affectedSubjectIds.map(async (subjectId) => {
+          try {
+            const snap = await getDocs(
+              query(collection(db, 'tests'), where('subjectId', '==', subjectId)),
+            );
+            await updateDoc(doc(db, 'subjects', subjectId), {
+              testCount: snap.size,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (e) {
+            console.warn('[tests bulk] count sync failed for', subjectId, e);
+          }
+        }),
+      );
+
       const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';
       const autoNote = autoPremiumCount > 0
         ? ` (${autoPremiumCount} auto-marked premium — parent category is premium)`
@@ -280,7 +325,31 @@ export default function Tests({ fixedType }: TestsProps = {}) {
     }, () => setLoading(false));
     const u2 = onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Subject)));
     const u3 = onSnapshot(collection(db, 'categories'), (snap) => setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Category)));
-    return () => { u1(); u2(); u3(); };
+
+    // Live question counts → { testId: count }. Kept in state for instant
+    // display in the "Qs" column, AND stale `questionCount` values are
+    // written back to the test docs so the Flutter user app (which reads
+    // `test.questionCount`) shows the right number too.
+    const u4 = onSnapshot(collection(db, 'questions'), (snap) => {
+      const map: Record<string, number> = {};
+      snap.docs.forEach((d) => {
+        const tId = (d.data() as any)?.testId;
+        if (tId) map[tId] = (map[tId] || 0) + 1;
+      });
+      setQuestionCountMap(map);
+      const batch = writeBatch(db);
+      let needsCommit = false;
+      itemsRef.current.forEach((t) => {
+        const correct = map[t.id] || 0;
+        if ((t.questionCount || 0) !== correct) {
+          batch.update(doc(db, 'tests', t.id), { questionCount: correct, updatedAt: serverTimestamp() });
+          needsCommit = true;
+        }
+      });
+      if (needsCommit) batch.commit().catch(() => {});
+    });
+
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
   const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -595,7 +664,13 @@ export default function Tests({ fixedType }: TestsProps = {}) {
                         </td>
                       )}
                       <td className="p-4 text-center text-slate-400">{item.duration}m</td>
-                      <td className="p-4 text-center text-slate-400">{item.questionCount || 0}</td>
+                      <td className="p-4 text-center text-slate-400">
+                        {/* Live count from the questions collection — always
+                            accurate, even right after a bulk question import
+                            that didn't update test.questionCount. Falls back
+                            to the stored field if the map hasn't loaded yet. */}
+                        {questionCountMap[item.id] ?? item.questionCount ?? 0}
+                      </td>
                       <td className="p-4 text-center">
                         {item.price && item.price > 0 ? (
                           <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-emerald-300 bg-emerald-950/60 border border-emerald-800">₹{item.price}</span>

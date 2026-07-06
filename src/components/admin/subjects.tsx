@@ -10,6 +10,9 @@ import {
   doc,
   serverTimestamp,
   writeBatch,
+  getDocs,
+  query,
+  where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { uploadImage, deleteItems } from '@/lib/admin-firestore';
@@ -183,6 +186,33 @@ export default function Subjects() {
         batch.set(ref, payload);
       });
       await batch.commit();
+
+      // ---- Sync subjectCount on every affected category doc ----
+      // The Category model stores a denormalized `subjectCount` field that
+      // the Flutter user app reads directly. The single-add / single-delete
+      // paths update this field, but bulk-import didn't — so the count
+      // stayed stale until someone opened the Categories admin page (whose
+      // own onSnapshot writeback would eventually fix it). We now write the
+      // ABSOLUTE count via a fresh getDocs query per affected category, so
+      // the Flutter app sees the right number immediately.
+      const affectedCategoryIds = Array.from(
+        new Set(resolved.map((r) => r.categoryId).filter(Boolean)),
+      );
+      await Promise.all(
+        affectedCategoryIds.map(async (categoryId) => {
+          try {
+            const snap = await getDocs(
+              query(collection(db, 'subjects'), where('categoryId', '==', categoryId)),
+            );
+            await updateDoc(doc(db, 'categories', categoryId), {
+              subjectCount: snap.size,
+              updatedAt: serverTimestamp(),
+            });
+          } catch (e) {
+            console.warn('[subjects bulk] count sync failed for', categoryId, e);
+          }
+        }),
+      );
 
       // Build a precise success report.
       const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';

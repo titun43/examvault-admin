@@ -2235,3 +2235,39 @@ Stage Summary:
     Option B (gh CLI, if installed locally): gh run download 28869221153 -R titun43/examvault -n examvault-apk-1.51.0+77
 - No code changes this task — pure build test. Commit built: ab3f39a (HEAD of main).
 - All three app-open-banner fixes from prior tasks are included in this build: firestore.rules (auto-deploys), storage.rules (auto-deploys), splash_screen.dart import (commit b3f9821). APK is ready for full functional test on mobile (banner display, image upload from admin panel, OTP login, etc.).
+
+---
+Task ID: package-conflict-diagnosis-1
+Agent: main
+Task: Diagnose why user got "package conflicts with an existing package" error when installing the freshly-built APK (run 28869221153, v1.51.0+77) over an existing install, and whether Play Store users will hit the same error on updates
+
+Work Log:
+- User reported: existing ExamVault install on phone; tried to install the new GitHub Actions APK as an update; got "app not installed as package conflicts with an existing package".
+- This error appears ONLY when new APK signing cert ≠ installed APK signing cert. (Android Package Installer enforces signature continuity for updates.)
+- Confirmed the NEW APK's signature: workflow "Verify Keystore Fingerprint" + "Verify APK signature" steps both passed → new APK is signed with the official upload key SHA1 = BA:56:A6:05:A0:D8:A3:E1:81:75:C7:33:98:31:74:EF:C4:71:6A:6E. So the NEW side is correct.
+- Therefore the INSTALLED APK on the user's phone must be signed with a DIFFERENT key. Investigated which key.
+- Searched worklog for distribution history:
+    * App IS published on Play Store — package com.examvault.education, URL https://play.google.com/store/apps/details?id=com.examvault.education
+    * v1.50.0+76 was explicitly a "Play Store update" (worklog line 2081, commit b48ba65)
+    * v1.51.0+77 AAB "is still signed with the OLD key — Play Console upload-key reset approval still pending" (line 2081) — confirms Play App Signing is enrolled (upload-key reset only exists in Play App Signing context)
+- ROOT CAUSE = Play App Signing key mismatch:
+    * Play Store enrolls every app in "Play App Signing" by default. Google holds the "APP SIGNING KEY" (server-side, used to sign the APKs that get delivered to users' phones). The developer only holds the "UPLOAD KEY" (used to sign AABs uploaded to Play Console).
+    * User's installed APK came from Play Store → signed with GOOGLE'S APP SIGNING KEY (call it KEY-G).
+    * New APK from GitHub Actions → signed with DEVELOPER'S UPLOAD KEY (SHA1 BA:56:A6:05:..., call it KEY-U).
+    * KEY-G ≠ KEY-U → Android refuses the update → "package conflicts with an existing package".
+    * This is EXPECTED Android behavior, NOT a workflow bug. The workflow's safety-net checks (fingerprint verify + apksigner verify) guarantee KEY-U is the correct UPLOAD key, which is exactly what Play Console expects for AAB uploads.
+- Verified the upload-key reset status: workflow extract-upload-key.yml exists to produce the .pem for Play Console's "Request upload key reset". Once Google approves, AABs signed with KEY-U can be uploaded to Play Console → Google re-signs with KEY-G → users get consistent Play Store updates. This is the PROPER distribution channel.
+
+Stage Summary:
+- DIAGNOSIS: The "package conflicts" error is because the user's installed app is the PLAY STORE version (signed with Google's app signing key KEY-G), but the new APK is a GITHUB ACTIONS build (signed with the developer upload key KEY-U = BA:56:A6:05:...). Different signatures → Android blocks the cross-source update. NOT a bug, NOT a workflow failure.
+- WILL PLAY STORE USERS GET THIS ERROR ON UPDATES? **NO.** Play Store users only ever receive KEY-G-signed APKs (Google re-signs every AAB upload server-side before distribution). All Play Store updates for the same package name use the SAME app signing key → signature continuity is guaranteed by Google → users NEVER see "package conflicts" on Play Store updates. This is the whole point of Play App Signing.
+- WHEN does this error happen? Only when MIXING distribution sources:
+    (a) Play Store install + sideloaded APK update (or vice versa) → conflict
+    (b) Sideloaded APK from one keystore + sideloaded APK from a different keystore → conflict
+    (c) Debug build + release build → conflict (debug uses Android debug keystore)
+  It NEVER happens within a single consistent channel (Play Store → Play Store, or same-keystore sideload → same-keystore sideload).
+- IMMEDIATE FIX for the user's test (2 options):
+    Option A (fastest, ~30 sec): On phone, long-press ExamVault icon → Uninstall → then install the new GitHub Actions APK. After this, all future GitHub-Actions-keyed APK updates will install smoothly over it (no more conflicts), because they all use KEY-U consistently.
+    Option B (proper channel): Once Google approves the Play Console upload-key reset, upload the AAB (examvault-aab-1.51.0+77) to Play Console → Closed/Internal Testing → install/update via Play Store on the phone. This is what real users will experience — no conflicts ever.
+- KEY TAKEAWAY for the user: The error they saw is a TEST-ENVIRONMENT artifact (sideloaded APK vs Play Store install), NOT a production problem. Real Play Store users will update smoothly. The GitHub Actions APK is for developer-side testing only — it should be installed after uninstalling any Play Store version, OR distributed through Play Console testing tracks.
+- No code or workflow changes needed this task. No files modified.

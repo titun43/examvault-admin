@@ -2086,3 +2086,44 @@ Stage Summary:
 - Secondary issue (Deploy Firestore Rules workflow): needs FIREBASE_TOKEN GitHub secret. NOT blocking — user publishes rules manually. Options provided to user: (a) add the secret via `firebase login:ci` + GitHub Settings, or (b) disable/delete the workflow file since manual publish works.
 - Files changed this task: lib/screens/splash_screen.dart (+1 line). No other code changes needed.
 - Pending (unchanged): Play Store Upload Key Reset approval from Google (1-3 business days). Once approved, the AAB can be uploaded to Closed Testing.
+
+---
+Task ID: app-open-banner-fix-3
+Agent: main
+Task: Fix admin panel "Image upload failed: storage/unauthorized" error when uploading app-open banner image (user uploaded screenshot pasted_image_1783427222393.png)
+
+Work Log:
+- Read user-uploaded screenshot /home/z/my-project/upload/pasted_image_1783427222393.png using VLM skill (z-ai vision CLI). Transcribed error exactly:
+    "Image upload failed: Firebase Storage: User does not have permission to access 'app_open_banners/1783426546957_Screenshot 2026-07-06 174254.jpeg'. (storage/unauthorized)"
+- Root-cause analysis: Firebase Storage security rules file at /home/z/work/examvault/storage.rules had NO `match` block for the `app_open_banners/` path. The catch-all at the bottom (`match /{allPaths=**} { allow read, write: if false; }`) default-denies any path without an explicit rule → uploadBytes() rejected with storage/unauthorized.
+- Verified admin panel upload path: src/lib/admin-firestore.ts uploadImage() builds ref as `${path}/${Date.now()}_${file.name}`, and src/components/admin/app-open-banners.tsx line 452 calls `uploadImage('app_open_banners', file)`. So Storage path = `app_open_banners/<timestamp>_<filename>`.
+- Compared with existing storage.rules: explicit allow rules exist for category_images/, test_images/, banner_images/ (HOME carousel), announcement_images/, upcoming_exam_images/, current_affairs_pdf/, user_avatars/, user_photos/. Only `app_open_banners/` was missing — same oversight as the firestore.rules issue in Task app-open-banner-fix-1.
+- Edited /home/z/work/examvault/storage.rules: added new match block right after `banner_images/` (keeps banner-related rules grouped):
+    match /app_open_banners/{fileName} {
+      allow read: if true;       // public read — Flutter CachedNetworkImage must load for guests too (targetAudience can be 'all'/'guest')
+      allow write: if isAdmin(); // admin-only upload via app-open-banners admin page
+    }
+- Validated rules syntax: braces + parens balanced, app_open_banners match present.
+- Committed: c7b844f "fix(storage-rules): allow app_open_banners/ path (was missing -> storage/unauthorized)". Pushed to origin/main (b3f9821..c7b844f).
+- BONUS improvement: renamed .github/workflows/deploy-firestore-rules.yml -> deploy-firebase-rules.yml and enhanced it to:
+    (a) trigger on storage.rules changes too (previously only firestore.rules + firestore.indexes.json)
+    (b) deploy `firestore:rules,firestore:indexes,storage` in one run (previously only firestore)
+    (c) clearer error message when FIREBASE_TOKEN is missing (points to manual Console deploy as fallback)
+  Committed: 6f6bd85 "ci: unify rules deploy workflow (Firestore + Storage) + fix storage rules". Pushed (c7b844f..6f6bd85).
+- Two new Build Release APK runs triggered (c7b844f + 6f6bd85) — both will succeed since no Dart code changed (only Firebase config + workflow YAML). Did not block on waiting for them; the prior successful build (b3f9821) already proved the code compiles.
+
+Stage Summary:
+- ROOT CAUSE of admin panel image upload error: Firebase Storage `app_open_banners/` path missing from storage.rules → default-deny → storage/unauthorized.
+- FIX: Added `app_open_banners/{fileName}` match block (public read + admin write) to storage.rules. Pushed (c7b844f).
+- DEPLOYMENT REQUIRED (Storage rules are server-side, NOT bundled with admin panel or Flutter app): User must publish the updated storage.rules to Firebase. Same two options as firestore.rules:
+    Option A (fastest, ~30 sec): Firebase Console → Storage → Rules tab → paste updated storage.rules → Publish.
+    Option B (CLI): `cd examvault && firebase login && firebase deploy --only storage`
+  GitHub raw file: https://raw.githubusercontent.com/titun43/examvault/main/storage.rules
+  GitHub browser view: https://github.com/titun43/examvault/blob/main/storage.rules
+- Until storage.rules is published, admin panel banner image uploads will continue to fail with storage/unauthorized. After publishing, uploads will work immediately (no rebuild needed — admin panel reads rules live from Firebase).
+- Workflow improvement: deploy-firebase-rules.yml now covers BOTH Firestore + Storage rules. Once user adds FIREBASE_TOKEN GitHub secret, all future rule changes auto-deploy. Until then, manual Console publish remains the fallback.
+- Files changed this task: storage.rules (+10 lines), .github/workflows/deploy-firestore-rules.yml (renamed to deploy-firebase-rules.yml, +21/-8 lines). No admin panel or Flutter Dart code changes.
+- Running tally of fixes for the app-open-banner feature (3 bugs found, all in security rules / missing imports — feature code itself was correct):
+    1. firestore.rules missing app_open_banners collection (Task app-open-banner-fix-1, commit de46e95) — user published manually
+    2. splash_screen.dart missing AppOpenBannerModel import (Task app-open-banner-fix-2, commit b3f9821) — build now green
+    3. storage.rules missing app_open_banners/ path (this task, commit c7b844f) — user must publish manually

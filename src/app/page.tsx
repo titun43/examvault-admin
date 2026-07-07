@@ -19,6 +19,7 @@ const Questions = dynamic(() => import('@/components/admin/questions'), { ssr: f
 const Announcements = dynamic(() => import('@/components/admin/announcements'), { ssr: false });
 const UpcomingExams = dynamic(() => import('@/components/admin/upcoming-exams'), { ssr: false });
 const Banners = dynamic(() => import('@/components/admin/banners'), { ssr: false });
+const AppOpenBanners = dynamic(() => import('@/components/admin/app-open-banners'), { ssr: false });
 const CurrentAffairs = dynamic(() => import('@/components/admin/current-affairs'), { ssr: false });
 const Users = dynamic(() => import('@/components/admin/users'), { ssr: false });
 const Payments = dynamic(() => import('@/components/admin/payments'), { ssr: false });
@@ -43,6 +44,7 @@ function AdminContent() {
     case 'announcements': return <Announcements />;
     case 'upcoming-exams': return <UpcomingExams />;
     case 'banners': return <Banners />;
+    case 'app-open-banners': return <AppOpenBanners />;
     case 'current-affairs': return <CurrentAffairs />;
     case 'users': return <Users />;
     case 'payments': return <Payments />;

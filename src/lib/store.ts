@@ -11,6 +11,7 @@ export type AdminSection =
   | 'announcements'
   | 'upcoming-exams'
   | 'banners'
+  | 'app-open-banners'
   | 'current-affairs'
   | 'users'
   | 'payments'

@@ -2271,3 +2271,61 @@ Stage Summary:
     Option B (proper channel): Once Google approves the Play Console upload-key reset, upload the AAB (examvault-aab-1.51.0+77) to Play Console → Closed/Internal Testing → install/update via Play Store on the phone. This is what real users will experience — no conflicts ever.
 - KEY TAKEAWAY for the user: The error they saw is a TEST-ENVIRONMENT artifact (sideloaded APK vs Play Store install), NOT a production problem. Real Play Store users will update smoothly. The GitHub Actions APK is for developer-side testing only — it should be installed after uninstalling any Play Store version, OR distributed through Play Console testing tracks.
 - No code or workflow changes needed this task. No files modified.
+
+---
+Task ID: package-conflict-diagnosis-2
+Agent: main
+Task: Re-diagnose package conflict (user clarified: old install was from GitHub, NOT Play Store) + diagnose why app-open fullscreen banner is not showing on user's phone
+
+Work Log:
+- CORRECTION to previous diagnosis (Task package-conflict-diagnosis-1): user clarified their old app was installed from an EARLIER GITHUB ACTIONS build, NOT from Play Store. So Play App Signing is NOT the cause here.
+- Investigated build.yml git history. Found the smoking gun in commit 54a4461 (v1.19, July 1 2026) "feat(v1.19): ... workflow hardening":
+    The OLD build.yml (before 54a4461) had this code:
+        if [ -z "$KEYSTORE_BASE64" ]; then
+            echo "No KEYSTORE_BASE64 secret found. Creating temporary self-signed keystore for testing..."
+            keytool -genkey -v -keystore android/app/examvault-release.keystore \
+              -alias examvault -keyalg RSA -keysize 2048 -validity 10000 \
+              -storepass ExamVault2026! -keypass ExamVault2026! \
+              -dname "CN=ExamVault, OU=Dev, O=ExamVault, L=Kolkata, ST=WB, C=IN"
+    So ANY build made before v1.19 (i.e. v1.0 → v1.18) was signed with a RANDOM self-signed keystore — a DIFFERENT random key on every build. The KEYSTORE_BASE64 GitHub Secret did not exist yet.
+- Commit 54a4461 REWROTE build.yml to "LIFETIME STABLE SIGNING": mandatory KEYSTORE_BASE64 (fail-hard if missing), SHA1 fingerprint verify, apksigner verify. From v1.19 onward, every build uses the SAME official key SHA1 = BA:56:A6:05:A0:D8:A3:E1:81:75:C7:33:98:31:74:EF:C4:71:6A:6E.
+- ROOT CAUSE of user's conflict: their old installed APK is a PRE-v1.19 GitHub Actions build (v1.0–v1.18) signed with a RANDOM key. The new APK (v1.51.0+77) is signed with the OFFICIAL key (BA:56:A6:05:...). Different signing certs → Android blocks the update → "package conflicts with an existing package".
+- FIX: user must UNINSTALL the old app, then install the new APK. From v1.19 onward (current is v1.51.0+77), ALL future GitHub Actions builds use the same official key → no more conflicts ever. This is exactly the guarantee the workflow hardening was designed to provide.
+
+- SECOND ISSUE: app-open fullscreen banner not showing. Traced full display path:
+    splash_screen.dart _doNavigate() → _maybeShowAppOpenBannerThenNavigate(dest) → FirestoreService.fetchActiveAppOpenBanner(isGuest, isPremium) → AppOpenBannerFrequencyController.shouldShow(banner) → AppOpenBannerDialog.show(context, banner)
+- Read lib/services/firestore_service.dart fetchActiveAppOpenBanner() (lines 983–1011):
+    queries app_open_banners collection where isActive==true, then client-filters by b.isVisibleNow && b.matchesAudience(isGuest, isPremium), sorts by priority desc then createdAt desc, returns first (highest priority).
+- Read lib/models/app_open_banner_model.dart isVisibleNow getter (lines 206–213):
+    returns false if !isActive, false if imageUrl empty, false if now < startsAt, false if now > endsAt. True otherwise (including when startsAt/endsAt are null = always visible).
+- Read matchesAudience() (lines 216–227): all→true; guest→isGuest; free→!isGuest && !isPremium; premium→isPremium.
+- Read lib/utils/app_open_banner_frequency.dart shouldShow() (lines 37–61):
+    if isUrgent → true (bypass). everyOpen → true. oncePerSession → true only if not shown in this app process. oncePerDay → true only if not shown yet today (SharedPreferences).
+- CRITICAL TIMING: banner only triggers from splash_screen.dart _maybeShowAppOpenBannerThenNavigate, which runs ONCE per COLD START (app fully killed + reopened). Backgrounding/foregrounding does NOT re-trigger it.
+
+Stage Summary:
+- PACKAGE CONFLICT ROOT CAUSE (corrected): user's old install is a pre-v1.19 GitHub Actions build signed with a RANDOM self-signed keystore (the old build.yml created a temp keystore when KEYSTORE_BASE64 secret was missing). New APK v1.51.0+77 is signed with the official key BA:56:A6:05:.... Different certs → Android blocks update. NOT a Play App Signing issue, NOT a workflow bug.
+- PACKAGE CONFLICT FIX: Uninstall old app → install new APK. All future GitHub Actions builds (v1.19+, including v1.51.0+77) use the same official key → updates will work smoothly from now on.
+- BANNER NOT SHOWING — the banner appears ONLY when ALL of these are true:
+    1. App does a COLD START (fully killed + reopened). Background→foreground is NOT enough.
+    2. A banner document EXISTS in Firestore app_open_banners collection.
+    3. banner.isActive == true.
+    4. banner.imageUrl is non-empty (an image was uploaded in admin panel).
+    5. Schedule window: now is after startsAt (if set) AND before endsAt (if set). If both null → always visible.
+    6. Audience match: targetAudience 'all'→everyone, 'guest'→logged-out, 'free'→signed-in non-premium, 'premium'→premium users. Must match the current user.
+    7. Frequency cap (unless isUrgent==true): 'every_open'→always; 'once_per_session'→once per app process (resets on full kill); 'once_per_day'→once per calendar day.
+- MOST LIKELY reasons the banner isn't showing for the user:
+    (a) No banner created yet in admin panel (Admin Dashboard → App Open Banners → Add), OR
+    (b) Banner isActive is false, OR
+    (c) Schedule window (startsAt/endsAt) doesn't include "now", OR
+    (d) Audience mismatch (e.g. banner for 'guest' but user signed in, or 'premium' but user is free), OR
+    (e) Frequency cap already satisfied this session/day (once_per_session won't repeat until full app kill+reopen; once_per_day won't repeat until tomorrow).
+- BANNER TROUBLESHOOTING STEPS for user:
+    1. Open admin panel → App Open Banners → confirm at least one banner exists.
+    2. Confirm isActive = true (toggle on).
+    3. Confirm an image was uploaded (imageUrl non-empty — preview shows).
+    4. For testing: set frequency = 'every_open' AND isUrgent = true (bypasses all caps → shows on EVERY cold start).
+    5. Set targetAudience = 'all' (so it matches any user type).
+    6. Leave startsAt/endsAt empty (always visible), OR set a window that includes now.
+    7. FULLY KILL the app on phone (swipe away from recents, or Force Stop from app settings) → reopen. Banner should appear between splash and home.
+- No code or workflow changes needed this task. No files modified. Both issues are configuration/usage, not bugs.

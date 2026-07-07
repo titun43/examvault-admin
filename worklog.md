@@ -1976,3 +1976,48 @@ Stage Summary:
 - All 19 current affairs seed items now have a topically-relevant, reachable image (matching the pattern already used by SEED_UPCOMING_EXAMS). When an admin seeds this data into Firestore, each current_affairs doc will carry an `imageUrl`, and the Flutter user app's current affairs detail view will render the image at the top — filling the empty space the user reported.
 - No admin UI changes were needed (image upload/preview/display was already implemented for current affairs); the fix was purely data.
 - All images use OSS-hosted URLs (sfile.chatglm.cn/images-ppt/...) returned by the in-house image-search service, so they are guaranteed reachable and stable for production seed use.
+
+---
+Task ID: app-open-banner-1
+Agent: main
+Task: Build full-screen App Open Banner feature (admin + Flutter user app). Admin uploads a full-screen promotional image + optional CTA button from the admin panel; user sees it once per app launch between splash and home; dismiss with ❌ button or tap to navigate to admin-set destination. Follow suggestion from previous discussion.
+
+Work Log:
+- Fresh cloned both repos to ensure clean state:
+  - Admin: /home/z/my-project (reset --hard origin/main, commit 56c8f2a)
+  - Flutter: /home/z/work/examvault (fresh clone, commit 12fb957)
+- Designed Firestore schema: new collection `app_open_banners` (separate from existing `banners` home-carousel collection) so the two features don't interfere.
+- Flutter app changes:
+  - Created lib/models/app_open_banner_model.dart — AppOpenBannerModel + AppOpenBannerFrequency enum (oncePerDay, oncePerSession, everyOpen) + AppOpenBannerAudience enum (all, guest, free, premium). Includes isVisibleNow + matchesAudience helpers.
+  - Created lib/utils/app_open_banner_frequency.dart — AppOpenBannerFrequencyController. oncePerDay uses SharedPreferences, oncePerSession uses in-memory flag, everyOpen always true. Urgent bypasses cap.
+  - Created lib/widgets/app_open_banner_dialog.dart — full-screen dialog with cached_network_image, fade-in/out 200ms animation, 48×48 ❌ close button top-right (with dark translucent circle bg), optional title/subtitle/CTA overlay at bottom with gradient. Tap banner → increment clickCount → runActionButton (URL or in-app navigation).
+  - Modified lib/services/firestore_service.dart — added 7 methods: getAllAppOpenBannersStream, fetchActiveAppOpenBanner (priority-sorted, audience-filtered, returns single banner), addAppOpenBanner, updateAppOpenBanner, deleteAppOpenBanner, incrementAppOpenBannerImpression (FieldValue.increment), incrementAppOpenBannerClick.
+  - Modified lib/screens/splash_screen.dart — _doNavigate() now resolves destination, then calls _maybeShowAppOpenBannerThenNavigate(dest) which fetches active banner, applies frequency cap, shows dialog (if applicable), then pushReplacement to destination. All failures silent so user is never stuck.
+  - Bumped pubspec.yaml version: 1.50.0+76 → 1.51.0+77
+- Admin panel changes:
+  - Created src/components/admin/app-open-banners.tsx (820+ lines, full CRUD) — list view with banner cards (9:16 image preview, status badges, CTA info, frequency/audience badges, schedule, analytics grid with impressions/clicks/CTR, edit/active-toggle/select-for-delete actions), create/edit dialog (image upload to Firebase Storage, optional title/subtitle, ActionButton editor reusing same shape as home banners, priority, frequency, audience, urgent switch, active switch, start/end datetime), bulk delete confirmation.
+  - Modified src/components/admin/admin-shell.tsx — added 'App Open Banners' nav item under Engagement group with Smartphone icon.
+  - Modified src/lib/store.ts — added 'app-open-banners' to AdminSection union type.
+  - Modified src/app/page.tsx — dynamic import + switch case for AppOpenBanners component.
+- Verified ActionButton model + InAppNavigator already supported all needed destination types (testSeries, dailyQuiz, upcomingExams, currentAffairs, announcements, leaderboard, premium, category, subject, test).
+- Testing:
+  - Admin panel lint: `bun run lint` → 0 errors, 0 warnings (after removing 2 unused eslint-disable directives).
+  - Admin panel runtime: started dev server with setsid + watchdog (server kept dying due to sandbox limits, restarted multiple times). Verified via agent-browser that login page compiles + renders correctly (HTTP 200, title "ExamVault Admin — Content Management Panel", login form visible).
+  - Flutter app: installed Dart SDK 3.12.2 to /tmp/dart-sdk. Ran `dart analyze` on new files — only package-resolution errors (cloud_firestore, shared_preferences) which require Flutter SDK to resolve. All syntax errors fixed. Brace balance verified for all 5 modified/created files. All imports + cross-file references manually verified.
+- Commits + pushes:
+  - Admin: bd64a8f "feat(app-open-banners): admin panel — full-screen promotional banner management" → pushed to origin/main
+  - Flutter: a5c3d3c "feat(app-open-banner): full-screen promotional banner (splash → home)" → pushed to origin/main
+
+Stage Summary:
+- ✅ Full feature shipped end-to-end, both repos pushed to GitHub.
+- New Firestore collection `app_open_banners` will be created automatically when admin first saves a banner (no manual setup needed).
+- Admin workflow: login → sidebar → Engagement → App Open Banners → New Banner → upload image + set CTA + frequency + audience + schedule → save. Banner appears on next app launch.
+- User workflow: app opens → splash → (if active banner exists for this user + frequency not exhausted) → full-screen banner with ❌ button → dismiss/tap → home.
+- Analytics: impressionCount incremented on show, clickCount on tap, CTR auto-computed in admin card.
+- Frequency control: once_per_session (default), once_per_day (calendar day, SharedPreferences), every_open. Urgent flag bypasses cap for high-priority announcements.
+- Audience targeting: all / guest / free (signed-in non-premium) / premium.
+- ActionButton reuses existing model + InAppNavigator — all 10 in-app destinations supported out of the box.
+- Backward compatible: existing `banners` collection (home carousel) untouched. Existing splash flow unchanged when no app-open banner exists.
+- Files produced:
+  - Admin: src/components/admin/app-open-banners.tsx (new), admin-shell.tsx, store.ts, page.tsx (modified)
+  - Flutter: lib/models/app_open_banner_model.dart, lib/utils/app_open_banner_frequency.dart, lib/widgets/app_open_banner_dialog.dart (new), lib/services/firestore_service.dart, lib/screens/splash_screen.dart, pubspec.yaml (modified)

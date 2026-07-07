@@ -2021,3 +2021,34 @@ Stage Summary:
 - Files produced:
   - Admin: src/components/admin/app-open-banners.tsx (new), admin-shell.tsx, store.ts, page.tsx (modified)
   - Flutter: lib/models/app_open_banner_model.dart, lib/utils/app_open_banner_frequency.dart, lib/widgets/app_open_banner_dialog.dart (new), lib/services/firestore_service.dart, lib/screens/splash_screen.dart, pubspec.yaml (modified)
+
+---
+Task ID: app-open-banner-fix-1
+Agent: main
+Task: Fix "Failed to load app-open banners" error reported by user in admin panel
+
+Work Log:
+- Read /home/z/my-project/worklog.md and confirmed app-open-banner feature was already implemented in Task ID: app-open-banner-1 (both Flutter + admin panel shipped, commits a5c3d3c + bd64a8f).
+- Located the exact error source: src/components/admin/app-open-banners.tsx line 430 — `toast.error('Failed to load app-open banners')` fires inside the `onSnapshot(collection(db, 'app_open_banners'), ...)` error callback.
+- Root-cause analysis: Firestore security rules file at /home/z/work/examvault/firestore.rules had NO `match` block for the `app_open_banners` collection. Firestore default-denies any path without an explicit allow rule → `onSnapshot` error callback fires → toast shown. (An empty/missing collection returns an empty snapshot, NOT an error, so the error is definitively a permission-denied from missing rules.)
+- Verified no other admin collection is missing from rules: previous-papers.tsx uses `tests` (covered), daily-quiz.tsx re-uses Tests component (covered), products.tsx uses `categories`+`subjects` (covered). Only `app_open_banners` was missing.
+- Audited Flutter counter-increment path: firestore_service.dart lines 1030-1048 use `FieldValue.increment(1)` on `impressionCount`/`clickCount` from NON-admin app users. So a naive `allow write: if isAdmin()` rule would BLOCK app-side counter increments. Designed a split rule instead.
+- Edited /home/z/work/examvault/firestore.rules: added `match /app_open_banners/{bannerId}` block with:
+    allow read: if true;
+    allow create, delete: if isAdmin();
+    allow update: if isAdmin()
+      || request.resource.data.diff(resource.data).affectedKeys.hasOnly(['impressionCount', 'clickCount']);
+  This mirrors the existing /notifications pattern (line 150-152) where any signed-in user can toggle isRead. Here any client (guests included, since banner targetAudience can be 'all'/'guest') can increment ONLY the two counter fields; admin retains full write.
+- Validated rules syntax: braces + parens balanced (node script), app_open_banners match present.
+- Committed to Flutter repo: de46e95 "fix(firestore-rules): allow app_open_banners collection (was missing -> permission-denied)".
+- Pushed to origin/main (a5c3d3c..de46e95).
+- Attempted auto-deploy: installed firebase-tools (npm -g), but `firebase deploy` requires interactive `firebase login` (browser OAuth) which cannot run in this sandbox. No firebase-admin SDK / service account in the admin panel either (confirmed via grep — comments in payment-access.ts/price-resolver.ts/data-seed.tsx explicitly note "no firebase-admin SDK on the server"). So rules deployment must be done by the user.
+
+Stage Summary:
+- ROOT CAUSE: `app_open_banners` Firestore collection had no security rule → default-deny → admin panel onSnapshot error → "Failed to load app-open banners" toast.
+- FIX: Added `app_open_banners` rule to firestore.rules (public read, admin create/delete, admin full-update OR any-client counter-only update). Pushed to Flutter repo (de46e95).
+- DEPLOYMENT REQUIRED (rules are server-side — NOT bundled with app/admin builds): User must publish the updated rules to Firebase. Two options provided to user:
+    Option A (fastest, ~30 sec): Firebase Console → Firestore Database → Rules tab → paste updated rules → Publish.
+    Option B (CLI): `cd examvault && firebase login && firebase deploy --only firestore:rules`.
+- Until rules are deployed, both the admin panel (load error) and the Flutter app (banner won't show, counter increments silently fail) will continue to fail. After deployment, admin panel will load the (possibly empty) banner list cleanly and the Flutter app will be able to fetch + show banners + increment counters.
+- Files changed: /home/z/work/examvault/firestore.rules (+16 lines). No admin panel or Flutter Dart code changes needed — the feature code was already correct; only the security rule was missing.

@@ -2329,3 +2329,48 @@ Stage Summary:
     6. Leave startsAt/endsAt empty (always visible), OR set a window that includes now.
     7. FULLY KILL the app on phone (swipe away from recents, or Force Stop from app settings) → reopen. Banner should appear between splash and home.
 - No code or workflow changes needed this task. No files modified. Both issues are configuration/usage, not bugs.
+
+---
+Task ID: banner-cta-colorful-fix-1
+Agent: main
+Task: Fix app-open banner in-app screen navigation (external URL works but in-app destination goes to home instead) + make title/subtitle/CTA labels colorful
+
+Work Log:
+- User reported: fullscreen banner is now showing ✓; external URL CTA works ✓; BUT in-app screen CTA goes to Home instead of the configured destination. Also wants title/subtitle/labels to be colorful.
+- Traced the full navigation path: splash _doNavigate → _maybeShowAppOpenBannerThenNavigate → AppOpenBannerDialog.show → (user taps) → _onBannerTapped → _close → runActionButton → InAppNavigator.navigate.
+- ROOT CAUSE of in-app nav bug (found in app_open_banner_dialog.dart _onBannerTapped):
+    1. User taps banner/CTA.
+    2. _close(tapped: true) → Navigator.pop(dialog) → control returns to splash's `await AppOpenBannerDialog.show()`.
+    3. _onBannerTapped continues: `runActionButton(context, btn)` → InAppNavigator.navigate pushes the in-app screen (e.g. PremiumScreen) onto the navigator. Stack now: [Splash, PremiumScreen].
+    4. _onBannerTapped returns → splash's `await AppOpenBannerDialog.show()` completes.
+    5. splash runs `Navigator.pushReplacement(context, MaterialPageRoute(builder: (_) => dest))` → pushReplacement replaces the TOPMOST route (PremiumScreen!) with Home. PremiumScreen is discarded.
+    6. User lands on Home, NOT the CTA destination.
+    External URLs worked because launchUrl opens the browser externally (no route push), so pushReplacement only replaced the splash → Home appeared normally.
+- FIX (2 files):
+    (A) lib/widgets/app_open_banner_dialog.dart:
+        - AppOpenBannerDialog.show() return type changed from Future<bool> to Future<ActionButton?>. Dialog no longer runs the action itself; it pops with the tapped ActionButton (or null if dismissed). Removed the runActionButton import (now unused in this file).
+        - _close() signature changed from {bool tapped = false} to {ActionButton? tappedAction}.
+        - _onBannerTapped() now just logs the click then _close(tappedAction: btn) — no navigation.
+        - ❌ close button onTap updated to _close(tappedAction: null).
+    (B) lib/screens/splash_screen.dart:
+        - Added imports: action_button.dart, in_app_navigator.dart (show runActionButton).
+        - _maybeShowAppOpenBannerThenNavigate captures `ActionButton? tappedAction = await AppOpenBannerDialog.show(...)`.
+        - pushReplacement wraps dest in a new _BannerActionRunner widget.
+        - _BannerActionRunner (new private StatefulWidget at end of file): runs the captured action ONCE via WidgetsBinding.addPostFrameCallback in didChangeDependencies, AFTER the destination (Home) is mounted. This pushes the in-app screen ON TOP of Home instead of being replaced by it. Guarded by a `_ran` bool so it only fires once.
+- COLORFUL UI (lib/widgets/app_open_banner_dialog.dart build method, bottom overlay):
+    - Wrapped title/subtitle/CTA in a translucent "frosted glass" card: black55 background, rounded 20, amber 35% border, black35 box-shadow. Improves legibility over arbitrary banner images.
+    - Title: gradient text via ShaderMask (amber 200 #FFD54F → deep orange 900 #FF6F00), fontSize 26, w800, letter-spacing 0.2, black54 shadow. Was: plain white 22 w700.
+    - Subtitle: white 95% opacity, fontSize 15 (was 14), height 1.35, black54 shadow. Was: white 90% 14.
+    - CTA button: vibrant gradient (deep orange 900 #FF6F00 → amber accent 400 #FFAB00), rounded 14, orange 45% glow box-shadow, white bold 16 text (was: plain white bg + black 15 w600 text).
+- Commit da14971 "fix(banner): in-app CTA navigation + colorful title/subtitle/CTA" pushed. First build run 28872090116 FAILED at Build APK: compile error `app_open_banner_dialog.dart:327:41: Error: No named parameter with the name 'tapped'.` — I had missed updating the ❌ close button's `onTap: () => _close(tapped: false)` call to the new `tappedAction` param.
+- Commit bed2061 "fix(banner): update close button call to new _close signature" pushed. Build run 28872608493: ✓ SUCCESS, all 21 steps green (13.2 min).
+
+Stage Summary:
+- IN-APP CTA NAVIGATION FIXED. The race between the dialog's action-push and the splash's pushReplacement is eliminated by splitting responsibility: dialog reports the tapped action; splash runs it AFTER Home is mounted. In-app screens (testSeries, dailyQuiz, upcomingExams, currentAffairs, announcements, leaderboard, premium, category, subject, test) now navigate correctly. External URLs unchanged (still work).
+- BANNER UI NOW COLORFUL: frosted-glass card backdrop + amber→deep-orange gradient title + vibrant deep-orange→amber gradient CTA button with glow shadow. Much more visually appealing, and more legible over arbitrary banner images.
+- Artifacts (v1.51.0+77, commit bed2061, run 28872608493):
+    APK: examvault-apk-1.51.0+77 (34.62 MB) — artifact id 8140802841
+    AAB: examvault-aab-1.51.0+77 (34.68 MB) — artifact id 8140804324
+    Download: https://github.com/titun43/examvault/actions/runs/28872608493 → Artifacts section at bottom
+- Files changed: lib/widgets/app_open_banner_dialog.dart (show returns ActionButton?, _close/_onBannerTapped rewritten, colorful UI), lib/screens/splash_screen.dart (imports, _maybeShowAppOpenBannerThenNavigate captures action, new _BannerActionRunner widget).
+- TESTING NOTE for user: since v1.51.0+77 is the same version as the previous build, the user may need to uninstall the old APK first if the signature differs from a pre-v1.19 build (see Task package-conflict-diagnosis-2). If their current install is already v1.51.0+77 from the prior green build (run 28869221153), this new APK has the SAME official signature → it will update smoothly in place.

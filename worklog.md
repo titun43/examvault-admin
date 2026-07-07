@@ -2157,3 +2157,49 @@ Stage Summary:
   The auto-deploy workflow is purely for FUTURE convenience — not blocking current functionality.
 - Files changed this task: .github/workflows/deploy-firebase-rules.yml (+86/-25 lines across commits 6333a9e + ab3f39a).
 - Did NOT delete or disable the workflow — it will succeed once Option A (IAM role) is done. Until then it fails fast but harmlessly (no rules are corrupted, no app impact).
+
+---
+Task ID: firebase-rules-autodeploy-2
+Agent: main
+Task: Verify Firebase rules auto-deploy workflow after user added "Service Usage Viewer" + "Firebase Rules Admin" IAM roles to service account
+
+Work Log:
+- User confirmed both IAM roles added to the service account (firebase-adminsdk-xxxx@examvaultnew.iam.gserviceaccount.com): Service Usage Viewer (from previous task) + Firebase Rules Admin (newly added per my instruction in task firebase-rules-autodeploy-1).
+- Triggered workflow_dispatch on deploy-firebase-rules.yml (run id 28868930934).
+- Polled run status every 15s. Result: completed/success (~60s total).
+- Downloaded + unzipped logs to verify both deploys succeeded:
+    FIRESTORE DEPLOY (✓ success):
+      - ✔ firestore: required API firestore.googleapis.com is enabled
+      - ✔ cloud.firestore: rules file firestore.rules compiled successfully
+      - ✔ firestore: uploading rules firestore.rules...
+      - ✔ firestore: deployed indexes in firestore.indexes.json successfully for (default) database
+      - ✔ firestore: released rules firestore.rules to cloud.firestore
+      - ✔ Deploy complete!
+    STORAGE DEPLOY (✓ success — no longer needed the continue-on-error escape hatch):
+      - ✔ storage: required API firebasestorage.googleapis.com is enabled
+      - ✔ firebase.storage: rules file storage.rules compiled successfully
+      - ✔ storage: uploading rules storage.rules...
+      - ✔ storage: released rules storage.rules to firebase.storage
+      - ✔ Deploy complete!
+- All 12 job steps green: Set up job, Checkout, Setup Node.js, Install Firebase CLI, Authenticate, Deploy Firestore rules + indexes (critical), Deploy Storage rules (best-effort), Storage deploy result, Cleanup credentials, Post Setup Node.js, Post Checkout, Complete job.
+
+Stage Summary:
+- AUTO-DEPLOY FULLY WORKING. The complete chain now functions:
+    1. Developer edits firestore.rules / firestore.indexes.json / storage.rules locally
+    2. Commits + pushes to main (or merges a PR)
+    3. GitHub Actions "Deploy Firebase Rules" workflow auto-triggers (paths filter)
+    4. Workflow authenticates with FIREBASE_SERVICE_ACCOUNT GitHub secret (Service Account JSON, no terminal needed)
+    5. firebase CLI deploys firestore:rules + firestore:indexes + storage to examvaultnew
+    6. All rules live on Firebase within ~60s of the push — NO manual Console publish needed
+- Required IAM roles on the service account (all 3 now set):
+    - Firebase Admin (default, from Console)
+    - Service Usage Viewer (user added — fixes API-check 403)
+    - Firebase Rules Admin (user added — fixes rules-test/deploy 403)
+- GitHub secret needed: FIREBASE_SERVICE_ACCOUNT (entire service account JSON, set by user).
+- Final state of app-open-banner feature (all bugs now resolved):
+    - firestore.rules: published manually by user + now auto-deploys on future changes ✓
+    - storage.rules: published manually by user + now auto-deploys on future changes ✓
+    - splash_screen.dart import: fixed (commit b3f9821) ✓
+    - Flutter app v1.51.0+77 build green, APK/AAB artifacts ready ✓
+    - Admin panel banner management fully functional ✓
+- Workflow file: .github/workflows/deploy-firebase-rules.yml (final version, commit ab3f39a).

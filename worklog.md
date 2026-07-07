@@ -2052,3 +2052,37 @@ Stage Summary:
     Option B (CLI): `cd examvault && firebase login && firebase deploy --only firestore:rules`.
 - Until rules are deployed, both the admin panel (load error) and the Flutter app (banner won't show, counter increments silently fail) will continue to fail. After deployment, admin panel will load the (possibly empty) banner list cleanly and the Flutter app will be able to fetch + show banners + increment counters.
 - Files changed: /home/z/work/examvault/firestore.rules (+16 lines). No admin panel or Flutter Dart code changes needed — the feature code was already correct; only the security rule was missing.
+
+---
+Task ID: app-open-banner-fix-2
+Agent: main
+Task: Fix Flutter GitHub Actions "Build Release APK" workflow failure (user reported "futter workflow faild hoyeche" after publishing firestore.rules manually)
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand prior context (firestore.rules fix was Task app-open-banner-fix-1, already pushed as commit de46e95).
+- Listed workflows in .github/workflows/: build.yml (main Flutter build), deploy-firestore-rules.yml (auto-deploy rules), extract-upload-key.yml (one-time .pem extraction).
+- Queried GitHub Actions API for recent runs. Found TWO failures at 2026-07-07 12:04:57 (sha=de46e95):
+    1. "Build Release APK" — FAILED at step "Build APK" (run 28864745382)
+    2. "Deploy Firestore Rules" — FAILED at step "Deploy Firestore Rules" (run 28864745357)
+- Downloaded + unzipped both runs' logs via GitHub API (GET /actions/runs/{id}/logs).
+- ROOT CAUSE #1 (Build APK): Dart compile error in splash_screen.dart line 120:
+      lib/screens/splash_screen.dart:120:5: Error: 'AppOpenBannerModel' isn't a type.
+          AppOpenBannerModel? banner;
+  The previous app-open-banner feature (commit a5c3d3c) used AppOpenBannerModel in _maybeShowAppOpenBannerThenNavigate() but the import `import '../models/app_open_banner_model.dart';` was MISSING. All other banner-related imports (frequency controller, dialog widget, firestore service) were present — only the model import was forgotten.
+- ROOT CAUSE #2 (Deploy Firestore Rules): GitHub Secret `FIREBASE_TOKEN` is not set. The deploy-firestore-rules.yml workflow checks `if [ -z "$FIREBASE_TOKEN" ]` and errors out. NOT blocking for the user because they already published the rules manually via Firebase Console. The workflow only triggers on firestore.rules changes anyway, so it didn't re-run on this fix commit (which only touched a .dart file).
+- FIX #1 (the real bug): Added the missing import to /home/z/work/examvault/lib/screens/splash_screen.dart (line 31):
+      import '../models/app_open_banner_model.dart';
+  Placed alphabetically before '../providers/auth_provider.dart' to match existing import ordering. Verified all 4 files referencing AppOpenBannerModel (splash_screen, dialog, frequency util, firestore_service) now have count=1 import each.
+- Committed: b3f9821 "fix(splash): import AppOpenBannerModel (fixes release build failure)". Pushed to origin/main (de46e95..b3f9821).
+- Monitored new build run (sha=b3f9821, run id 28865206422) via GitHub API polling every ~30s for ~9 minutes.
+- RESULT: ✓ Build Release APK — completed success. Artifacts produced:
+    - examvault-apk-1.51.0+77 (35 MB) — https://github.com/titun43/examvault/actions/runs/28865206422/artifacts/8137633686
+    - examvault-aab-1.51.0+77 (35 MB) — https://github.com/titun43/examvault/actions/runs/28865206422/artifacts/8137634981
+  Version bumped to 1.51.0+77 (was 1.50.0+76). Note: AAB is still signed with the OLD key — Play Console upload-key reset approval still pending (Google's 1-3 business day SLA). The APK artifact is the one to install/test directly.
+
+Stage Summary:
+- ROOT CAUSE of workflow failure: Missing Dart import in splash_screen.dart (forgot to import AppOpenBannerModel when implementing the app-open-banner feature in commit a5c3d3c). Local dev never caught it because Flutter SDK isn't installed in this sandbox; only the GitHub Actions release build surfaced the compile error.
+- FIX: 1-line import added (commit b3f9821), pushed, build re-ran GREEN. APK + AAB v1.51.0+77 artifacts now downloadable from the run page.
+- Secondary issue (Deploy Firestore Rules workflow): needs FIREBASE_TOKEN GitHub secret. NOT blocking — user publishes rules manually. Options provided to user: (a) add the secret via `firebase login:ci` + GitHub Settings, or (b) disable/delete the workflow file since manual publish works.
+- Files changed this task: lib/screens/splash_screen.dart (+1 line). No other code changes needed.
+- Pending (unchanged): Play Store Upload Key Reset approval from Google (1-3 business days). Once approved, the AAB can be uploaded to Closed Testing.

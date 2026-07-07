@@ -2127,3 +2127,33 @@ Stage Summary:
     1. firestore.rules missing app_open_banners collection (Task app-open-banner-fix-1, commit de46e95) — user published manually
     2. splash_screen.dart missing AppOpenBannerModel import (Task app-open-banner-fix-2, commit b3f9821) — build now green
     3. storage.rules missing app_open_banners/ path (this task, commit c7b844f) — user must publish manually
+
+---
+Task ID: firebase-rules-autodeploy-1
+Agent: main
+Task: Set up auto-deploy of Firebase rules via GitHub Actions after user added FIREBASE_SERVICE_ACCOUNT secret
+
+Work Log:
+- User confirmed they added FIREBASE_SERVICE_ACCOUNT GitHub secret (downloaded service account JSON from Firebase Console → Project Settings → Service Accounts → Generate new private key).
+- Enhanced .github/workflows/deploy-firebase-rules.yml (commit 6333a9e) to support two auth methods: FIREBASE_SERVICE_ACCOUNT (Service Account JSON, no terminal) + FIREBASE_TOKEN (legacy CI token).
+- Manually triggered workflow_dispatch to test. First run (28867171835, commit 6333a9e): FAILED. Auth succeeded (log shows "Authenticating with Service Account JSON..." + env FIREBASE_SERVICE_ACCOUNT: ***) but Storage deploy hit:
+    Error: Request to https://serviceusage.googleapis.com/.../firebasestorage.googleapis.com had HTTP Error: 403, Permission denied to get service [firebasestorage.googleapis.com]
+- Split workflow into separate Firestore (critical) + Storage (best-effort, continue-on-error) steps (commit ab3f39a) so Storage failure doesn't block Firestore.
+- Second test run (28867319338, commit ab3f39a): FAILED again — but this time FIRESTORE ALSO failed with the same 403:
+    Error: Request to .../firestore.googleapis.com had HTTP Error: 403, Permission denied to get service [firestore.googleapis.com]
+- ROOT CAUSE: The Firebase default service account (downloaded from Console → Project Settings → Service Accounts) has the "Firebase Admin" role, but that role does NOT include the `serviceusage.services.get` permission. firebase CLI calls serviceusage.googleapis.com as a pre-flight check ("ensuring required API X is enabled") before every deploy, and this 403 blocks BOTH firestore and storage deploys. This is a known limitation of the Firebase Admin role — it has deploy permissions but not service-usage-check permissions.
+
+Stage Summary:
+- USER'S SECRET WORKS — authentication via FIREBASE_SERVICE_ACCOUNT succeeded (confirmed in logs: "Authenticating with Service Account JSON..." + GOOGLE_APPLICATION_CREDENTIALS env set correctly).
+- BLOCKER: Service account lacks `serviceusage.services.get` permission → firebase CLI's pre-flight API check 403s → deploy aborts before even touching rules.
+- FIX OPTIONS (need user action, cannot be done from this sandbox):
+    Option A (grant IAM role, one-time ~2 min): Google Cloud Console → IAM & Admin → IAM → find the service account (email like firebase-adminsdk-xxxx@examvaultnew.iam.gserviceaccount.com) → edit pencil → "Add another role" → "Service Usage Viewer" (roles/serviceusage.serviceUsageViewer) → Save. After this, re-trigger the workflow and it will pass.
+    Option B (skip auto-deploy): User continues publishing rules manually via Firebase Console when they change. Rules are ALREADY published manually (firestore.rules confirmed earlier; user said "kore diyechi" for the whole setup). The app works NOW regardless of this workflow.
+- IMPORTANT for user: The app-open-banner feature is fully functional NOW:
+    - firestore.rules: published manually by user ✓ (Task app-open-banner-fix-1)
+    - splash_screen.dart import: fixed + build green ✓ (Task app-open-banner-fix-2, commit b3f9821)
+    - storage.rules: published manually by user ✓ (Task app-open-banner-fix-3)
+    - Flutter app v1.51.0+77 built + APK/AAB artifacts available ✓
+  The auto-deploy workflow is purely for FUTURE convenience — not blocking current functionality.
+- Files changed this task: .github/workflows/deploy-firebase-rules.yml (+86/-25 lines across commits 6333a9e + ab3f39a).
+- Did NOT delete or disable the workflow — it will succeed once Option A (IAM role) is done. Until then it fails fast but harmlessly (no rules are corrupted, no app impact).

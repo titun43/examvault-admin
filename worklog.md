@@ -2456,3 +2456,37 @@ Stage Summary:
 - WHY THE PREVIOUS RESET FAILED: The .pem the user previously submitted (upload-key-pem.zip) had SHA1 BA:56:A6:05... — which is the EXISTING registered upload key. Google rejects a "reset" request when the new key equals the existing key. That's why it showed "pending" for 3 days then reverted.
 - IMPORTANT FOR USER: The .pem I just generated (upload_key.pem in download folder) has SHA1 93:9F:8D:49... which is DIFFERENT from the currently-registered key (BA:56:A6:05...) — so Google will accept this reset request this time.
 - After Google approves the reset, NO code changes or new builds are needed. The existing AAB from run #156 (already built and verified) will upload successfully.
+
+---
+Task ID: aab-signature-mismatch-3
+Agent: main
+Task: User submitted the correct upload_key.pem to Play Console's "Request upload key reset". Also user confirmed Firebase Console fingerprint additions.
+
+Work Log:
+- User reported submitting the NEW upload_key.pem (SHA1 93:9F:8D:49:...) to Play Console → Setup → App integrity → Request upload key reset, with the reason "I have lost access to the original keystore file... I have created a new keystore for my CI/CD pipeline (GitHub Actions) and need to update the upload key to match, so that future releases can be uploaded successfully."
+- Earlier in this task the user shared Firebase Console → App → SDK setup and configuration screenshot showing 3 SHA-1 and 2 SHA-256 fingerprints already registered:
+    SHA-1 #1: eb:1a:b5:68:7b:30:f9:5e:e8:f6:e6:62:d6:11:63:19:70:8d:82:ec  (unknown - probably local debug keystore)
+    SHA-1 #2: ba:56:a6:05:a0:d8:a3:e1:81:75:c7:33:98:31:74:ef:c4:71:6a:6e  (OLD/original Play Console upload key)
+    SHA-256 #1: 59:4e:c2:7e:67:22:2b:d4:9d:1d:3f:46:ee:1b:4b:75:6f:64:9b:8d:14:5e:3d:1d:1f:3e:aa:5f:a1:88:9f:84  (OLD key's SHA-256, matches the previously-uploaded wrong .pem)
+    SHA-256 #2: 55:2f:b6:75:ee:c6:b6:e0:3b:b4:ab:e9:81:06:94:b3:2b:f7:88:dc:7c:b5:24:fa:60:ab:ac:4e:41:1b:a8:e9  (unknown - probably Google Play App Signing key)
+- INSTRUCTED USER: do NOT delete any existing Firebase fingerprints. Only ADD the new key's fingerprints:
+    SHA-1:   93:9F:8D:49:FB:0B:86:52:0F:76:57:A9:4E:D3:7B:35:2B:19:8E:A7
+    SHA-256: F3:53:75:71:8A:95:0E:71:88:80:26:7C:92:11:A1:FA:29:E6:E9:3A:A5:55:6F:B5:9F:F4:74:54:84:C1:9E:D8
+- User uploaded a freshly downloaded google-services.json (uploaded as "google-services (7).json" to /home/z/my-project/upload/) — verified it is byte-identical (md5 245bdae21e23b0b89a3de4758cebd62c) to the existing /home/z/examvault/android/app/google-services.json in the repo.
+  Reason: Firebase Console SHA fingerprints are stored SERVER-SIDE, not in the json file. The json only carries App ID, package name, API key, project info. So adding fingerprints in Firebase Console does NOT change the json file. No commit needed.
+- User then confirmed: ".PEM SUBMIT KORE DIYECHI" — submitted the new upload_key.pem to Play Console's upload key reset request.
+
+Stage Summary:
+- Upload key reset request submitted to Google with the CORRECT .pem (SHA1 93:9F:8D:49:...). This time Google will accept it because the new key is DIFFERENT from the currently-registered key (BA:56:A6:05:...). The previous failed attempt had submitted a .pem with the same key as already registered (BA:56:A6:05), which is why it sat "pending" for 3 days then expired/reverted.
+- Firebase Console now has both old and new signing key fingerprints registered (user added the new ones). Firebase auth (OTP login, Google Sign-In) will work for BOTH the current Play Store builds AND the new GitHub Actions builds.
+- google-services.json in repo is unchanged and still correct. No code changes needed.
+- EXPECTED TIMELINE: Google typically approves upload key reset requests in 1-3 business days. User should monitor Play Console → Setup → App integrity for the status change from "Pending" to "Approved".
+- AFTER APPROVAL: User can re-upload the existing AAB (build run #156, artifact examvault-aab-1.51.0+77, id 8169058478) to Play Console → Closed Testing. No new build needed — the AAB is already correctly signed with the 93:9F:8D:49 key. Play Console will accept it.
+- IF GOOGLE REJECTS: would be unusual since this is a legitimate lost-keystore scenario, but if so, fallback options are:
+    (a) Appeal via Play Console support with detailed explanation
+    (b) Continue distributing via direct APK sideload (Play Store users unaffected, just can't update via Play Store until resolved)
+- Artifacts (no change from previous task):
+    APK: examvault-apk-1.51.0+77 (34.62 MB) — artifact id 8169057459
+    AAB: examvault-aab-1.51.0+77 (34.68 MB) — artifact id 8169058478
+    Download: https://github.com/titun43/examvault/actions/runs/28943938856
+- No code changes this task. No file changes this task (google-services.json was verified identical).

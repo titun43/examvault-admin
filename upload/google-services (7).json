@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1047596633370",
+    "project_id": "examvaultnew",
+    "storage_bucket": "examvaultnew.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1047596633370:android:30d6b88cfed4b0bce8b0a3",
+        "android_client_info": {
+          "package_name": "com.examvault.education"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBKEUGs9r7Q71q7vCIh3Pz_mletXQCok6E"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

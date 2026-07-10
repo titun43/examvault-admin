@@ -1,2 +1,86 @@
-skills/
+# =============================================================================
+# ExamVault Admin Panel - .gitignore
+# =============================================================================
+
+# Dependencies
 node_modules/
+.pnp
+.pnp.js
+.yarn/install-state.gz
+
+# Testing
+coverage/
+
+# Next.js build output
+.next/
+out/
+build/
+dist/
+
+# Local databases (NEVER commit)
+db/
+*.db
+*.db-journal
+
+# Logs
+dev.log
+server.log
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+bun-debug.log*
+
+# Environment files (NEVER commit secrets)
+.env
+.env.local
+.env.production
+.env.*.local
+
+# Misc
+.DS_Store
+*.pem
+Thumbs.db
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Build artifacts (APK/AAB hosted for download — NOT part of admin web)
+public/*.apk
+public/*.aab
+public/examvault-flutter.zip
+
+# Screenshots / temp files
+screenshot*.png
+cookies.txt
+keep-alive.sh
+start.sh
+start-dev.sh
+
+# Sandbox infra (NOT part of admin web)
+tool-results/
+upload/
+agent-ctx/
+download/
+.zscripts/
+Caddyfile
+mini-services/
+examples/
+skills/
+CHECKPOINT.md
+
+# Old Flutter source (kept locally for reference, NOT part of admin web)
+nextexam-flutter/
+
+# Vercel
+.vercel
+
+# TypeScript
+*.tsbuildinfo
+next-env.d.ts
+
+# Prisma: schema + migrations ARE committed. Only local SQLite db ignored.
+prisma/migrations/dev/

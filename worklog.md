@@ -2490,3 +2490,44 @@ Stage Summary:
     AAB: examvault-aab-1.51.0+77 (34.68 MB) — artifact id 8169058478
     Download: https://github.com/titun43/examvault/actions/runs/28943938856
 - No code changes this task. No file changes this task (google-services.json was verified identical).
+
+---
+Task ID: aab-signature-mismatch-4
+Agent: main
+Task: User reported that Play Console upload key reset has been APPROVED. Provide the new AAB for direct upload to Play Console.
+
+Work Log:
+- User confirmed: "rest o approve hoye geche" — Google approved the upload key reset request submitted on Jul 8 (took ~2 business days, within the 1-3 day SLA).
+- This means Play Console now accepts the new upload key (SHA1 93:9F:8D:49:...) as the registered upload key. The previous registered key (BA:56:A6:05:...) is no longer expected.
+- Queried GitHub Actions API for run #156 (id 28943938856) artifacts:
+    examvault-aab-1.51.0+77 (34.68 MB) - id 8169058478 - not expired
+    examvault-apk-1.51.0+77 (34.62 MB) - id 8169057459 - not expired
+- Downloaded the AAB artifact zip from GitHub API (https://api.github.com/repos/titun43/examvault/actions/artifacts/8169058478/zip), extracted to /tmp/aab_extract/app-release.aab (36724867 bytes).
+- Verified AAB signature with keytool -printcert -jarfile:
+    Signer #1: Owner: CN=ExamVault, O=ExamVault, C=IN
+    SHA1: 93:9F:8D:49:FB:0B:86:52:0F:76:57:A9:4E:D3:7B:35:2B:19:8E:A7
+  ✅ matches the newly-approved Play Console upload key.
+- Copied AAB to /home/z/my-project/download/examvault-1.51.0+77.aab and /home/z/my-project/public/examvault-1.51.0+77.aab so user can download via the dev server.
+- Started dev server on port 3000 (PID 1579). Verified AAB is reachable via HTTP 200 at /examvault-1.51.0+77.aab (36724867 bytes).
+- Provided user with download URL via the Preview Panel.
+
+Stage Summary:
+- UPLOAD KEY RESET APPROVED. Play Console now expects AABs signed with the new key (SHA1 93:9F:8D:49:...). The previously-built AAB from run #156 (commit e3a6284) is now directly uploadable to Play Console.
+- AAB file: app-release.aab (36.72 MB), version 1.51.0+77, signed with SHA1 93:9F:8D:49:...
+- Download via Preview Panel: open http://localhost:3000/examvault-1.51.0+77.aab
+- Also available at /home/z/my-project/download/examvault-1.51.0+77.aab
+- USER ACTION REQUIRED:
+    1. Download the AAB file (examvault-1.51.0+77.aab).
+    2. Play Console → Production (or Closed Testing) → Create new release.
+    3. Upload the AAB → Play Console will accept it (no more "wrong key" error).
+    4. Add release notes, review, rollout.
+- No code changes needed. No new build needed. The existing AAB is ready to ship.
+- Features included in this AAB (v1.51.0+77):
+    * App-open banner (full-screen promotional banner on splash → home)
+    * Admin bulk-add file upload + textarea scrolling fix
+    * Payment signature-mismatch webhook recovery
+    * Payment self-sufficient verify (grant on Razorpay API confirmation)
+    * Hardcoded Firebase API key fallback in payment-auth
+    * Dark theme forced
+    * Bulk uploader template downloads
+- After this AAB is in Production, future updates: just push code to main branch → GitHub Actions builds → download AAB → upload to Play Console. Same key now works forever.

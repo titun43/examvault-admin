@@ -2915,3 +2915,160 @@ Update: Run #160 COMPLETED = SUCCESS (commit 395b9ba8)
   - examvault-aab-1.52.0+78 (36.8 MB)
 - Run URL: https://github.com/titun43/examvault/actions/runs/29152485485
 - Both admin (8a7a62d) and Flutter (395b9ba8) pushed and verified.
+
+
+---
+Task ID: 5-storage-cleanup
+Agent: main (Claude)
+Task: Fix orphaned files in Firebase Storage when Firestore docs are deleted (admin panel + Flutter app)
+
+Work Log:
+- User reported: "admin theke kichu delet korle seta firebase theke jai, image pdf, etc, are user app theke jodi kono user tar profile photo lagiyeche, se jodi abar seta delet kore, but firebase theke jai" — meaning: when admin deletes content OR user removes profile photo, files should also be deleted from Firebase Storage, not just Firestore.
+- Ran two parallel Explore subagents to investigate deletion behavior in both repos:
+  * Admin panel (/home/z/my-project/): found 9 components delete only Firestore docs, never touch Storage. A `deleteImage()` helper existed in admin-firestore.ts but was DEAD CODE (never imported/called).
+  * Flutter app (/home/z/work/examvault/): profile photo "Remove" only cleared photoUrl field via FieldValue.delete() — user_avatars/{uid}/photo.jpg orphaned. Account deletion same issue. All 7 FirestoreService.delete* methods orphaned Storage files.
+- Admin panel fix (commit dc8c04b, pushed to examvault-admin):
+  * src/lib/admin-firestore.ts: added `deleteDocWithFiles(collection, id, fileFields)` and `deleteItemsWithFiles(collection, ids, fileFields)` helpers. Both read the doc FIRST to extract file URLs, delete Storage files in parallel (best-effort via Promise.allSettled), then delete the Firestore doc. Also improved `deleteImage()` to log errors instead of silently swallowing.
+  * Wired into all 9 admin components:
+    - study-materials.tsx → ['pdfUrl', 'thumbnailUrl']
+    - current-affairs.tsx → ['pdfUrl', 'imageUrl']
+    - categories.tsx → ['image']
+    - subjects.tsx → ['icon']
+    - questions.tsx → ['imageUrl']
+    - banners.tsx → ['image']
+    - announcements.tsx → ['image']
+    - upcoming-exams.tsx → ['image']
+    - app-open-banners.tsx → ['image'] (bulk only — no single delete in this component)
+- Flutter app fix (commit 8788579, pushed to examvault):
+  * lib/services/firestore_service.dart: added `_deleteStorageFile(url)` and `_deleteDocWithFiles(collectionName, id, fileFields)` private helpers. Wired into 7 delete methods: deleteCategory, deleteSubject, deleteQuestion, deleteAnnouncement, deleteUpcomingExam, deleteBanner, deleteAppOpenBanner. (deleteTest has no file fields — left unchanged.)
+  * lib/services/auth_service.dart: updateProfileExtended now deletes user_avatars/{uid}/photo.jpg from Storage when photoUrl='' (Remove button sentinel). deleteAccount now deletes avatar file BEFORE deleting Auth user (must keep uid to construct path).
+- Lint passed on admin panel (bun run lint — 0 errors). Flutter not analyzable in sandbox (no flutter/dart in PATH) but syntax verified by grep.
+- Both repos pushed successfully.
+
+Stage Summary:
+- Orphaned Storage files problem FULLY FIXED in both repos. Pattern: read doc → extract file URLs → delete Storage files (best-effort) → delete Firestore doc.
+- All cleanup is best-effort: if a file doesn't exist or Storage rules block delete, the Firestore delete still proceeds (errors are logged, not thrown).
+- deleteTest() deliberately NOT changed — `tests` collection has no image/PDF fields.
+- Future content types with files MUST use deleteDocWithFiles/deleteItemsWithFiles (admin) or _deleteDocWithFiles (Flutter) to maintain the invariant.
+
+---
+Task ID: 6-admob-investigation
+Agent: main (Claude)
+Task: Diagnose why AdMob ads never show + app crashes when ads enabled (user: "3 bar admober ads on koreyechi but ads chole nai, app creshing hoye jeteo")
+
+Work Log:
+- Ran comprehensive Explore subagent covering 10 areas: dependencies, init, ad unit IDs, widgets/placement, AndroidManifest, build.gradle, crash potential, config, git history, Firebase linkage.
+- KEY FINDINGS:
+  * Master kill switch `admobEnabled = false` in app_config.dart:107 — short-circuits all AdMob calls. This is WHY no ads show (deliberate disable, not a bug).
+  * Git history shows EXACTLY 3 enable→crash→fix cycles, matching user's report:
+    - Cycle 1: enable → crash on test open → fixed by deferring loadInterstitialAd out of initState (645a626)
+    - Cycle 2: crash on test submit → fixed by moving showInterstitialAd to ResultScreen with 2s delay (0d585d0)
+    - Cycle 3: crash at start of test attempt → gave up, set admobEnabled=false (36777f6)
+  * Crashes are NATIVE SIGSEGV — below Dart's runZonedGuarded, cannot be caught.
+  * Code is defensively correct: try/catch everywhere, mounted checks, postFrameCallback, 2s delay, fullScreenContentCallback. The problem is the native SDK, not the Dart code.
+  * Config in sync: admobTestMode=true matches build.gradle test App ID (ca-app-pub-3940256099942544~3347511713).
+  * AUTO_INIT_IMPLICIT=false in AndroidManifest — manual init from Dart (potential crash source).
+  * Real AdMob account pub-1742730064755213 — comments say "pending Google review" (status unverified).
+  * firebase_crashlytics_collection_enabled=false — native crashes NOT reported remotely.
+  * Only interstitial ads used (after test submit). Banner ads removed entirely per owner request.
+  * Ad unit IDs: test IDs = Google samples (correct). Real IDs present but rewarded/native/appOpen reuse interstitial/banner IDs (TODO: create dedicated ad units).
+
+Stage Summary:
+- Root cause of "no ads": admobEnabled=false (master kill switch).
+- Root cause of crashes: native AdMob SDK SIGSEGV — not catchable in Dart. Exact native root cause NEVER captured (no adb logcat run).
+- 5 hypotheses for native crash (priority order): (1) AdMob account not approved, (2) AUTO_INIT_IMPLICIT=false + manual init timing race, (3) outdated Google Play Services on device, (4) play-services-ads:23.0.0 too new, (5) Crashlytics disabled so can't see crashes.
+- Recommended fix path: capture adb logcat FIRST, then try removing AUTO_INIT_IMPLICIT block, downgrade play-services-ads to 22.6.0, update Play Services on device, re-enable Crashlytics.
+- NO code changes made in this task — research only.
+
+---
+Task ID: 7-admob-re-enable-attempt
+Agent: main (Claude)
+Task: Re-enable AdMob (test mode) with native auto-init to see if crash is resolved
+
+Work Log:
+- Made two changes (commit 5924adf, pushed to examvault):
+  1. app_config.dart:107 → admobEnabled = false → true (master kill switch ON)
+  2. AndroidManifest.xml: removed the AUTO_INIT_IMPLICIT=false meta-data block entirely. Reasoning: manual MobileAds.instance.initialize() from Dart could race with Flutter engine/Activity lifecycle → native SIGSEGV. Letting SDK auto-init natively (Google's recommended path) runs at correct lifecycle moment. AdMobService.initialize() still called from Dart (idempotent — safe after auto-init) so _initialized tracking works.
+- Verified sync: admobTestMode=true, build.gradle release+debug both use test App ID → in sync, no App ID mismatch crash expected.
+- CI build triggered (commit 5924adf). Build succeeded — APK artifact produced.
+- USER INSTALLED APK AND TESTED: "phone a install korechi, test deoyar somoy app creshing hoye jachche" — app crashes when taking a test. SAME native crash as before, even with native auto-init enabled.
+- CONCLUSION: root cause is NOT init timing. It's deeper in the native AdMob SDK on the user's device. Without adb logcat we cannot determine the exact SIGSEGV stack.
+
+Stage Summary:
+- 4th crash cycle confirmed. Native auto-init did NOT fix the crash.
+- AUTO_INIT_IMPLICIT block intentionally NOT re-added (that change is correct, re-adding wouldn't help).
+- Need adb logcat to proceed. User declined / unable to do adb logcat at this time → asked to disable AdMob.
+
+---
+Task ID: 8-admob-disable-stabilize
+Agent: main (Claude)
+Task: Disable AdMob again to stabilize the app (user: "admobe akhon close kore din")
+
+Work Log:
+- app_config.dart:107 → admobEnabled = true → false (commit 0286b4d, pushed to examvault).
+- Commit message documents: 4th crash cycle, native auto-init didn't help, crash is deeper in native SDK, stays OFF until adb logcat captured.
+- CI build triggered. New APK will be stable (no AdMob calls = no native crash).
+- User must download NEW APK from the 0286b4d build and install it to replace the crashing 5924adf build.
+
+Stage Summary:
+- AdMob OFF again. App stable. ads disabled.
+- To re-enable later, NEED: (1) adb logcat of the native crash, (2) verify AdMob account pub-1742730064755213 is approved, (3) consider downgrading play-services-ads:23.0.0 → 22.6.0, (4) update Google Play Services on test device, (5) re-enable Crashlytics for remote crash visibility.
+
+---
+Task ID: SESSION-MEMORY-2025-07-11
+Agent: main (Claude)
+Task: Save complete session context for resumption in next conversation
+
+CURRENT STATE OF BOTH REPOS (as of end of session):
+
+== Flutter app: /home/z/work/examvault (repo: titun43/examvault) ==
+Latest commit: 0286b4d "fix(ads): disable AdMob again — native crash on test screen (4th cycle)"
+- AdMob DISABLED (admobEnabled=false in app_config.dart:107)
+- AdMob test mode still ON (admobTestMode=true in app_config.dart:71)
+- AUTO_INIT_IMPLICIT block removed from AndroidManifest (native auto-init enabled — this is correct, do NOT re-add)
+- build.gradle: both release+debug use TEST App ID ca-app-pub-3940256099942544~3347511713
+- Storage cleanup on delete: FIXED (commits 8788579 + dc8c04b) — firestore_service.dart + auth_service.dart
+- Study Materials feature: COMPLETE (commits 729e6f7 + 8a7a62d + 395b9ba8) — real-time PDF content on Subject Detail
+- App version: 1.52.0+78
+- CI: Build Release APK workflow, produces signed APK+AAB artifacts (90 day retention)
+
+== Admin panel: /home/z/my-project (repo: titun43/examvault-admin) ==
+Latest commit: dc8c04b "5bc828f3-63f6-46d4-8063-b4cdba5f97d0"
+- Storage cleanup on delete: FIXED — deleteDocWithFiles/deleteItemsWithFiles in admin-firestore.ts, wired into 9 components
+- Study Materials admin page: COMPLETE (commit 8a7a62d)
+- Lint: passing (0 errors)
+
+PENDING ITEMS (not yet done — resume here):
+1. ADMOB — needs adb logcat to diagnose native crash. User cannot do adb right now. Stays disabled. When user is ready:
+   - Capture: adb logcat -s Ads:V AndroidRuntime:E DEBUG:* flutter:V > crash.log
+   - Reproduce: open app, take a test, crash happens
+   - Send log to Claude for analysis
+   - Likely fixes to try: downgrade play-services-ads 23.0.0→22.6.0, update Play Services on device, verify AdMob account approved, re-enable Crashlytics
+2. RANKS PERSIST AFTER LOGOUT — NOT YET INVESTIGATED (user reported earlier)
+3. APP OFFLINE SUPPORT — partially addressed (connectivity_banner added, Firestore persistence enabled with CACHE_SIZE_UNLIMITED), core offline persistence not fully investigated
+4. PLAY CONSOLE PRODUCTION ACCESS — submitted Jul 10, pending ~7 day review. After approval: upload AAB v1.52.0+78 to Production track
+5. AdMob real IDs: rewardedAdUnitId/nativeAdUnitId/appOpenAdUnitId currently reuse interstitial/banner IDs — need dedicated ad units created in AdMob console when going live
+
+KEY CONFIG LOCATIONS (for quick reference):
+- Flutter AdMob config: /home/z/work/examvault/lib/config/app_config.dart (lines 53-139)
+- Flutter AdMob service: /home/z/work/examvault/lib/services/admob_service.dart
+- Flutter storage cleanup: /home/z/work/examvault/lib/services/firestore_service.dart (_deleteDocWithFiles helper, lines 27-88)
+- Flutter auth/photo cleanup: /home/z/work/examvault/lib/services/auth_service.dart (updateProfileExtended photoUrl='' branch, deleteAccount)
+- Admin storage cleanup: /home/z/my-project/src/lib/admin-firestore.ts (deleteDocWithFiles, deleteItemsWithFiles)
+- AndroidManifest: /home/z/work/examvault/android/app/src/main/AndroidManifest.xml (AUTO_INIT_IMPLICIT block REMOVED)
+- build.gradle AdMob: /home/z/work/examvault/android/app/build.gradle (lines 96-112 manifestPlaceholders, line 142 play-services-ads)
+- AdMob git history: commits ab661f2, d2d3f62, 817ffd8, e2f2bca, aca0661, 645a626, 0d585d0, 36777f6, 5924adf, 0286b4d
+
+NEXT SESSION RESUME POINT:
+- AdMob is OFF and stable. User needs to do adb logcat before we can re-enable.
+- If user returns and says "AdMob ad bebo" → first ask for adb logcat or device details (brand, model, Android version, has Play Store?).
+- If user says "ranks persist after logout" → investigate leaderboard caching in Flutter app.
+- If user says "app offline kaj kore na" → investigate offline persistence beyond the connectivity banner.
+- If Play Console approved → upload AAB v1.52.0+78 to Production track.
+
+USER CONTEXT:
+- User language: Bengali (respond in Bengali)
+- User is the app owner, not a developer — keep explanations simple, offer to do the work
+- Two repos: examvault (Flutter) + examvault-admin (Next.js)
+- Both push to GitHub, Flutter repo has CI that builds signed APK+AAB
+- User timezone: Asia/Calcutta

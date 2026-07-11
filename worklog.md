@@ -2696,3 +2696,92 @@ Stage Summary:
   DELETED:  android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
   DELETED:  android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
 - Awaiting user instruction to push (or to bundle with more fixes before pushing).
+
+---
+Task ID: offline-ranks-fix-1
+Agent: main
+Task: Fix two issues: (1) Ranks tab goes blank/empty after logout, (2) App doesn't work offline.
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand prior context and working protocol.
+- Investigated the Ranks tab flow:
+  - Bottom nav "Ranks" tab → LeaderboardScreen (lib/screens/leaderboard/leaderboard_screen.dart)
+  - LeaderboardScreen uses FirestoreService.getLeaderboardStream() — public read (firestore.rules: allow read: if true)
+  - Used a raw StreamBuilder with pattern: `if (snapshot.connectionState == ConnectionState.waiting) return CircularProgressIndicator();`
+  - PROBLEM: When the user logs out, the app does Navigator.pushAndRemoveUntil to a NEW MainNavigation, which re-creates LeaderboardScreen and its stream. While the stream is in "waiting" state (re-subscribing, re-validating against server), the user sees an INFINITE spinner — making it look like the Ranks tab "went away".
+- Investigated the offline issue:
+  - Firestore persistence is ON by default on mobile, BUT cache size is limited (40 MB default) — content gets evicted quickly
+  - firestore rules allow public read on leaderboard, categories, subjects, tests, etc. — so offline cache SHOULD work
+  - connectivity_plus package is in pubspec.yaml (^5.0.2) but NEVER used anywhere in code
+  - No offline indicator/banner anywhere in the app
+  - All StreamBuilders use the pattern: `if (waiting) spinner/shimmer; if (error) error; if (!hasData) empty` — this means cached data is NOT shown during the "waiting" state, causing shimmer/spinner flashes on every stream re-validation
+  - getLeaderboardStream uses .handleError((e) => print(...)) which SILENTLY swallows errors — the UI never sees snapshot.hasError, so it stays in "waiting" forever when offline + no cache
+
+- ROOT CAUSE (both issues): Poor offline/error handling in StreamBuilders + no explicit Firestore cache configuration + no offline indicator. The same root cause manifests as "Ranks goes away after logout" (infinite spinner during stream re-subscription) and "app doesn't work offline" (infinite spinners when no cached data).
+
+- FIX APPLIED (6 files):
+
+  1. lib/services/firebase_service.dart — Explicit Firestore offline persistence
+     - Added `FirebaseFirestore.instance.settings = Settings(persistenceEnabled: true, cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED)` right after Firebase.initializeApp()
+     - This ensures ALL previously-fetched content (categories, tests, leaderboard, current affairs, etc.) stays in the offline cache indefinitely, instead of being evicted at the 40 MB default limit
+     - Wrapped in try/catch (non-fatal if it fails)
+     - Added detailed comment explaining the fix for both issues
+
+  2. lib/widgets/offline_aware_stream_builder.dart — NEW reusable widget
+     - A StatefulWidget that wraps a Stream and handles ALL states gracefully:
+       a) Shows cached data IMMEDIATELY if available (even while stream is "waiting" to re-validate) — this is the KEY fix for the post-logout spinner
+       b) Shows a friendly "You appear to be offline" message with Retry button when no cached data + stream can't reach server (instead of infinite spinner)
+       c) Shows a stale-data badge when displaying cached data that might be outdated
+       d) Provides loadingBuilder, emptyBuilder, offlineBuilder, errorBuilder, dataBuilder callbacks for full customization
+     - Manages its own StreamSubscription so it can keep cached data across re-subscriptions
+     - Retry mechanism re-subscribes to the stream
+
+  3. lib/widgets/connectivity_banner.dart — NEW global offline indicator
+     - Uses connectivity_plus (was installed but NEVER used before)
+     - Shows a slim deep-orange banner at the top of the screen when the device has no internet
+     - Auto-hides when connectivity is restored
+     - Handles connectivity_plus 5.x API (List<ConnectivityResult>)
+     - Dismissible via close button (X) — useful when user knows they're offline
+     - Non-blocking — user can still interact with content below
+
+  4. lib/screens/home/main_navigation.dart — Added ConnectivityBanner
+     - Wrapped the IndexedStack in a Column with ConnectivityBanner at the top
+     - Banner appears on ALL 4 tabs (Home, Tests, Ranks, Profile) since MainNavigation wraps them all
+     - Added import for connectivity_banner.dart
+     - Added header comment explaining the fix
+
+  5. lib/screens/leaderboard/leaderboard_screen.dart — Fixed Ranks tab
+     - Replaced raw StreamBuilder with OfflineAwareStreamBuilder
+     - Now shows cached leaderboard data IMMEDIATELY after logout (instead of infinite spinner)
+     - Shows a stale-data amber banner ("Showing cached rankings — reconnect to refresh") when displaying cached data
+     - Shows a friendly offline message with Retry button when no cached data + offline
+     - Added import for offline_aware_stream_builder.dart
+     - Added _buildStaleBanner() helper widget
+     - Added detailed header comment explaining the fix
+
+  6. lib/screens/home/home_screen.dart — Fixed 3 StreamBuilders
+     - Subjects, Upcoming Exams, Current Affairs sections: reordered checks to show cached data FIRST
+     - Old pattern: `if (waiting) shimmer; if (error) error; if (!hasData) empty; else content`
+     - New pattern: `if (hasData && notEmpty) content; if (waiting) shimmer; if (error) error; else empty`
+     - This means cached data shows instantly from Firestore offline cache instead of flashing shimmer on every stream re-validation
+     - Updated error messages to include "Check your connection." hint
+     - Banner carousel and Announcements ticker already checked hasData first (no change needed)
+     - Added BUGFIX comments to all 3 changed sections
+
+- Did NOT run `dart analyze` (Flutter SDK not installed in this Next.js sandbox). Verified syntax by:
+  - Balanced braces/parens/brackets check (all files passed)
+  - Manual code review of all changes
+  - connectivity_plus 5.0.2 API verification (List<ConnectivityResult> handled correctly)
+- Did NOT push to git (per working protocol — user must explicitly say "push").
+
+Stage Summary:
+- Root cause of BOTH issues: StreamBuilders showed infinite spinners during stream "waiting" state (which happens on logout navigation AND when offline), and Firestore cache was too small (40 MB default → content evicted → no offline data).
+- Fix: (a) unlimited Firestore offline cache, (b) new OfflineAwareStreamBuilder widget that shows cached data immediately, (c) new ConnectivityBanner widget using the previously-unused connectivity_plus package, (d) LeaderboardScreen now uses the offline-aware builder, (e) home screen StreamBuilders reordered to show cached data first.
+- Files modified/created (NOT pushed):
+  MODIFIED: lib/services/firebase_service.dart (Firestore cache config)
+  MODIFIED: lib/screens/leaderboard/leaderboard_screen.dart (offline-aware builder)
+  MODIFIED: lib/screens/home/main_navigation.dart (connectivity banner)
+  MODIFIED: lib/screens/home/home_screen.dart (3 StreamBuilders fixed)
+  CREATED:  lib/widgets/offline_aware_stream_builder.dart (reusable widget)
+  CREATED:  lib/widgets/connectivity_banner.dart (offline indicator)
+- Awaiting user instruction to push, or to apply more fixes before pushing.

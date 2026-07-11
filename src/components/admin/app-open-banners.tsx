@@ -40,6 +40,8 @@ import {
   toDateTimeInputValue,
   formatDateTime,
   deleteItems,
+  deleteDocWithFiles,
+  deleteItemsWithFiles,
 } from '@/lib/admin-firestore';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -507,7 +509,7 @@ export default function AppOpenBanners() {
     if (deleteIds.length === 0) return;
     setSaving(true);
     try {
-      await deleteItems('app_open_banners', deleteIds);
+      await deleteItemsWithFiles('app_open_banners', deleteIds, ['image']);
       toast.success(`Deleted ${deleteIds.length} banner(s)`);
       setDeleteIds([]);
       setDeleteOpen(false);

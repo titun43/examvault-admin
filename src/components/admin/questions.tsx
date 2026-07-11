@@ -16,7 +16,7 @@ import {
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAppStore } from '@/lib/store';
-import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+import { uploadImage, deleteItems, deleteDocWithFiles, deleteItemsWithFiles } from '@/lib/admin-firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -339,7 +339,7 @@ export default function Questions() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'questions', deleteId));
+      await deleteDocWithFiles('questions', deleteId, ['imageUrl']);
       // Decrement questionCount
       if (selectedTestId) {
         const testRef = doc(db, 'tests', selectedTestId);
@@ -383,7 +383,7 @@ export default function Questions() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItems('questions', ids);
+      await deleteItemsWithFiles('questions', ids, ['imageUrl']);
       // Decrement questionCount on the test
       if (selectedTestId) {
         const testRef = doc(db, 'tests', selectedTestId);

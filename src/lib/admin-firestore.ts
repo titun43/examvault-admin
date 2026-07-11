@@ -12,6 +12,7 @@ import {
   deleteDoc,
   writeBatch,
   getDocs,
+  getDoc,
   query,
   orderBy,
   serverTimestamp,
@@ -38,12 +39,103 @@ export async function uploadImage(
 }
 
 export async function deleteImage(url: string): Promise<void> {
+  if (!url || typeof url !== 'string' || !url.startsWith('http')) return;
   try {
     const imageRef = ref(storage, url);
     await deleteObject(imageRef);
-  } catch {
-    // Ignore errors (image may not exist or URL may be external)
+  } catch (err: any) {
+    // Log but don't throw — the file may not exist, the URL may be external,
+    // or Storage rules may have changed. The Firestore delete should still
+    // proceed regardless.
+    console.warn('deleteImage: could not delete Storage file (non-fatal):', url, err?.code || err?.message || err);
   }
+}
+
+// ==================== DELETE DOC + ASSOCIATED STORAGE FILES ====================
+// Reads the Firestore doc FIRST (to extract file URLs from the specified
+// fields), deletes those files from Firebase Storage (best-effort), then
+// deletes the Firestore document. This prevents orphaned files in Storage
+// when admin deletes content that has an associated image/PDF.
+//
+// `fileFields` = the field names on the doc that may contain a Storage
+// download URL (e.g. ['pdfUrl', 'thumbnailUrl'] for study_materials).
+// Fields that are missing, empty, or non-URL are silently skipped.
+export async function deleteDocWithFiles(
+  collectionName: string,
+  id: string,
+  fileFields: string[],
+): Promise<void> {
+  const docRef = doc(db, collectionName, id);
+
+  // 1. Read the doc to extract file URLs before it's gone.
+  const fileUrls: string[] = [];
+  try {
+    const snapshot = await getDoc(docRef);
+    if (snapshot.exists()) {
+      const data = snapshot.data();
+      for (const field of fileFields) {
+        const url = data[field];
+        if (typeof url === 'string' && url.startsWith('http')) {
+          fileUrls.push(url);
+        }
+      }
+    }
+  } catch (err: any) {
+    console.warn(
+      `deleteDocWithFiles: could not read ${collectionName}/${id} for file cleanup (non-fatal):`,
+      err?.code || err?.message || err,
+    );
+    // Continue to delete the doc anyway — file cleanup is best-effort.
+  }
+
+  // 2. Delete Storage files in parallel (best-effort).
+  if (fileUrls.length > 0) {
+    await Promise.allSettled(fileUrls.map((url) => deleteImage(url)));
+  }
+
+  // 3. Delete the Firestore document.
+  await deleteDoc(docRef);
+}
+
+// Bulk version of deleteDocWithFiles. Reads all docs first to collect file
+// URLs, deletes all Storage files in parallel (best-effort), then deletes
+// the Firestore documents in chunked batches.
+export async function deleteItemsWithFiles(
+  collectionName: string,
+  ids: string[],
+  fileFields: string[],
+): Promise<void> {
+  if (!ids.length) return;
+
+  // 1. Read all docs to collect file URLs.
+  const allFileUrls: string[] = [];
+  for (const id of ids) {
+    try {
+      const snapshot = await getDoc(doc(db, collectionName, id));
+      if (snapshot.exists()) {
+        const data = snapshot.data();
+        for (const field of fileFields) {
+          const url = data[field];
+          if (typeof url === 'string' && url.startsWith('http')) {
+            allFileUrls.push(url);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(
+        `deleteItemsWithFiles: could not read ${collectionName}/${id} (non-fatal):`,
+        err?.code || err?.message || err,
+      );
+    }
+  }
+
+  // 2. Delete all Storage files in parallel (best-effort).
+  if (allFileUrls.length > 0) {
+    await Promise.allSettled(allFileUrls.map((url) => deleteImage(url)));
+  }
+
+  // 3. Delete all Firestore docs (chunked batch).
+  await deleteItems(collectionName, ids);
 }
 
 // ==================== COLLECTION HELPERS ====================

@@ -15,7 +15,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+import { uploadImage, deleteItems, deleteDocWithFiles, deleteItemsWithFiles } from '@/lib/admin-firestore';
 import { adminAuthHeaders } from '@/lib/admin-token';
 import { useAppStore } from '@/lib/store';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -440,7 +440,7 @@ export default function Categories() {
         console.warn('[categories] test isPremium clear on delete failed:', propagateErr);
       }
 
-      await deleteDoc(doc(db, 'categories', deleteId));
+      await deleteDocWithFiles('categories', deleteId, ['image']);
       toast.success('Category deleted');
 
       // Best-effort: deactivate the linked EXAM_PACK Product so users can't
@@ -530,7 +530,7 @@ export default function Categories() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItems('categories', ids);
+      await deleteItemsWithFiles('categories', ids, ['image']);
       toast.success(`${ids.length} categor${ids.length === 1 ? 'y' : 'ies'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();

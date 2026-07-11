@@ -1,0 +1,719 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useRef } from 'react';
+     4→import {
+     5→  collection,
+     6→  onSnapshot,
+     7→  addDoc,
+     8→  updateDoc,
+     9→  deleteDoc,
+    10→  doc,
+    11→  serverTimestamp,
+    12→  writeBatch,
+    13→  getDocs,
+    14→  query,
+    15→  where,
+    16→} from 'firebase/firestore';
+    17→import { db } from '@/lib/firebase';
+    18→import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+    19→import { Checkbox } from '@/components/ui/checkbox';
+    20→import { Button } from '@/components/ui/button';
+    21→import { Input } from '@/components/ui/input';
+    22→import { Label } from '@/components/ui/label';
+    23→import { Textarea } from '@/components/ui/textarea';
+    24→import { BulkTextarea } from './bulk-textarea';
+    25→import { resolveCategoryIdByName } from '@/lib/bulk-resolve';
+    26→import { Card, CardContent } from '@/components/ui/card';
+    27→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+    28→import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+    29→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    30→import { Badge } from '@/components/ui/badge';
+    31→import { Plus, Pencil, Trash2, Loader2, BookOpen, Layers, X, Download, FileSpreadsheet } from 'lucide-react';
+    32→import { toast } from 'sonner';
+    33→import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
+    34→
+    35→interface Subject {
+    36→  id: string;
+    37→  categoryId: string;
+    38→  name: string;
+    39→  slug: string;
+    40→  icon?: string;
+    41→  description?: string;
+    42→  order?: number;
+    43→  testCount?: number;
+    44→  materialCount?: number;
+    45→  premiumPrice?: number;
+    46→}
+    47→
+    48→interface Category {
+    49→  id: string;
+    50→  name: string;
+    51→  icon?: string;
+    52→}
+    53→
+    54→const emptyForm = { name: '', categoryId: '', slug: '', icon: '', description: '', order: 0, premiumPrice: 0 };
+    55→
+    56→export default function Subjects() {
+    57→  const [items, setItems] = useState<Subject[]>([]);
+    58→  const [categories, setCategories] = useState<Category[]>([]);
+    59→  const [loading, setLoading] = useState(true);
+    60→  const [dialogOpen, setDialogOpen] = useState(false);
+    61→  const [editingId, setEditingId] = useState<string | null>(null);
+    62→  const [form, setForm] = useState(emptyForm);
+    63→  const [saving, setSaving] = useState(false);
+    64→  const [deleteId, setDeleteId] = useState<string | null>(null);
+    65→  const [bulkOpen, setBulkOpen] = useState(false);
+    66→  const [bulkText, setBulkText] = useState('');
+    67→  const [bulkSaving, setBulkSaving] = useState(false);
+    68→  // Bulk delete state
+    69→  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    70→  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+    71→  const [bulkDeleting, setBulkDeleting] = useState(false);
+    72→  // Live test count per subject. Computed from the tests collection so the
+    73→  // number is always accurate, and stale `testCount` values are written back
+    74→  // to subject docs to keep Firestore consistent.
+    75→  const [testCountMap, setTestCountMap] = useState<Record<string, number>>({});
+    76→  // Live study-material count per subject (Previous Papers / Notes / Syllabus
+    77→  // in the `study_materials` collection). Same pattern as testCountMap: kept
+    78→  // in state for instant display and written back to subject docs' stored
+    79→  // `materialCount` field so the Flutter user app sees the correct number.
+    80→  const [materialCountMap, setMaterialCountMap] = useState<Record<string, number>>({});
+    81→  const itemsRef = useRef<Subject[]>([]);
+    82→  useEffect(() => { itemsRef.current = items; }, [items]);
+    83→
+    84→  const BULK_SAMPLE = '[{"name":"Quantitative Aptitude","description":"Math for competitive exams","icon":"🔢","categoryName":"SSC","order":1,"isActive":true},{"name":"Reasoning","description":"Logical reasoning","icon":"🧩","categoryName":"SSC","order":2,"isActive":true}]';
+    85→
+    86→  const CSV_HEADERS = ['name', 'categoryName', 'icon', 'order', 'slug', 'description', 'isActive'];
+    87→  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+    88→    ['Quantitative Aptitude', 'SSC', '🔢', 1, 'quantitative-aptitude', 'Math for competitive exams', true],
+    89→    ['Reasoning', 'SSC', '🧩', 2, 'reasoning', 'Logical reasoning', true],
+    90→  ];
+    91→
+    92→  const handleBulkImport = async () => {
+    93→    let parsed: any;
+    94→    const text = bulkText.trim();
+    95→    if (!text) {
+    96→      toast.error('Please paste JSON or CSV data first');
+    97→      return;
+    98→    }
+    99→    let isCsv = false;
+   100→    try {
+   101→      parsed = JSON.parse(text);
+   102→    } catch {
+   103→      try {
+   104→        const rows = parseCsv(text);
+   105→        if (rows.length < 2) {
+   106→          toast.error('CSV must have a header row and at least 1 data row');
+   107→          return;
+   108→        }
+   109→        const headers = rows[0].map((h) => h.trim());
+   110→        parsed = rows
+   111→          .slice(1)
+   112→          .filter((r) => r.some((c) => c.trim() !== ''))
+   113→          .map((r) => {
+   114→            const obj: any = {};
+   115→            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+   116→            if ('order' in obj) obj.order = Number(obj.order) || 0;
+   117→            if ('isActive' in obj) obj.isActive = String(obj.isActive).toLowerCase() === 'true';
+   118→            return obj;
+   119→          });
+   120→        isCsv = true;
+   121→      } catch (e: any) {
+   122→        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+   123→        return;
+   124→      }
+   125→    }
+   126→    if (!Array.isArray(parsed)) {
+   127→      toast.error('Input must be a JSON array or a CSV with a header row');
+   128→      return;
+   129→    }
+   130→    setBulkSaving(true);
+   131→    try {
+   132→      // ---- Name-based parent resolution ----
+   133→      // Each row can use EITHER `categoryId` (explicit Firestore doc id —
+   134→      // backward compatible) OR `categoryName` (resolved to id via
+   135→      // Firestore lookup, case-insensitive). If both are present,
+   136→      // categoryId wins. If neither is present, the row is skipped with
+   137→      // a clear error.
+   138→      //
+   139→      // We validate EVERY row first (no partial writes). If any parent
+   140→      // name can't be resolved, we abort the whole import with a precise
+   141→      // error listing which rows failed and which names were unknown.
+   142→      // -----------------------------------------------------------------
+   143→      const skipList: { row: number; reason: string }[] = [];
+   144→      const resolved: any[] = [];
+   145→      // Cache so we only hit Firestore once for duplicate names.
+   146→      const catIdCache = new Map<string, string | null>();
+   147→
+   148→      for (let i = 0; i < parsed.length; i++) {
+   149→        const item = parsed[i];
+   150→        const rowNo = i + 1;
+   151→        let categoryId = (item.categoryId ?? '').toString().trim();
+   152→        const catName = (item.categoryName ?? '').toString().trim();
+   153→
+   154→        if (!categoryId && catName) {
+   155→          if (catIdCache.has(catName.toLowerCase())) {
+   156→            categoryId = catIdCache.get(catName.toLowerCase()) ?? '';
+   157→          } else {
+   158→            const r = await resolveCategoryIdByName(catName);
+   159→            catIdCache.set(catName.toLowerCase(), r.id);
+   160→            categoryId = r.id ?? '';
+   161→          }
+   162→          if (!categoryId) {
+   163→            skipList.push({ row: rowNo, reason: `category "${catName}" not found` });
+   164→            continue;
+   165→          }
+   166→        }
+   167→        if (!categoryId) {
+   168→          skipList.push({ row: rowNo, reason: 'no categoryId or categoryName provided' });
+   169→          continue;
+   170→        }
+   171→
+   172→        const payload = { ...item };
+   173→        // Always store the resolved id; drop the helper name field so it
+   174→        // doesn't end up as junk in Firestore.
+   175→        payload.categoryId = categoryId;
+   176→        delete payload.categoryName;
+   177→        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+   178→        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+   179→        resolved.push(payload);
+   180→      }
+   181→
+   182→      if (resolved.length === 0) {
+   183→        const sample = skipList.slice(0, 3).map((s) => `Row ${s.row}: ${s.reason}`).join('; ');
+   184→        toast.error(`No rows to import. ${sample}${skipList.length > 3 ? ` (+${skipList.length - 3} more)` : ''}`);
+   185→        return;
+   186→      }
+   187→
+   188→      const batch = writeBatch(db);
+   189→      const colRef = collection(db, 'subjects');
+   190→      resolved.forEach((payload) => {
+   191→        const ref = doc(colRef);
+   192→        batch.set(ref, payload);
+   193→      });
+   194→      await batch.commit();
+   195→
+   196→      // ---- Sync subjectCount on every affected category doc ----
+   197→      // The Category model stores a denormalized `subjectCount` field that
+   198→      // the Flutter user app reads directly. The single-add / single-delete
+   199→      // paths update this field, but bulk-import didn't — so the count
+   200→      // stayed stale until someone opened the Categories admin page (whose
+   201→      // own onSnapshot writeback would eventually fix it). We now write the
+   202→      // ABSOLUTE count via a fresh getDocs query per affected category, so
+   203→      // the Flutter app sees the right number immediately.
+   204→      const affectedCategoryIds = Array.from(
+   205→        new Set(resolved.map((r) => r.categoryId).filter(Boolean)),
+   206→      );
+   207→      await Promise.all(
+   208→        affectedCategoryIds.map(async (categoryId) => {
+   209→          try {
+   210→            const snap = await getDocs(
+   211→              query(collection(db, 'subjects'), where('categoryId', '==', categoryId)),
+   212→            );
+   213→            await updateDoc(doc(db, 'categories', categoryId), {
+   214→              subjectCount: snap.size,
+   215→              updatedAt: serverTimestamp(),
+   216→            });
+   217→          } catch (e) {
+   218→            console.warn('[subjects bulk] count sync failed for', categoryId, e);
+   219→          }
+   220→        }),
+   221→      );
+   222→
+   223→      // Build a precise success report.
+   224→      const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';
+   225→      toast.success(
+   226→        `Imported ${resolved.length} subject${resolved.length === 1 ? '' : 's'}${skippedNote}` + (isCsv ? ' (from CSV)' : ''),
+   227→      );
+   228→      if (skipList.length > 0) {
+   229→        // Surface skip reasons in console for debugging.
+   230→        console.warn('[subjects bulk] skipped rows:', skipList);
+   231→      }
+   232→      setBulkOpen(false);
+   233→      setBulkText('');
+   234→    } catch (err: any) {
+   235→      toast.error(err?.message || 'Bulk import failed');
+   236→    } finally {
+   237→      setBulkSaving(false);
+   238→    }
+   239→  };
+   240→
+   241→  useEffect(() => {
+   242→    const u1 = onSnapshot(collection(db, 'subjects'), (snap) => {
+   243→      const list = snap.docs
+   244→        .map((d) => ({ id: d.id, ...d.data() }) as Subject)
+   245→        .sort((a, b) => (a.order || 0) - (b.order || 0));
+   246→      setItems(list);
+   247→      setLoading(false);
+   248→    }, () => setLoading(false));
+   249→
+   250→    const u2 = onSnapshot(collection(db, 'categories'), (snap) => {
+   251→      setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Category));
+   252→    });
+   253→
+   254→    // Live test counts → { subjectId: count }. Kept in state for instant
+   255→    // display, and stale `testCount` values are written back to subject docs.
+   256→    const u3 = onSnapshot(collection(db, 'tests'), (snap) => {
+   257→      const map: Record<string, number> = {};
+   258→      snap.docs.forEach((d) => {
+   259→        const subjId = (d.data() as any)?.subjectId;
+   260→        if (subjId) map[subjId] = (map[subjId] || 0) + 1;
+   261→      });
+   262→      setTestCountMap(map);
+   263→      const batch = writeBatch(db);
+   264→      let needsCommit = false;
+   265→      itemsRef.current.forEach((s) => {
+   266→        const correct = map[s.id] || 0;
+   267→        if ((s.testCount || 0) !== correct) {
+   268→          batch.update(doc(db, 'subjects', s.id), { testCount: correct, updatedAt: serverTimestamp() });
+   269→          needsCommit = true;
+   270→        }
+   271→      });
+   272→      if (needsCommit) batch.commit().catch(() => {});
+   273→    });
+   274→
+   275→    // Live study_materials counts → { subjectId: count }. Same pattern as
+   276→    // u3 (tests): build a count map for instant display and write stale
+   277→    // `materialCount` values back to subject docs so the Flutter app's
+   278→    // SubjectDetail screen can read the correct number directly.
+   279→    const u4 = onSnapshot(collection(db, 'study_materials'), (snap) => {
+   280→      const map: Record<string, number> = {};
+   281→      snap.docs.forEach((d) => {
+   282→        const subjId = (d.data() as any)?.subjectId;
+   283→        if (subjId) map[subjId] = (map[subjId] || 0) + 1;
+   284→      });
+   285→      setMaterialCountMap(map);
+   286→      const batch = writeBatch(db);
+   287→      let needsCommit = false;
+   288→      itemsRef.current.forEach((s) => {
+   289→        const correct = map[s.id] || 0;
+   290→        if ((s.materialCount || 0) !== correct) {
+   291→          batch.update(doc(db, 'subjects', s.id), { materialCount: correct, updatedAt: serverTimestamp() });
+   292→          needsCommit = true;
+   293→        }
+   294→      });
+   295→      if (needsCommit) batch.commit().catch(() => {});
+   296→    });
+   297→
+   298→    return () => { u1(); u2(); u3(); u4(); };
+   299→  }, []);
+   300→
+   301→  const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+   302→  const categoryName = (id: string) => categories.find((c) => c.id === id)?.name || '—';
+   303→
+   304→  const openAdd = () => { setForm(emptyForm); setEditingId(null); setDialogOpen(true); };
+   305→  const openEdit = (item: Subject) => {
+   306→    setForm({
+   307→      name: item.name, categoryId: item.categoryId, slug: item.slug,
+   308→      icon: item.icon || '', description: item.description || '', order: item.order || 0,
+   309→      premiumPrice: item.premiumPrice ?? 0,
+   310→    });
+   311→    setEditingId(item.id);
+   312→    setDialogOpen(true);
+   313→  };
+   314→
+   315→  const handleSave = async () => {
+   316→    if (!form.name.trim()) { toast.error('Name is required'); return; }
+   317→    if (!form.categoryId) { toast.error('Please select a category'); return; }
+   318→    setSaving(true);
+   319→    try {
+   320→      const data = {
+   321→        name: form.name.trim(),
+   322→        categoryId: form.categoryId,
+   323→        slug: form.slug ? slugify(form.slug) : slugify(form.name),
+   324→        icon: form.icon || null,
+   325→        description: form.description || null,
+   326→        order: Number(form.order) || 0,
+   327→        // Subject Pack price (INR). 0 = not purchasable individually.
+   328→        // When > 0, the Flutter test_list_screen shows an "Unlock this subject
+   329→        // for ₹X" banner. The admin should ALSO create a matching SUBJECT_PACK
+   330→        // Product in the Products section (refId = this subject's id) with the
+   331→        // same price — the backend uses the Product price as the server-side
+   332→        // authority.
+   333→        premiumPrice: Math.max(0, Number(form.premiumPrice) || 0),
+   334→      };
+   335→      if (editingId) {
+   336→        await updateDoc(doc(db, 'subjects', editingId), { ...data, updatedAt: serverTimestamp() });
+   337→        toast.success('Subject updated');
+   338→      } else {
+   339→        await addDoc(collection(db, 'subjects'), { ...data, testCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+   340→        toast.success('Subject added');
+   341→      }
+   342→      setDialogOpen(false);
+   343→    } catch (err: any) {
+   344→      toast.error(err?.message || 'Save failed');
+   345→    } finally {
+   346→      setSaving(false);
+   347→    }
+   348→  };
+   349→
+   350→  const handleDelete = async () => {
+   351→    if (!deleteId) return;
+   352→    try {
+   353→      await deleteDoc(doc(db, 'subjects', deleteId));
+   354→      toast.success('Subject deleted');
+   355→      setDeleteId(null);
+   356→    } catch (err: any) {
+   357→      toast.error(err?.message || 'Delete failed');
+   358→    }
+   359→  };
+   360→
+   361→  // ---- Bulk selection helpers ----
+   362→  const filteredIds = items.map((s) => s.id);
+   363→  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+   364→  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+   365→
+   366→  const toggleSelectAll = () => {
+   367→    setSelectedIds((prev) => {
+   368→      const next = new Set(prev);
+   369→      if (allFilteredSelected) {
+   370→        filteredIds.forEach((id) => next.delete(id));
+   371→      } else {
+   372→        filteredIds.forEach((id) => next.add(id));
+   373→      }
+   374→      return next;
+   375→    });
+   376→  };
+   377→
+   378→  const toggleSelectOne = (id: string) => {
+   379→    setSelectedIds((prev) => {
+   380→      const next = new Set(prev);
+   381→      if (next.has(id)) next.delete(id);
+   382→      else next.add(id);
+   383→      return next;
+   384→    });
+   385→  };
+   386→
+   387→  const clearSelection = () => setSelectedIds(new Set());
+   388→
+   389→  const handleBulkDelete = async () => {
+   390→    if (selectedIds.size === 0) return;
+   391→    setBulkDeleting(true);
+   392→    try {
+   393→      const ids = Array.from(selectedIds);
+   394→      await deleteItems('subjects', ids);
+   395→      toast.success(`${ids.length} subject${ids.length === 1 ? '' : 's'} deleted`);
+   396→      setBulkDeleteOpen(false);
+   397→      clearSelection();
+   398→    } catch (err: any) {
+   399→      toast.error(err?.message || 'Bulk delete failed');
+   400→    } finally {
+   401→      setBulkDeleting(false);
+   402→    }
+   403→  };
+   404→
+   405→  return (
+   406→    <div className="space-y-4">
+   407→      <div className="flex items-center justify-between gap-3">
+   408→        <div>
+   409→          <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+   410→            <BookOpen className="w-5 h-5 text-emerald-400" /> Subjects
+   411→          </h3>
+   412→          <p className="text-slate-500 text-sm">Subjects linked to categories (e.g. GK, Math, English)</p>
+   413→        </div>
+   414→        <div className="flex items-center gap-2">
+   415→          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   416→            <Plus className="w-4 h-4 mr-1" /> Add Subject
+   417→          </Button>
+   418→          <Button
+   419→            variant="outline"
+   420→            onClick={() => setBulkOpen(true)}
+   421→            className="border-slate-700 text-slate-200 hover:bg-slate-800"
+   422→          >
+   423→            <Layers className="w-4 h-4 mr-1" /> Bulk Add
+   424→          </Button>
+   425→        </div>
+   426→      </div>
+   427→
+   428→      {loading ? (
+   429→        <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-emerald-500 animate-spin" /></div>
+   430→      ) : items.length === 0 ? (
+   431→        <Card className="bg-slate-900 border-slate-800 border-dashed">
+   432→          <CardContent className="py-16 text-center">
+   433→            <BookOpen className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+   434→            <p className="text-slate-500">No subjects yet. Add your first one!</p>
+   435→          </CardContent>
+   436→        </Card>
+   437→      ) : (
+   438→        <>
+   439→        {selectedIds.size > 0 && (
+   440→          <div className="flex items-center gap-2 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-1.5 flex-wrap">
+   441→            <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+   442→              {selectedIds.size} selected
+   443→            </Badge>
+   444→            <Button
+   445→              size="sm"
+   446→              variant="destructive"
+   447→              className="h-8 bg-red-600 hover:bg-red-700"
+   448→              onClick={() => setBulkDeleteOpen(true)}
+   449→            >
+   450→              <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+   451→            </Button>
+   452→            <Button
+   453→              size="sm"
+   454→              variant="ghost"
+   455→              className="h-8 text-slate-400 hover:bg-slate-800"
+   456→              onClick={clearSelection}
+   457→              title="Clear selection"
+   458→            >
+   459→              <X className="w-3.5 h-3.5" />
+   460→            </Button>
+   461→          </div>
+   462→        )}
+   463→        <Card className="bg-slate-900 border-slate-800">
+   464→          <CardContent className="p-0">
+   465→            <div className="overflow-x-auto">
+   466→              <table className="w-full text-sm">
+   467→                <thead>
+   468→                  <tr className="border-b border-slate-800 text-slate-500 text-xs uppercase">
+   469→                    <th className="text-left p-4 font-medium w-[44px]">
+   470→                      <Checkbox
+   471→                        checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+   472→                        onCheckedChange={toggleSelectAll}
+   473→                        aria-label="Select all subjects"
+   474→                      />
+   475→                    </th>
+   476→                    <th className="text-left p-4 font-medium">Subject</th>
+   477→                    <th className="text-left p-4 font-medium">Category</th>
+   478→                    <th className="text-left p-4 font-medium">Slug</th>
+   479→                    <th className="text-center p-4 font-medium">Tests</th>
+   480→                    <th className="text-center p-4 font-medium">Files</th>
+   481→                    <th className="text-center p-4 font-medium">Order</th>
+   482→                    <th className="text-right p-4 font-medium">Actions</th>
+   483→                  </tr>
+   484→                </thead>
+   485→                <tbody>
+   486→                  {items.map((item) => {
+   487→                    const isSelected = selectedIds.has(item.id);
+   488→                    return (
+   489→                    <tr key={item.id} className={`border-b border-slate-800/50 hover:bg-slate-800/30 group ${isSelected ? 'bg-red-950/20' : ''}`}>
+   490→                      <td className="p-4">
+   491→                        <Checkbox
+   492→                          checked={isSelected}
+   493→                          onCheckedChange={() => toggleSelectOne(item.id)}
+   494→                          aria-label={`Select ${item.name}`}
+   495→                        />
+   496→                      </td>
+   497→                      <td className="p-4">
+   498→                        <div className="flex items-center gap-2">
+   499→                          {item.icon && <span className="text-lg">{item.icon}</span>}
+   500→                          <span className="text-white font-medium">{item.name}</span>
+   501→                        </div>
+   502→                        {item.description && <p className="text-slate-500 text-xs mt-0.5 line-clamp-1">{item.description}</p>}
+   503→                      </td>
+   504→                      <td className="p-4"><Badge variant="outline" className="border-slate-700 text-slate-300">{categoryName(item.categoryId)}</Badge></td>
+   505→                      <td className="p-4 text-slate-500 text-xs">/{item.slug}</td>
+   506→                      <td className="p-4 text-center text-slate-400">{testCountMap[item.id] || 0}</td>
+   507→                      <td className="p-4 text-center">
+   508→                        <Badge variant="outline" className="border-emerald-700/60 text-emerald-400 bg-emerald-950/40">
+   509→                          {materialCountMap[item.id] || 0}
+   510→                        </Badge>
+   511→                      </td>
+   512→                      <td className="p-4 text-center text-slate-400">{item.order || 0}</td>
+   513→                      <td className="p-4">
+   514→                        <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+   515→                          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800" onClick={() => openEdit(item)}>
+   516→                            <Pencil className="w-3.5 h-3.5" />
+   517→                          </Button>
+   518→                          <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:bg-red-950/40" onClick={() => setDeleteId(item.id)}>
+   519→                            <Trash2 className="w-3.5 h-3.5" />
+   520→                          </Button>
+   521→                        </div>
+   522→                      </td>
+   523→                    </tr>
+   524→                    );
+   525→                  })}
+   526→                </tbody>
+   527→              </table>
+   528→            </div>
+   529→          </CardContent>
+   530→        </Card>
+   531→        </>
+   532→      )}
+   533→
+   534→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   535→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
+   536→          <DialogHeader><DialogTitle>{editingId ? 'Edit Subject' : 'Add Subject'}</DialogTitle></DialogHeader>
+   537→          <div className="space-y-4">
+   538→            <div className="space-y-2">
+   539→              <Label>Name *</Label>
+   540→              <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value, slug: form.slug || slugify(e.target.value) })} placeholder="e.g. General Knowledge" className="bg-slate-800 border-slate-700" />
+   541→            </div>
+   542→            <div className="space-y-2">
+   543→              <Label>Category *</Label>
+   544→              <Select value={form.categoryId} onValueChange={(v) => setForm({ ...form, categoryId: v })}>
+   545→                <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue placeholder="Select category" /></SelectTrigger>
+   546→                <SelectContent className="bg-slate-800 border-slate-700">
+   547→                  {categories.map((c) => <SelectItem key={c.id} value={c.id}>{c.icon} {c.name}</SelectItem>)}
+   548→                </SelectContent>
+   549→              </Select>
+   550→            </div>
+   551→            <div className="grid grid-cols-2 gap-3">
+   552→              <div className="space-y-2">
+   553→                <Label>Icon (emoji)</Label>
+   554→                <Input value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} placeholder="📚" className="bg-slate-800 border-slate-700" />
+   555→              </div>
+   556→              <div className="space-y-2">
+   557→                <Label>Order</Label>
+   558→                <Input type="number" value={form.order} onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} className="bg-slate-800 border-slate-700" />
+   559→              </div>
+   560→            </div>
+   561→            <div className="space-y-2">
+   562→              <Label>Slug</Label>
+   563→              <Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="auto-generated" className="bg-slate-800 border-slate-700" />
+   564→            </div>
+   565→            <div className="space-y-2">
+   566→              <Label>Subject Pack Price (INR)</Label>
+   567→              <Input
+   568→                type="number"
+   569→                min={0}
+   570→                value={form.premiumPrice}
+   571→                onChange={(e) => setForm({ ...form, premiumPrice: Number(e.target.value) })}
+   572→                placeholder="0 = not sold individually"
+   573→                className="bg-slate-800 border-slate-700"
+   574→              />
+   575→              <p className="text-slate-500 text-[10px]">
+   576→                Set &gt; 0 to let users unlock ALL tests in this subject as a one-time
+   577→                purchase. You must also create a matching SUBJECT_PACK product in the
+   578→                Products section with the same price (server-side authority).
+   579→              </p>
+   580→            </div>
+   581→            <div className="space-y-2">
+   582→              <Label>Description</Label>
+   583→              <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="bg-slate-800 border-slate-700" />
+   584→            </div>
+   585→          </div>
+   586→          <DialogFooter>
+   587→            <Button variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-700 text-slate-300">Cancel</Button>
+   588→            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   589→              {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   590→              {editingId ? 'Update' : 'Add'}
+   591→            </Button>
+   592→          </DialogFooter>
+   593→        </DialogContent>
+   594→      </Dialog>
+   595→
+   596→      {/* Bulk Add Dialog */}
+   597→      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+   598→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+   599→          <DialogHeader>
+   600→            <DialogTitle>Bulk Add Subjects</DialogTitle>
+   601→          </DialogHeader>
+   602→          <div className="space-y-3">
+   603→            <div className="flex items-center justify-between gap-2">
+   604→              <p className="text-xs text-slate-500">
+   605→                Paste a JSON array of subject objects below, or paste CSV rows (first row = column headers).
+   606→              </p>
+   607→              <div className="flex items-center gap-2">
+   608→                <Button
+   609→                  type="button"
+   610→                  variant="outline"
+   611→                  size="sm"
+   612→                  onClick={() => downloadJson('subjects-template', JSON.parse(BULK_SAMPLE))}
+   613→                  className="border-slate-700 text-slate-300 h-8"
+   614→                >
+   615→                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+   616→                </Button>
+   617→                <Button
+   618→                  type="button"
+   619→                  variant="outline"
+   620→                  size="sm"
+   621→                  onClick={() => downloadCsv('subjects-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+   622→                  className="border-slate-700 text-slate-300 h-8"
+   623→                >
+   624→                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
+   625→                </Button>
+   626→                <Button
+   627→                  type="button"
+   628→                  variant="outline"
+   629→                  size="sm"
+   630→                  onClick={() => setBulkText(BULK_SAMPLE)}
+   631→                  className="border-slate-700 text-slate-300 h-8"
+   632→                >
+   633→                  Load Sample
+   634→                </Button>
+   635→              </div>
+   636→            </div>
+   637→            <BulkTextarea
+   638→              value={bulkText}
+   639→              onChange={setBulkText}
+   640→              placeholder='[{"name":"Quantitative Aptitude","categoryName":"SSC","order":1}]'
+   641→            />
+   642→            <p className="text-xs text-slate-500">
+   643→              Fields: <span className="text-slate-400">name</span>,{' '}
+   644→              <span className="text-slate-400">description</span>,{' '}
+   645→              <span className="text-slate-400">icon</span> (emoji),{' '}
+   646→              <span className="text-slate-400 text-emerald-300">categoryName</span> (parent category — recommended) or{' '}
+   647→              <span className="text-slate-400">categoryId</span> (existing id),{' '}
+   648→              <span className="text-slate-400">order</span> (number),{' '}
+   649→              <span className="text-slate-400">isActive</span> (boolean)
+   650→            </p>
+   651→            <p className="text-xs text-slate-500">
+   652→              Tip: add categories first, then bulk-add subjects by{' '}
+   653→              <code className="text-emerald-300">categoryName</code>. The system
+   654→              resolves the name to the category id automatically.
+   655→            </p>
+   656→          </div>
+   657→          <DialogFooter>
+   658→            <Button
+   659→              variant="outline"
+   660→              onClick={() => setBulkOpen(false)}
+   661→              className="border-slate-700 text-slate-300"
+   662→            >
+   663→              Cancel
+   664→            </Button>
+   665→            <Button
+   666→              onClick={handleBulkImport}
+   667→              disabled={bulkSaving || !bulkText.trim()}
+   668→              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   669→            >
+   670→              {bulkSaving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   671→              Validate & Import
+   672→            </Button>
+   673→          </DialogFooter>
+   674→        </DialogContent>
+   675→      </Dialog>
+   676→
+   677→      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+   678→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+   679→          <AlertDialogHeader>
+   680→            <AlertDialogTitle>Delete this subject?</AlertDialogTitle>
+   681→            <AlertDialogDescription className="text-slate-400">Tests under this subject will remain but lose their subject link.</AlertDialogDescription>
+   682→          </AlertDialogHeader>
+   683→          <AlertDialogFooter>
+   684→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   685→            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+   686→          </AlertDialogFooter>
+   687→        </AlertDialogContent>
+   688→      </AlertDialog>
+   689→
+   690→      {/* Bulk Delete Confirmation */}
+   691→      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+   692→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+   693→          <AlertDialogHeader>
+   694→            <AlertDialogTitle className="flex items-center gap-2">
+   695→              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} subject{selectedIds.size === 1 ? '' : 's'}?
+   696→            </AlertDialogTitle>
+   697→            <AlertDialogDescription className="text-slate-400">
+   698→              This will permanently delete {selectedIds.size} subject{selectedIds.size === 1 ? '' : 's'} from Firestore.
+   699→              Tests under these subjects will remain but lose their subject link.
+   700→              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+   701→            </AlertDialogDescription>
+   702→          </AlertDialogHeader>
+   703→          <AlertDialogFooter>
+   704→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   705→            <AlertDialogAction
+   706→              onClick={handleBulkDelete}
+   707→              disabled={bulkDeleting}
+   708→              className="bg-red-600 hover:bg-red-700 text-white"
+   709→            >
+   710→              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   711→              Delete {selectedIds.size} subject{selectedIds.size === 1 ? '' : 's'}
+   712→            </AlertDialogAction>
+   713→          </AlertDialogFooter>
+   714→        </AlertDialogContent>
+   715→      </AlertDialog>
+   716→    </div>
+   717→  );
+   718→}
+   719→

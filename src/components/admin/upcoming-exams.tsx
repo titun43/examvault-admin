@@ -18,6 +18,8 @@ import {
   formatDate,
   timestampToDate,
   deleteItems,
+  deleteDocWithFiles,
+  deleteItemsWithFiles,
 } from '@/lib/admin-firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
@@ -352,7 +354,7 @@ export default function UpcomingExams() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'upcoming_exams', deleteId));
+      await deleteDocWithFiles('upcoming_exams', deleteId, ['image']);
       toast.success('Exam deleted');
       setDeleteId(null);
     } catch (err: any) {
@@ -393,7 +395,7 @@ export default function UpcomingExams() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItems('upcoming_exams', ids);
+      await deleteItemsWithFiles('upcoming_exams', ids, ['image']);
       toast.success(`${ids.length} exam${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();

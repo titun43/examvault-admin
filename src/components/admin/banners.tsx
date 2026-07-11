@@ -11,7 +11,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { uploadImage, toDateTimeInputValue, formatDateTime, deleteItems } from '@/lib/admin-firestore';
+import { uploadImage, toDateTimeInputValue, formatDateTime, deleteItems, deleteDocWithFiles, deleteItemsWithFiles } from '@/lib/admin-firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -432,7 +432,7 @@ export default function Banners() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'banners', deleteId));
+      await deleteDocWithFiles('banners', deleteId, ['image']);
       toast.success('Banner deleted');
       setDeleteId(null);
     } catch (err: any) {
@@ -473,7 +473,7 @@ export default function Banners() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItems('banners', ids);
+      await deleteItemsWithFiles('banners', ids, ['image']);
       toast.success(`${ids.length} banner${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();

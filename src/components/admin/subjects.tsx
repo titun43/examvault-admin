@@ -15,7 +15,7 @@ import {
   where,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+import { uploadImage, deleteItems, deleteDocWithFiles, deleteItemsWithFiles } from '@/lib/admin-firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -350,7 +350,7 @@ export default function Subjects() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'subjects', deleteId));
+      await deleteDocWithFiles('subjects', deleteId, ['icon']);
       toast.success('Subject deleted');
       setDeleteId(null);
     } catch (err: any) {
@@ -391,7 +391,7 @@ export default function Subjects() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItems('subjects', ids);
+      await deleteItemsWithFiles('subjects', ids, ['icon']);
       toast.success(`${ids.length} subject${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();

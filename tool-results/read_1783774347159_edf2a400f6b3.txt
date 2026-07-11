@@ -1,0 +1,726 @@
+     1→// =============================================================================
+     2→// ExamVault - Profile Screen
+     3→// =============================================================================
+     4→
+     5→import 'package:flutter/material.dart';
+     6→import 'package:provider/provider.dart';
+     7→import 'package:cached_network_image/cached_network_image.dart';
+     8→import 'package:share_plus/share_plus.dart';
+     9→import 'package:intl/intl.dart';
+    10→import 'package:url_launcher/url_launcher.dart';
+    11→import 'package:package_info_plus/package_info_plus.dart';
+    12→import '../../theme/app_theme.dart';
+    13→import '../../providers/auth_provider.dart';
+    14→import '../../providers/theme_provider.dart';
+    15→import '../../config/app_config.dart';
+    16→import '../../models/user_model.dart';
+    17→import '../../utils/streak_helper.dart';
+    18→import '../../widgets/weekly_streak_indicator.dart';
+    19→import '../auth/login_screen.dart';
+    20→import '../home/main_navigation.dart';
+    21→import '../premium/premium_screen.dart';
+    22→import '../search/search_screen.dart';
+    23→import '../current_affairs/current_affairs_screen.dart';
+    24→import '../support/help_support_screen.dart';
+    25→import 'settings_screen.dart';
+    26→import 'test_history_screen.dart';
+    27→import 'bookmarks_screen.dart';
+    28→import 'edit_profile_screen.dart';
+    29→
+    30→class ProfileScreen extends StatelessWidget {
+    31→  const ProfileScreen({super.key});
+    32→
+    33→  // ==================== Action handlers ====================
+    34→  // These were previously empty `// Share app` stubs, which is why tapping
+    35→  // Share App / Rate Us / Help & Support / Privacy Policy did nothing.
+    36→
+    37→  Future<void> _shareApp(BuildContext context) async {
+    38→    try {
+    39→      final info = await PackageInfo.fromPlatform();
+    40→      final storeUrl = 'https://play.google.com/store/apps/details?id=${info.packageName}';
+    41→      await Share.share(
+    42→        'Check out ExamVault - India\'s #1 MCQ Mock Test app for Railway, SSC, UPSC, Banking & more!\n\n'
+    43→        'Download now: $storeUrl',
+    44→        subject: 'ExamVault - Mock Test App',
+    45→      );
+    46→    } catch (e) {
+    47→      _showToast(context, 'Unable to share app right now');
+    48→    }
+    49→  }
+    50→
+    51→  Future<void> _rateApp(BuildContext context) async {
+    52→    try {
+    53→      final info = await PackageInfo.fromPlatform();
+    54→      final storeUrl = 'https://play.google.com/store/apps/details?id=${info.packageName}';
+    55→      final uri = Uri.parse(storeUrl);
+    56→      if (await canLaunchUrl(uri)) {
+    57→        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    58→      } else {
+    59→        _showToast(context, 'Opening Play Store...');
+    60→        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    61→      }
+    62→    } catch (e) {
+    63→      _showToast(context, 'Unable to open Play Store right now');
+    64→    }
+    65→  }
+    66→
+    67→  Future<void> _openHelpSupport(BuildContext context) async {
+    68→    // Open the in-app support chat screen instead of an external mailto: link.
+    69→    // Users can start a new conversation or continue an existing one; replies
+    70→    // from the admin panel appear in real-time. See help_support_screen.dart.
+    71→    await Navigator.push(
+    72→      context,
+    73→      MaterialPageRoute(builder: (_) => const HelpSupportScreen()),
+    74→    );
+    75→  }
+    76→
+    77→  Future<void> _openPrivacyPolicy(BuildContext context) async {
+    78→    try {
+    79→      final uri = Uri.parse(AppConfig.privacyPolicyUrl);
+    80→      if (await canLaunchUrl(uri)) {
+    81→        await launchUrl(uri, mode: LaunchMode.externalApplication);
+    82→      } else {
+    83→        _showToast(context, 'Unable to open Privacy Policy');
+    84→      }
+    85→    } catch (e) {
+    86→      _showToast(context, 'Unable to open Privacy Policy');
+    87→    }
+    88→  }
+    89→
+    90→  void _showToast(BuildContext context, String message) {
+    91→    if (!context.mounted) return;
+    92→    ScaffoldMessenger.of(context).showSnackBar(
+    93→      SnackBar(content: Text(message), duration: const Duration(seconds: 2)),
+    94→    );
+    95→  }
+    96→
+    97→  @override
+    98→  Widget build(BuildContext context) {
+    99→    final auth = Provider.of<AuthProvider>(context);
+   100→
+   101→    return Scaffold(
+   102→      appBar: AppBar(
+   103→        title: const Text('Profile'),
+   104→        actions: [
+   105→          // Global search — available on every bottom-nav tab, not just Home.
+   106→          IconButton(
+   107→            icon: const Icon(Icons.search),
+   108→            tooltip: 'Search',
+   109→            onPressed: () {
+   110→              Navigator.push(
+   111→                context,
+   112→                MaterialPageRoute(builder: (_) => const SearchScreen()),
+   113→              );
+   114→            },
+   115→          ),
+   116→          IconButton(
+   117→            icon: const Icon(Icons.edit_outlined),
+   118→            tooltip: 'Edit Profile',
+   119→            onPressed: () {
+   120→              Navigator.push(
+   121→                context,
+   122→                MaterialPageRoute(builder: (_) => const EditProfileScreen()),
+   123→              );
+   124→            },
+   125→          ),
+   126→          IconButton(
+   127→            icon: const Icon(Icons.settings_outlined),
+   128→            onPressed: () {
+   129→              Navigator.push(
+   130→                context,
+   131→                MaterialPageRoute(builder: (_) => const SettingsScreen()),
+   132→              );
+   133→            },
+   134→          ),
+   135→        ],
+   136→      ),
+   137→      body: SingleChildScrollView(
+   138→        padding: const EdgeInsets.all(16),
+   139→        child: Column(
+   140→          children: [
+   141→            // GUEST MODE — show a prominent sign-in card instead of the user
+   142→            // profile header. Guests can browse the app and take free tests,
+   143→            // but they need an account to save progress, buy premium, or sync
+   144→            // across devices. The card lists what they get by signing in.
+   145→            if (auth.isGuest) ...[
+   146→              Container(
+   147→                width: double.infinity,
+   148→                padding: const EdgeInsets.all(24),
+   149→                decoration: BoxDecoration(
+   150→                  gradient: AppTheme.primaryGradient,
+   151→                  borderRadius: BorderRadius.circular(20),
+   152→                ),
+   153→                child: Column(
+   154→                  children: [
+   155→                    Container(
+   156→                      width: 84,
+   157→                      height: 84,
+   158→                      decoration: BoxDecoration(
+   159→                        color: Colors.white.withOpacity(0.2),
+   160→                        shape: BoxShape.circle,
+   161→                      ),
+   162→                      child: const Icon(
+   163→                        Icons.person_outline,
+   164→                        size: 44,
+   165→                        color: Colors.white,
+   166→                      ),
+   167→                    ),
+   168→                    const SizedBox(height: 14),
+   169→                    const Text(
+   170→                      'Guest Mode',
+   171→                      style: TextStyle(
+   172→                        color: Colors.white,
+   173→                        fontSize: 22,
+   174→                        fontWeight: FontWeight.w700,
+   175→                      ),
+   176→                    ),
+   177→                    const SizedBox(height: 6),
+   178→                    Text(
+   179→                      'You\'re browsing as a guest. Sign in to unlock premium tests, save your progress, and sync across devices.',
+   180→                      textAlign: TextAlign.center,
+   181→                      style: TextStyle(
+   182→                        color: Colors.white.withOpacity(0.92),
+   183→                        fontSize: 13,
+   184→                        height: 1.4,
+   185→                      ),
+   186→                    ),
+   187→                    const SizedBox(height: 18),
+   188→                    SizedBox(
+   189→                      width: double.infinity,
+   190→                      child: ElevatedButton.icon(
+   191→                        style: ElevatedButton.styleFrom(
+   192→                          backgroundColor: Colors.white,
+   193→                          foregroundColor: AppTheme.primaryColor,
+   194→                          padding: const EdgeInsets.symmetric(vertical: 13),
+   195→                          shape: RoundedRectangleBorder(
+   196→                            borderRadius: BorderRadius.circular(12),
+   197→                          ),
+   198→                        ),
+   199→                        icon: const Icon(Icons.login),
+   200→                        label: const Text(
+   201→                          'Sign In / Sign Up',
+   202→                          style: TextStyle(
+   203→                              fontWeight: FontWeight.w700, fontSize: 15),
+   204→                        ),
+   205→                        onPressed: () {
+   206→                          Navigator.pushReplacement(
+   207→                            context,
+   208→                            MaterialPageRoute(
+   209→                                builder: (_) => const LoginScreen()),
+   210→                          );
+   211→                        },
+   212→                      ),
+   213→                    ),
+   214→                  ],
+   215→                ),
+   216→              ),
+   217→              const SizedBox(height: 16),
+   218→            ] else ...[
+   219→            // Profile Header
+   220→            Container(
+   221→              padding: const EdgeInsets.all(20),
+   222→              decoration: BoxDecoration(
+   223→                gradient: AppTheme.primaryGradient,
+   224→                borderRadius: BorderRadius.circular(20),
+   225→              ),
+   226→              child: Column(
+   227→                children: [
+   228→                  Stack(
+   229→                    clipBehavior: Clip.none,
+   230→                    children: [
+   231→                      CircleAvatar(
+   232→                        radius: 50,
+   233→                        backgroundColor: Colors.white,
+   234→                        child: auth.user?.photoUrl != null &&
+   235→                                auth.user!.photoUrl!.isNotEmpty
+   236→                            ? ClipOval(
+   237→                                child: CachedNetworkImage(
+   238→                                  imageUrl: auth.user!.photoUrl!,
+   239→                                  fit: BoxFit.cover,
+   240→                                  // Explicit size required so the image fills
+   241→                                  // the 100x100 circle (radius 50). Without
+   242→                                  // width/height, BoxFit.cover has no box to
+   243→                                  // fill and the photo renders distorted or
+   244→                                  // partial after save.
+   245→                                  width: 100,
+   246→                                  height: 100,
+   247→                                  placeholder: (_, __) => const Icon(
+   248→                                      Icons.person,
+   249→                                      size: 50,
+   250→                                      color: AppTheme.primaryColor),
+   251→                                  errorWidget: (_, __, ___) => const Icon(
+   252→                                      Icons.person,
+   253→                                      size: 50,
+   254→                                      color: AppTheme.primaryColor),
+   255→                                ),
+   256→                              )
+   257→                            : const Icon(Icons.person, size: 50, color: AppTheme.primaryColor),
+   258→                      ),
+   259→                      // Premium badge — a crown icon + "PREMIUM" label shown
+   260→                      // on the avatar's bottom-right. Visible only for active
+   261→                      // premium users. Survives re-login because premium status
+   262→                      // is persisted in Firestore (isPremium + subscriptionExpiry).
+   263→                      if (auth.isPremium)
+   264→                        Positioned(
+   265→                          bottom: -2,
+   266→                          right: -2,
+   267→                          child: Container(
+   268→                            padding: const EdgeInsets.symmetric(
+   269→                                horizontal: 8, vertical: 3),
+   270→                            decoration: BoxDecoration(
+   271→                              gradient: const LinearGradient(
+   272→                                colors: [Color(0xFFFFD700), Color(0xFFFFA500)],
+   273→                              ),
+   274→                              borderRadius: BorderRadius.circular(12),
+   275→                              border: Border.all(color: Colors.white, width: 2),
+   276→                            ),
+   277→                            child: const Row(
+   278→                              mainAxisSize: MainAxisSize.min,
+   279→                              children: [
+   280→                                Icon(Icons.workspace_premium,
+   281→                                    size: 12, color: Colors.white),
+   282→                                SizedBox(width: 3),
+   283→                                Text(
+   284→                                  'PREMIUM',
+   285→                                  style: TextStyle(
+   286→                                    color: Colors.white,
+   287→                                    fontSize: 9,
+   288→                                    fontWeight: FontWeight.w800,
+   289→                                    letterSpacing: 0.5,
+   290→                                  ),
+   291→                                ),
+   292→                              ],
+   293→                            ),
+   294→                          ),
+   295→                        ),
+   296→                    ],
+   297→                  ),
+   298→              const SizedBox(height: 12),
+   299→              Row(
+   300→                mainAxisAlignment: MainAxisAlignment.center,
+   301→                mainAxisSize: MainAxisSize.min,
+   302→                children: [
+   303→                  Flexible(
+   304→                    child: Text(
+   305→                      auth.user?.name ?? 'User',
+   306→                      style: const TextStyle(
+   307→                        color: Colors.white,
+   308→                        fontSize: 22,
+   309→                        fontWeight: FontWeight.w700,
+   310→                      ),
+   311→                      overflow: TextOverflow.ellipsis,
+   312→                    ),
+   313→                  ),
+   314→                  if (auth.isPremium) ...[
+   315→                    const SizedBox(width: 6),
+   316→                    const Icon(Icons.verified,
+   317→                        color: Color(0xFFFFD700), size: 18),
+   318→                  ],
+   319→                ],
+   320→              ),
+   321→              const SizedBox(height: 4),
+   322→              Text(
+   323→                auth.user?.email ?? auth.user?.phoneNumber ?? '',
+   324→                style: TextStyle(
+   325→                  color: Colors.white.withOpacity(0.9),
+   326→                  fontSize: 13,
+   327→                ),
+   328→              ),
+   329→              // Premium status line — shows "Premium member" + expiry date
+   330→              if (auth.isPremium &&
+   331→                  auth.user?.subscriptionExpiry != null) ...[
+   332→                const SizedBox(height: 4),
+   333→                Text(
+   334→                  'Premium until ${_formatExpiry(auth.user!.subscriptionExpiry!)}',
+   335→                  style: TextStyle(
+   336→                    color: Colors.white.withOpacity(0.85),
+   337→                    fontSize: 11,
+   338→                    fontWeight: FontWeight.w500,
+   339→                  ),
+   340→                ),
+   341→              ],
+   342→              const SizedBox(height: 16),
+   343→              Row(
+   344→                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+   345→                children: [
+   346→                  _buildStat('Tests', auth.user?.totalTestsAttempted.toString() ?? '0'),
+   347→                  _buildStat('XP', auth.user?.totalXp.toString() ?? '0'),
+   348→                  _buildStat('Level', auth.user?.level.toString() ?? '1'),
+   349→                  // Streak is computed client-side from `streak` + `lastActiveAt`
+   350→                  // so a broken streak shows 0 immediately instead of waiting
+   351→                  // for the next test submission to reset it server-side.
+   352→                  _buildStat(
+   353→                    'Streak',
+   354→                    '${computeEffectiveStreak(auth.user?.streak ?? 0, auth.user?.lastActiveAt)}🔥',
+   355→                  ),
+   356→                ],
+   357→              ),
+   358→              const SizedBox(height: 14),
+   359→              // Weekly streak indicator — 7 dots (Mon→Sun) showing which days
+   360→              // the user was active this week. Renders on the dark header so
+   361→              // we pass light colors for the inactive state.
+   362→              _buildHeaderWeeklyStreak(auth.user?.lastActiveAt),
+   363→            ],
+   364→          ),
+   365→        ),
+   366→            ], // end else (logged-in profile header)
+   367→            const SizedBox(height: 16),
+   368→            // Personal Info card — shows DOB, qualification, city, target exam
+   369→            // if the user has filled them in via EditProfileScreen.
+   370→            if (!auth.isGuest) ...[
+   371→            _buildPersonalInfoCard(context, auth.user),
+   372→            const SizedBox(height: 16),
+   373→            // Premium card if not premium
+   374→            if (!auth.isPremium)
+   375→              Card(
+   376→                margin: EdgeInsets.zero,
+   377→                child: ListTile(
+   378→                  leading: const Icon(Icons.workspace_premium, color: AppTheme.accentColor),
+   379→                  title: const Text('Upgrade to Premium'),
+   380→                  subtitle: const Text('Unlock all features'),
+   381→                  trailing: ElevatedButton(
+   382→                    onPressed: () {
+   383→                      Navigator.push(
+   384→                        context,
+   385→                        MaterialPageRoute(builder: (_) => const PremiumScreen()),
+   386→                      );
+   387→                    },
+   388→                    child: const Text('Upgrade'),
+   389→                  ),
+   390→                ),
+   391→              ),
+   392→            const SizedBox(height: 16),
+   393→            // Menu Items
+   394→            _buildMenuTile(
+   395→              context,
+   396→              Icons.history,
+   397→              'Test History',
+   398→              null,
+   399→              onTap: () {
+   400→                Navigator.push(
+   401→                  context,
+   402→                  MaterialPageRoute(builder: (_) => const TestHistoryScreen()),
+   403→                );
+   404→              },
+   405→            ),
+   406→            _buildMenuTile(
+   407→              context,
+   408→              Icons.bookmark,
+   409→              'Bookmarks',
+   410→              null,
+   411→              onTap: () {
+   412→                Navigator.push(
+   413→                  context,
+   414→                  MaterialPageRoute(builder: (_) => const BookmarksScreen()),
+   415→                );
+   416→              },
+   417→            ),
+   418→            _buildMenuTile(
+   419→              context,
+   420→              Icons.receipt_long,
+   421→              'My Purchases',
+   422→              null,
+   423→              onTap: () {
+   424→                Navigator.pushNamed(context, '/my-purchases');
+   425→              },
+   426→            ),
+   427→            ], // end if (!auth.isGuest) for user-specific menu items
+   428→            _buildMenuTile(
+   429→              context,
+   430→              Icons.newspaper,
+   431→              'Current Affairs',
+   432→              null,
+   433→              onTap: () {
+   434→                Navigator.push(
+   435→                  context,
+   436→                  MaterialPageRoute(builder: (_) => const CurrentAffairsScreen()),
+   437→                );
+   438→              },
+   439→            ),
+   440→            _buildMenuTile(
+   441→              context,
+   442→              Icons.dark_mode,
+   443→              'Dark Mode',
+   444→              Consumer<ThemeProvider>(
+   445→                builder: (context, themeProvider, _) {
+   446→                  return Switch(
+   447→                    value: themeProvider.isDarkMode,
+   448→                    onChanged: (value) {
+   449→                      themeProvider.toggleTheme();
+   450→                    },
+   451→                  );
+   452→                },
+   453→              ),
+   454→              trailingInsteadOfArrow: true,
+   455→            ),
+   456→            _buildMenuTile(
+   457→              context,
+   458→              Icons.share,
+   459→              'Share App',
+   460→              null,
+   461→              onTap: () => _shareApp(context),
+   462→            ),
+   463→            _buildMenuTile(
+   464→              context,
+   465→              Icons.star,
+   466→              'Rate Us',
+   467→              null,
+   468→              onTap: () => _rateApp(context),
+   469→            ),
+   470→            _buildMenuTile(
+   471→              context,
+   472→              Icons.help,
+   473→              'Help & Support',
+   474→              null,
+   475→              onTap: () => _openHelpSupport(context),
+   476→            ),
+   477→            _buildMenuTile(
+   478→              context,
+   479→              Icons.description,
+   480→              'Privacy Policy',
+   481→              null,
+   482→              onTap: () => _openPrivacyPolicy(context),
+   483→            ),
+   484→            const SizedBox(height: 16),
+   485→            // Logout (logged-in) / Sign In (guest)
+   486→            SizedBox(
+   487→              width: double.infinity,
+   488→              child: auth.isGuest
+   489→                ? OutlinedButton.icon(
+   490→                    onPressed: () {
+   491→                      Navigator.pushReplacement(
+   492→                        context,
+   493→                        MaterialPageRoute(builder: (_) => const LoginScreen()),
+   494→                      );
+   495→                    },
+   496→                    icon: const Icon(Icons.login, color: AppTheme.primaryColor),
+   497→                    label: const Text(
+   498→                      'Sign In / Sign Up',
+   499→                      style: TextStyle(color: AppTheme.primaryColor, fontWeight: FontWeight.w700),
+   500→                    ),
+   501→                    style: OutlinedButton.styleFrom(
+   502→                      side: const BorderSide(color: AppTheme.primaryColor),
+   503→                    ),
+   504→                  )
+   505→                : OutlinedButton.icon(
+   506→                    onPressed: () async {
+   507→                      await auth.logout();
+   508→                      if (context.mounted) {
+   509→                        Navigator.pushAndRemoveUntil(
+   510→                          context,
+   511→                          MaterialPageRoute(builder: (_) => const MainNavigation()),
+   512→                          (route) => false,
+   513→                        );
+   514→                      }
+   515→                    },
+   516→                    icon: const Icon(Icons.logout, color: AppTheme.errorColor),
+   517→                    label: const Text(
+   518→                      'Logout',
+   519→                      style: TextStyle(color: AppTheme.errorColor),
+   520→                    ),
+   521→                    style: OutlinedButton.styleFrom(
+   522→                      side: const BorderSide(color: AppTheme.errorColor),
+   523→                    ),
+   524→                  ),
+   525→            ),
+   526→          ],
+   527→        ),
+   528→      ),
+   529→    );
+   530→  }
+   531→
+   532→  /// Formats the premium subscription expiry date for display under the
+   533→  /// user's name in the profile header (e.g. "Premium until 15 Aug 2026").
+   534→  String _formatExpiry(DateTime expiry) {
+   535→    return DateFormat('d MMM yyyy').format(expiry);
+   536→  }
+   537→
+   538→  Widget _buildStat(String label, String value) {
+   539→    return Column(
+   540→      children: [
+   541→        Text(
+   542→          value,
+   543→          style: const TextStyle(
+   544→            color: Colors.white,
+   545→            fontSize: 18,
+   546→            fontWeight: FontWeight.w700,
+   547→          ),
+   548→        ),
+   549→        const SizedBox(height: 4),
+   550→        Text(
+   551→          label,
+   552→          style: TextStyle(
+   553→            color: Colors.white.withOpacity(0.9),
+   554→            fontSize: 11,
+   555→          ),
+   556→        ),
+   557→      ],
+   558→    );
+   559→  }
+   560→
+   561→  /// Weekly streak indicator rendered inside the dark profile header. Uses
+   562→  /// translucent white tones so it stays legible over the gradient.
+   563→  Widget _buildHeaderWeeklyStreak(DateTime? lastActiveAt) {
+   564→    return Container(
+   565→      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+   566→      decoration: BoxDecoration(
+   567→        color: Colors.white.withOpacity(0.12),
+   568→        borderRadius: BorderRadius.circular(12),
+   569→      ),
+   570→      child: Column(
+   571→        crossAxisAlignment: CrossAxisAlignment.start,
+   572→        children: [
+   573→          Row(
+   574→            children: [
+   575→              const Icon(Icons.calendar_today,
+   576→                  size: 12, color: Colors.white70),
+   577→              const SizedBox(width: 6),
+   578→              Text(
+   579→                'This Week',
+   580→                style: TextStyle(
+   581→                  color: Colors.white.withOpacity(0.9),
+   582→                  fontSize: 11,
+   583→                  fontWeight: FontWeight.w600,
+   584→                ),
+   585→              ),
+   586→            ],
+   587→          ),
+   588→          const SizedBox(height: 8),
+   589→          WeeklyStreakIndicator(
+   590→            lastActiveAt: lastActiveAt,
+   591→            activeColor: AppTheme.accentColor,
+   592→            inactiveColor: Colors.white30,
+   593→            labelColor: Colors.white60,
+   594→            dotSize: 26,
+   595→          ),
+   596→        ],
+   597→      ),
+   598→    );
+   599→  }
+   600→
+   601→  /// Personal Info card — shows the user's extended profile fields (DOB,
+   602→  /// gender, qualification, city, target exam) if any have been set. Returns
+   603→  /// an empty widget if the user hasn't filled any of these yet, so new users
+   604→  /// don't see an empty card.
+   605→  Widget _buildPersonalInfoCard(BuildContext context, UserModel? user) {
+   606→    final isDark = Theme.of(context).brightness == Brightness.dark;
+   607→    final rows = <Widget>[];
+   608→
+   609→    void addRow(IconData icon, String label, String? value) {
+   610→      if (value == null || value.trim().isEmpty) return;
+   611→      rows.add(Padding(
+   612→        padding: const EdgeInsets.symmetric(vertical: 6),
+   613→        child: Row(
+   614→          children: [
+   615→            Icon(icon, size: 18, color: AppTheme.primaryColor),
+   616→            const SizedBox(width: 10),
+   617→            Text(
+   618→              '$label: ',
+   619→              style: TextStyle(
+   620→                fontSize: 13,
+   621→                fontWeight: FontWeight.w600,
+   622→                color: isDark ? Colors.grey.shade300 : Colors.grey.shade700,
+   623→              ),
+   624→            ),
+   625→            Expanded(
+   626→              child: Text(
+   627→                value,
+   628→                style: const TextStyle(fontSize: 13),
+   629→                overflow: TextOverflow.ellipsis,
+   630→              ),
+   631→            ),
+   632→          ],
+   633→        ),
+   634→      ));
+   635→    }
+   636→
+   637→    // DOB
+   638→    final dob = user?.dateOfBirth;
+   639→    if (dob != null) {
+   640→      addRow(Icons.cake_outlined, 'DOB',
+   641→          '${dob.day}/${dob.month}/${dob.year}');
+   642→    }
+   643→    // Gender
+   644→    addRow(Icons.wc_outlined, 'Gender', user?.gender);
+   645→    // Qualification
+   646→    addRow(Icons.school_outlined, 'Qualification', user?.qualification);
+   647→    // City
+   648→    addRow(Icons.location_city_outlined, 'City', user?.city);
+   649→    // Target Exam
+   650→    addRow(Icons.flag_outlined, 'Target Exam', user?.targetExam);
+   651→
+   652→    if (rows.isEmpty) {
+   653→      return const SizedBox.shrink();
+   654→    }
+   655→
+   656→    return Card(
+   657→      margin: EdgeInsets.zero,
+   658→      child: Padding(
+   659→        padding: const EdgeInsets.all(16),
+   660→        child: Column(
+   661→          crossAxisAlignment: CrossAxisAlignment.start,
+   662→          children: [
+   663→            Row(
+   664→              children: [
+   665→                const Icon(Icons.info_outline, color: AppTheme.primaryColor, size: 18),
+   666→                const SizedBox(width: 8),
+   667→                Text(
+   668→                  'Personal Info',
+   669→                  style: TextStyle(
+   670→                    fontSize: 14,
+   671→                    fontWeight: FontWeight.w700,
+   672→                    color: isDark ? Colors.grey.shade200 : Colors.grey.shade800,
+   673→                  ),
+   674→                ),
+   675→              ],
+   676→            ),
+   677→            const Divider(height: 16),
+   678→            ...rows,
+   679→          ],
+   680→        ),
+   681→      ),
+   682→    );
+   683→  }
+   684→
+   685→  Widget _buildMenuTile(
+   686→    BuildContext context,
+   687→    IconData icon,
+   688→    String title,
+   689→    Widget? trailing, {
+   690→    bool trailingInsteadOfArrow = false,
+   691→    VoidCallback? onTap,
+   692→  }) {
+   693→    if (!trailingInsteadOfArrow && onTap != null) {
+   694→      return _buildMenuTileWithOnTap(context, icon, title, onTap);
+   695→    }
+   696→    return Card(
+   697→      margin: const EdgeInsets.only(bottom: 8),
+   698→      child: ListTile(
+   699→        leading: Icon(icon, color: AppTheme.primaryColor),
+   700→        title: Text(title),
+   701→        trailing: trailingInsteadOfArrow
+   702→            ? trailing
+   703→            : const Icon(Icons.arrow_forward_ios, size: 16),
+   704→        onTap: onTap ?? (trailingInsteadOfArrow ? null : () {}),
+   705→      ),
+   706→    );
+   707→  }
+   708→
+   709→  Widget _buildMenuTileWithOnTap(
+   710→    BuildContext context,
+   711→    IconData icon,
+   712→    String title,
+   713→    VoidCallback onTap,
+   714→  ) {
+   715→    return Card(
+   716→      margin: const EdgeInsets.only(bottom: 8),
+   717→      child: ListTile(
+   718→        leading: Icon(icon, color: AppTheme.primaryColor),
+   719→        title: Text(title),
+   720→        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+   721→        onTap: onTap,
+   722→      ),
+   723→    );
+   724→  }
+   725→}
+   726→

@@ -12,7 +12,7 @@ import {
   writeBatch,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { uploadImage, toDateTimeInputValue, formatDateTime, timestampToDate, deleteItems } from '@/lib/admin-firestore';
+import { uploadImage, toDateTimeInputValue, formatDateTime, timestampToDate, deleteItems, deleteDocWithFiles, deleteItemsWithFiles } from '@/lib/admin-firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -547,7 +547,7 @@ export default function Announcements() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'announcements', deleteId));
+      await deleteDocWithFiles('announcements', deleteId, ['image']);
       toast.success('Announcement deleted');
       setDeleteId(null);
     } catch (err: any) {
@@ -588,7 +588,7 @@ export default function Announcements() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItems('announcements', ids);
+      await deleteItemsWithFiles('announcements', ids, ['image']);
       toast.success(`${ids.length} announcement${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();

@@ -1,0 +1,966 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useRef } from 'react';
+     4→import {
+     5→  collection,
+     6→  onSnapshot,
+     7→  addDoc,
+     8→  updateDoc,
+     9→  deleteDoc,
+    10→  doc,
+    11→  serverTimestamp,
+    12→  writeBatch,
+    13→  getDocs,
+    14→  query,
+    15→  where,
+    16→} from 'firebase/firestore';
+    17→import { db } from '@/lib/firebase';
+    18→import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+    19→import { adminAuthHeaders } from '@/lib/admin-token';
+    20→import { useAppStore } from '@/lib/store';
+    21→import { Checkbox } from '@/components/ui/checkbox';
+    22→import { Button } from '@/components/ui/button';
+    23→import { Input } from '@/components/ui/input';
+    24→import { Label } from '@/components/ui/label';
+    25→import { Textarea } from '@/components/ui/textarea';
+    26→import { BulkTextarea } from './bulk-textarea';
+    27→import { Card, CardContent } from '@/components/ui/card';
+    28→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+    29→import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+    30→import { Badge } from '@/components/ui/badge';
+    31→import {
+    32→  Select,
+    33→  SelectContent,
+    34→  SelectItem,
+    35→  SelectTrigger,
+    36→  SelectValue,
+    37→} from '@/components/ui/select';
+    38→import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download, FileSpreadsheet, RefreshCw } from 'lucide-react';
+    39→import { Switch } from '@/components/ui/switch';
+    40→import { toast } from 'sonner';
+    41→import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
+    42→
+    43→interface Category {
+    44→  id: string;
+    45→  name: string;
+    46→  slug: string;
+    47→  icon?: string;
+    48→  description?: string;
+    49→  image?: string;
+    50→  color?: string;
+    51→  order?: number;
+    52→  subjectCount?: number;
+    53→  isPremium?: boolean;
+    54→  premiumPrice?: number;
+    55→  premiumDurationMonths?: number;
+    56→}
+    57→
+    58→const emptyForm = { name: '', slug: '', icon: '', description: '', image: '', color: '#10b981', order: 0, isPremium: false, premiumPrice: 99, premiumDurationMonths: 1 };
+    59→
+    60→// =============================================================================
+    61→// propagateCategoryPremiumToTests — THE ROOT-CAUSE FIX for the
+    62→// "category premium করা আছে কিন্তু category-র ভেতরের tests-গুলো access
+    63→// হয়ে যাচ্ছে" bug.
+    64→// =============================================================================
+    65→// PREVIOUS (BROKEN): queried `tests.where('categoryId','==',categoryId)`. But
+    66→// the Test model only stores `subjectId` (test → subject → category); tests
+    67→// have NO `categoryId` field. The query always returned 0 docs, so tests inside
+    68→// a premium category NEVER had their `isPremium` flag set. The Flutter
+    69→// `take_test_screen` fast-path (`if (!test.isPaid) grant`) then let users take
+    70→// those tests for free — completely bypassing the category paywall.
+    71→//
+    72→// FIX: resolve the category's tests through the SUBJECTS collection:
+    73→//   1. subjects.where('categoryId','==',categoryId) → subjectIds
+    74→//   2. tests.where('subjectId','in',[...subjectIds]) → test docs
+    75→//      (Firestore `in` supports max 30 values → chunk automatically)
+    76→//   3. batch.update each test's `isPremium` flag.
+    77→//
+    78→// Returns the number of tests updated so callers can toast an accurate count.
+    79→// =============================================================================
+    80→async function propagateCategoryPremiumToTests(
+    81→  categoryId: string,
+    82→  isPremium: boolean,
+    83→): Promise<number> {
+    84→  // Step 1: find all subjects belonging to this category.
+    85→  const subjectsSnap = await getDocs(
+    86→    query(collection(db, 'subjects'), where('categoryId', '==', categoryId)),
+    87→  );
+    88→  const subjectIds = subjectsSnap.docs.map((d) => d.id);
+    89→  if (subjectIds.length === 0) return 0;
+    90→
+    91→  // Step 2: find tests for those subjects, chunking to respect Firestore's
+    92→  // 30-value limit on the `in` operator.
+    93→  const CHUNK_SIZE = 30;
+    94→  let totalUpdated = 0;
+    95→  for (let i = 0; i < subjectIds.length; i += CHUNK_SIZE) {
+    96→    const chunk = subjectIds.slice(i, i + CHUNK_SIZE);
+    97→    const testsSnap = await getDocs(
+    98→      query(collection(db, 'tests'), where('subjectId', 'in', chunk)),
+    99→    );
+   100→    if (testsSnap.empty) continue;
+   101→    const batch = writeBatch(db);
+   102→    testsSnap.forEach((d) => {
+   103→      batch.update(d.ref, { isPremium, updatedAt: serverTimestamp() });
+   104→    });
+   105→    await batch.commit();
+   106→    totalUpdated += testsSnap.size;
+   107→  }
+   108→  return totalUpdated;
+   109→}
+   110→
+   111→export default function Categories() {
+   112→  const { setCurrentSection } = useAppStore();
+   113→  const [items, setItems] = useState<Category[]>([]);
+   114→  const [loading, setLoading] = useState(true);
+   115→  const [dialogOpen, setDialogOpen] = useState(false);
+   116→  const [editingId, setEditingId] = useState<string | null>(null);
+   117→  const [form, setForm] = useState(emptyForm);
+   118→  const [saving, setSaving] = useState(false);
+   119→  const [uploading, setUploading] = useState(false);
+   120→  const [deleteId, setDeleteId] = useState<string | null>(null);
+   121→  const [bulkOpen, setBulkOpen] = useState(false);
+   122→  const [bulkText, setBulkText] = useState('');
+   123→  const [bulkSaving, setBulkSaving] = useState(false);
+   124→  const fileRef = useRef<HTMLInputElement>(null);
+   125→  // Bulk delete state
+   126→  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+   127→  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+   128→  const [bulkDeleting, setBulkDeleting] = useState(false);
+   129→  // Re-sync premium flags across all categories (repairs legacy broken data).
+   130→  const [resyncing, setResyncing] = useState(false);
+   131→  const [resyncOpen, setResyncOpen] = useState(false);
+   132→  // Live subject count per category. Computed from the subjects collection so
+   133→  // the number is always accurate (manual add, bulk import, seed — all count).
+   134→  // Also written back to each category doc's `subjectCount` field so the
+   135→  // Flutter app (which reads `category.subjectCount`) stays in sync.
+   136→  const [subjectCountMap, setSubjectCountMap] = useState<Record<string, number>>({});
+   137→  const itemsRef = useRef<Category[]>([]);
+   138→  useEffect(() => { itemsRef.current = items; }, [items]);
+   139→
+   140→  const BULK_SAMPLE = '[{"name":"SSC","description":"Staff Selection Commission exams","icon":"📋","image":"https://example.com/ssc-banner.png","color":"#10b981","order":1,"isActive":true},{"name":"Banking","description":"Bank PO/Clerk exams","icon":"🏦","image":"https://example.com/banking-banner.png","color":"#f59e0b","order":2,"isActive":true}]';
+   141→
+   142→  const CSV_HEADERS = ['name', 'description', 'icon', 'image', 'color', 'order', 'isPremium', 'premiumPrice', 'isActive'];
+   143→  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+   144→    ['SSC', 'Staff Selection Commission exams', '📋', 'https://example.com/ssc-banner.png', '#10b981', 1, false, 0, true],
+   145→    ['Banking', 'Bank PO/Clerk exams', '🏦', 'https://example.com/banking-banner.png', '#f59e0b', 2, false, 0, true],
+   146→  ];
+   147→
+   148→  const handleBulkImport = async () => {
+   149→    let parsed: any;
+   150→    const text = bulkText.trim();
+   151→    if (!text) {
+   152→      toast.error('Please paste JSON or CSV data first');
+   153→      return;
+   154→    }
+   155→    let isCsv = false;
+   156→    try {
+   157→      parsed = JSON.parse(text);
+   158→    } catch {
+   159→      try {
+   160→        const rows = parseCsv(text);
+   161→        if (rows.length < 2) {
+   162→          toast.error('CSV must have a header row and at least 1 data row');
+   163→          return;
+   164→        }
+   165→        const headers = rows[0].map((h) => h.trim());
+   166→        parsed = rows
+   167→          .slice(1)
+   168→          .filter((r) => r.some((c) => c.trim() !== ''))
+   169→          .map((r) => {
+   170→            const obj: any = {};
+   171→            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+   172→            if ('order' in obj) obj.order = Number(obj.order) || 0;
+   173→            if ('premiumPrice' in obj) obj.premiumPrice = Number(obj.premiumPrice) || 0;
+   174→            if ('isPremium' in obj) obj.isPremium = String(obj.isPremium).toLowerCase() === 'true';
+   175→            if ('isActive' in obj) obj.isActive = String(obj.isActive).toLowerCase() === 'true';
+   176→            return obj;
+   177→          });
+   178→        isCsv = true;
+   179→      } catch (e: any) {
+   180→        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+   181→        return;
+   182→      }
+   183→    }
+   184→    if (!Array.isArray(parsed)) {
+   185→      toast.error('Input must be a JSON array or a CSV with a header row');
+   186→      return;
+   187→    }
+   188→    // Validate: a premium category MUST have premiumPrice > 0, otherwise the
+   189→    // user app shows a lock with no "Unlock this exam" button (broken state).
+   190→    // Auto-fix: if isPremium=true but premiumPrice is missing/0, force a
+   191→    // sane default (₹99) so the import doesn't create broken categories.
+   192→    // We warn the admin about each auto-fix.
+   193→    const autoFixed: string[] = [];
+   194→    parsed.forEach((item: any, idx: number) => {
+   195→      const isPrem = item.isPremium === true ||
+   196→        String(item.isPremium).toLowerCase() === 'true';
+   197→      let price = Number(item.premiumPrice) || 0;
+   198→      if (isPrem && price <= 0) {
+   199→        price = 99;
+   200→        item.premiumPrice = price;
+   201→        autoFixed.push(`row ${idx + 1}${item.name ? ` (${item.name})` : ''}`);
+   202→      }
+   203→      if (!isPrem) {
+   204→        item.premiumPrice = null;
+   205→      }
+   206→    });
+   207→    if (autoFixed.length > 0) {
+   208→      toast.warning(
+   209→        `${autoFixed.length} premium categor${autoFixed.length === 1 ? 'y' : 'ies'} had no price — auto-set to ₹99: ${autoFixed.slice(0, 3).join(', ')}${autoFixed.length > 3 ? '...' : ''}`,
+   210→      );
+   211→    }
+   212→    setBulkSaving(true);
+   213→    try {
+   214→      const batch = writeBatch(db);
+   215→      const colRef = collection(db, 'categories');
+   216→      parsed.forEach((item) => {
+   217→        const ref = doc(colRef);
+   218→        const payload = { ...item };
+   219→        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+   220→        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+   221→        batch.set(ref, payload);
+   222→      });
+   223→      await batch.commit();
+   224→      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
+   225→      setBulkOpen(false);
+   226→      setBulkText('');
+   227→    } catch (err: any) {
+   228→      toast.error(err?.message || 'Bulk import failed');
+   229→    } finally {
+   230→      setBulkSaving(false);
+   231→    }
+   232→  };
+   233→
+   234→  useEffect(() => {
+   235→    const unsub = onSnapshot(collection(db, 'categories'), (snap) => {
+   236→      const list = snap.docs
+   237→        .map((d) => ({ id: d.id, ...d.data() }) as Category)
+   238→        .sort((a, b) => (a.order || 0) - (b.order || 0));
+   239→      setItems(list);
+   240→      setLoading(false);
+   241→    }, () => setLoading(false));
+   242→
+   243→    // Live subject counts → { categoryId: count }. Kept in state for instant
+   244→    // display AND any stale `subjectCount` values are written back to the
+   245→    // category docs so the Flutter app shows the right number.
+   246→    const unsubSubjects = onSnapshot(collection(db, 'subjects'), (snap) => {
+   247→      const map: Record<string, number> = {};
+   248→      snap.docs.forEach((d) => {
+   249→        const catId = (d.data() as any)?.categoryId;
+   250→        if (catId) map[catId] = (map[catId] || 0) + 1;
+   251→      });
+   252→      setSubjectCountMap(map);
+   253→      const batch = writeBatch(db);
+   254→      let needsCommit = false;
+   255→      itemsRef.current.forEach((cat) => {
+   256→        const correct = map[cat.id] || 0;
+   257→        if ((cat.subjectCount || 0) !== correct) {
+   258→          batch.update(doc(db, 'categories', cat.id), { subjectCount: correct, updatedAt: serverTimestamp() });
+   259→          needsCommit = true;
+   260→        }
+   261→      });
+   262→      if (needsCommit) batch.commit().catch(() => {});
+   263→    });
+   264→
+   265→    return () => { unsub(); unsubSubjects(); };
+   266→  }, []);
+   267→
+   268→  const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+   269→
+   270→  const openAdd = () => {
+   271→    setForm(emptyForm);
+   272→    setEditingId(null);
+   273→    setDialogOpen(true);
+   274→  };
+   275→
+   276→  const openEdit = (item: Category) => {
+   277→    setForm({
+   278→      name: item.name || '',
+   279→      slug: item.slug || '',
+   280→      icon: item.icon || '',
+   281→      description: item.description || '',
+   282→      image: item.image || '',
+   283→      color: item.color || '#10b981',
+   284→      order: item.order || 0,
+   285→      isPremium: !!item.isPremium,
+   286→      premiumPrice: item.premiumPrice ?? 99,
+   287→      premiumDurationMonths: item.premiumDurationMonths ?? 1,
+   288→    });
+   289→    setEditingId(item.id);
+   290→    setDialogOpen(true);
+   291→  };
+   292→
+   293→  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   294→    const file = e.target.files?.[0];
+   295→    if (!file) return;
+   296→    setUploading(true);
+   297→    try {
+   298→      const url = await uploadImage('category_images', file);
+   299→      setForm((f) => ({ ...f, image: url }));
+   300→      toast.success('Image uploaded');
+   301→    } catch (err) {
+   302→      toast.error('Image upload failed');
+   303→    } finally {
+   304→      setUploading(false);
+   305→    }
+   306→  };
+   307→
+   308→  const handleSave = async () => {
+   309→    if (!form.name.trim()) {
+   310→      toast.error('Name is required');
+   311→      return;
+   312→    }
+   313→    // CRITICAL: A premium category MUST have a price > 0. Without it:
+   314→    //   - The Flutter app hides the "Unlock this exam" button (it only shows
+   315→    //     when premiumPrice > 0), so users see a lock with NO way to pay.
+   316→    //   - The sync-from-category API rejects the request (premiumPrice <= 0),
+   317→    //     so no EXAM_PACK Product is created → purchase is impossible even if
+   318→    //     the button somehow showed.
+   319→    // Razorpay's minimum is ₹1, so enforce at least that.
+   320→    if (form.isPremium && (!form.premiumPrice || Number(form.premiumPrice) <= 0)) {
+   321→      toast.error('Premium price is required when "Premium Category" is ON. Enter at least ₹1 — this is the amount users pay to unlock this exam.');
+   322→      return;
+   323→    }
+   324→    setSaving(true);
+   325→    try {
+   326→      const data = {
+   327→        ...form,
+   328→        slug: form.slug ? slugify(form.slug) : slugify(form.name),
+   329→        icon: form.icon || null,
+   330→        description: form.description || null,
+   331→        image: form.image || null,
+   332→        color: form.color || null,
+   333→        order: Number(form.order) || 0,
+   334→        isPremium: !!form.isPremium,
+   335→        premiumPrice: form.isPremium ? (Number(form.premiumPrice) || 0) : null,
+   336→        premiumDurationMonths: form.isPremium ? (Number(form.premiumDurationMonths) || 1) : null,
+   337→      };
+   338→      let categoryId: string | null = null;
+   339→      if (editingId) {
+   340→        await updateDoc(doc(db, 'categories', editingId), { ...data, updatedAt: serverTimestamp() });
+   341→        categoryId = editingId;
+   342→        toast.success('Category updated');
+   343→      } else {
+   344→        const ref = await addDoc(collection(db, 'categories'), { ...data, subjectCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+   345→        categoryId = ref.id;
+   346→        toast.success('Category added');
+   347→      }
+   348→
+   349→      // ---- Propagate premium flag to all tests in this category ----
+   350→      // CRITICAL: When admin marks a category as premium, all tests inside it
+   351→      // must also have their `isPremium` flag set to match — otherwise the
+   352→      // Flutter `take_test_screen.dart` fast-path (`if (!test.isPaid) grant`)
+   353→      // will let users take the tests without any access check, completely
+   354→      // bypassing the category paywall. The category-level premium flag only
+   355→      // controls the "Unlock this exam" button visibility; the test-level
+   356→      // `isPremium` flag is what actually gates test access.
+   357→      // `isPaid` in the Flutter model = `price > 0 || isPremium`, so setting
+   358→      // `isPremium=true` on each test makes `isPaid=true` → access check runs
+   359→      // → paywall fires for non-entitled users.
+   360→      //
+   361→      // Tests are resolved through SUBJECTS (test → subject → category)
+   362→      // because the Test model has no `categoryId` field. See
+   363→      // `propagateCategoryPremiumToTests` for the full rationale.
+   364→      if (categoryId) {
+   365→        try {
+   366→          const n = await propagateCategoryPremiumToTests(categoryId, !!data.isPremium);
+   367→          if (n > 0) {
+   368→            toast.success(
+   369→              `${n} test${n === 1 ? '' : 's'} ${data.isPremium ? 'marked premium' : 'marked free'} (category premium ${data.isPremium ? 'ON' : 'OFF'})`,
+   370→            );
+   371→          }
+   372→        } catch (propagateErr: any) {
+   373→          console.warn('[categories] test isPremium propagation failed:', propagateErr);
+   374→          toast.warning(
+   375→            `Category saved, but could not update ${data.isPremium ? 'premium flag on' : 'free flag on'} tests. Use "Re-sync premium flags" to retry.`,
+   376→          );
+   377→        }
+   378→      }
+   379→
+   380→      // ---- Sync EXAM_PACK Product with premium settings ----
+   381→      // After Firestore write, idempotently create/update/deactivate the
+   382→      // Prisma EXAM_PACK Product so the Flutter app can actually purchase
+   383→      // this category. Failure here is non-fatal — the Firestore write already
+   384→      // succeeded. We warn the admin so they can fix it manually if needed.
+   385→      if (categoryId) {
+   386→        try {
+   387→          const syncRes = await fetch('/api/admin/products/sync-from-category', {
+   388→            method: 'POST',
+   389→            headers: adminAuthHeaders(),
+   390→            body: JSON.stringify({
+   391→              categoryId,
+   392→              categoryName: data.name,
+   393→              isPremium: !!data.isPremium,
+   394→              premiumPrice: data.isPremium ? Number(data.premiumPrice) || 0 : 0,
+   395→              premiumDurationMonths: data.isPremium ? Number(data.premiumDurationMonths) || 1 : null,
+   396→            }),
+   397→          });
+   398→          if (!syncRes.ok) {
+   399→            const errJson = await syncRes.json().catch(() => ({}));
+   400→            console.warn('[categories] product sync failed:', errJson);
+   401→            toast.warning(
+   402→              `Category saved, but EXAM_PACK product sync failed: ${errJson.error || syncRes.statusText}. Please create it manually on the Products page.`,
+   403→            );
+   404→          } else {
+   405→            const syncJson = await syncRes.json().catch(() => ({}));
+   406→            if (syncJson.action === 'created') {
+   407→              toast.success(`EXAM_PACK product auto-created (₹${data.premiumPrice})`);
+   408→            } else if (syncJson.action === 'updated') {
+   409→              toast.success(`EXAM_PACK product synced (₹${data.premiumPrice})`);
+   410→            } else if (syncJson.action === 'deactivated') {
+   411→              toast.info('EXAM_PACK product deactivated (category no longer premium)');
+   412→            }
+   413→          }
+   414→        } catch (syncErr: any) {
+   415→          console.warn('[categories] product sync error:', syncErr);
+   416→          toast.warning(
+   417→            'Category saved, but EXAMPACK product sync errored. Please verify on the Products page.',
+   418→          );
+   419→        }
+   420→      }
+   421→
+   422→      setDialogOpen(false);
+   423→    } catch (err: any) {
+   424→      toast.error(err?.message || 'Save failed');
+   425→    } finally {
+   426→      setSaving(false);
+   427→    }
+   428→  };
+   429→
+   430→  const handleDelete = async () => {
+   431→    if (!deleteId) return;
+   432→    try {
+   433→      // Before deleting the category, propagate `isPremium=false` to all its
+   434→      // tests so they don't stay locked behind a now-nonexistent paywall.
+   435→      // Non-fatal if this fails — the category is still deleted below.
+   436→      // Tests are resolved through subjects (test → subject → category).
+   437→      try {
+   438→        await propagateCategoryPremiumToTests(deleteId, false);
+   439→      } catch (propagateErr) {
+   440→        console.warn('[categories] test isPremium clear on delete failed:', propagateErr);
+   441→      }
+   442→
+   443→      await deleteDoc(doc(db, 'categories', deleteId));
+   444→      toast.success('Category deleted');
+   445→
+   446→      // Best-effort: deactivate the linked EXAM_PACK Product so users can't
+   447→      // purchase a now-deleted category. Non-fatal if this fails.
+   448→      try {
+   449→        await fetch('/api/admin/products/sync-from-category', {
+   450→          method: 'POST',
+   451→          headers: adminAuthHeaders(),
+   452→          body: JSON.stringify({
+   453→            categoryId: deleteId,
+   454→            categoryName: '(deleted)',
+   455→            isPremium: false,
+   456→          }),
+   457→        });
+   458→      } catch {
+   459→        // ignore — category is already deleted in Firestore
+   460→      }
+   461→
+   462→      setDeleteId(null);
+   463→    } catch (err: any) {
+   464→      toast.error(err?.message || 'Delete failed');
+   465→    }
+   466→  };
+   467→
+   468→  // ---- Re-sync premium flags across ALL categories ----
+   469→  // Repairs legacy data broken by the old (buggy) propagation that queried a
+   470→  // non-existent `tests.categoryId` field. For every category this re-runs the
+   471→  // (now-correct) propagation: premium categories mark their tests premium,
+   472→  // free categories mark their tests free. Safe to run repeatedly — it only
+   473→  // writes the correct value. Also re-syncs the EXAM_PACK Product for each
+   474→  // premium category so prices stay consistent.
+   475→  const handleResyncPremium = async () => {
+   476→    setResyncing(true);
+   477→    try {
+   478→      let totalTests = 0;
+   479→      let catCount = 0;
+   480→      for (const cat of items) {
+   481→        try {
+   482→          const n = await propagateCategoryPremiumToTests(cat.id, !!cat.isPremium);
+   483→          totalTests += n;
+   484→          if (cat.isPremium) catCount++;
+   485→        } catch (e) {
+   486→          console.warn(`[categories] resync failed for ${cat.id}:`, e);
+   487→        }
+   488→      }
+   489→      toast.success(
+   490→        `Re-synced ${totalTests} test${totalTests === 1 ? '' : 's'} across ${catCount} premium categor${catCount === 1 ? 'y' : 'ies'}.`,
+   491→      );
+   492→      setResyncOpen(false);
+   493→    } catch (err: any) {
+   494→      toast.error(err?.message || 'Re-sync failed');
+   495→    } finally {
+   496→      setResyncing(false);
+   497→    }
+   498→  };
+   499→
+   500→  // ---- Bulk selection helpers ----
+   501→  const filteredIds = items.map((c) => c.id);
+   502→  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+   503→  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+   504→
+   505→  const toggleSelectAll = () => {
+   506→    setSelectedIds((prev) => {
+   507→      const next = new Set(prev);
+   508→      if (allFilteredSelected) {
+   509→        filteredIds.forEach((id) => next.delete(id));
+   510→      } else {
+   511→        filteredIds.forEach((id) => next.add(id));
+   512→      }
+   513→      return next;
+   514→    });
+   515→  };
+   516→
+   517→  const toggleSelectOne = (id: string) => {
+   518→    setSelectedIds((prev) => {
+   519→      const next = new Set(prev);
+   520→      if (next.has(id)) next.delete(id);
+   521→      else next.add(id);
+   522→      return next;
+   523→    });
+   524→  };
+   525→
+   526→  const clearSelection = () => setSelectedIds(new Set());
+   527→
+   528→  const handleBulkDelete = async () => {
+   529→    if (selectedIds.size === 0) return;
+   530→    setBulkDeleting(true);
+   531→    try {
+   532→      const ids = Array.from(selectedIds);
+   533→      await deleteItems('categories', ids);
+   534→      toast.success(`${ids.length} categor${ids.length === 1 ? 'y' : 'ies'} deleted`);
+   535→      setBulkDeleteOpen(false);
+   536→      clearSelection();
+   537→    } catch (err: any) {
+   538→      toast.error(err?.message || 'Bulk delete failed');
+   539→    } finally {
+   540→      setBulkDeleting(false);
+   541→    }
+   542→  };
+   543→
+   544→  return (
+   545→    <div className="space-y-4">
+   546→      <div className="flex items-center justify-between gap-3">
+   547→        <div>
+   548→          <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+   549→            <FolderTree className="w-5 h-5 text-emerald-400" /> Categories
+   550→          </h3>
+   551→          <p className="text-slate-500 text-sm">Exam categories like SSC, Railway, UPSC, Banking</p>
+   552→        </div>
+   553→        <div className="flex items-center gap-2">
+   554→          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   555→            <Plus className="w-4 h-4 mr-1" /> Add Category
+   556→          </Button>
+   557→          <Button
+   558→            variant="outline"
+   559→            onClick={() => setBulkOpen(true)}
+   560→            className="border-slate-700 text-slate-200 hover:bg-slate-800"
+   561→          >
+   562→            <Layers className="w-4 h-4 mr-1" /> Bulk Add
+   563→          </Button>
+   564→          <Button
+   565→            variant="outline"
+   566→            onClick={() => setResyncOpen(true)}
+   567→            disabled={resyncing || items.length === 0}
+   568→            title="Re-mark all tests inside premium categories as premium. Fixes tests that were left free by a previous bug."
+   569→            className="border-amber-700/60 text-amber-300 hover:bg-amber-950/40"
+   570→          >
+   571→            {resyncing ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <RefreshCw className="w-4 h-4 mr-1" />}
+   572→            Re-sync premium
+   573→          </Button>
+   574→        </div>
+   575→      </div>
+   576→
+   577→      {loading ? (
+   578→        <div className="flex justify-center py-20">
+   579→          <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
+   580→        </div>
+   581→      ) : items.length === 0 ? (
+   582→        <Card className="bg-slate-900 border-slate-800 border-dashed">
+   583→          <CardContent className="py-16 text-center">
+   584→            <FolderTree className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+   585→            <p className="text-slate-500">No categories yet. Add your first one!</p>
+   586→          </CardContent>
+   587→        </Card>
+   588→      ) : (
+   589→        <>
+   590→        <div className="flex items-center gap-3 flex-wrap rounded-md border border-slate-800 bg-slate-900/50 px-3 py-2">
+   591→          <div className="flex items-center gap-2">
+   592→            <Checkbox
+   593→              checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+   594→              onCheckedChange={toggleSelectAll}
+   595→              aria-label="Select all categories"
+   596→            />
+   597→            <span className="text-sm text-slate-400">
+   598→              {allFilteredSelected ? 'All selected' : someFilteredSelected ? `${selectedIds.size} selected` : 'Select all'}
+   599→            </span>
+   600→          </div>
+   601→          <div className="flex-1" />
+   602→          {selectedIds.size > 0 && (
+   603→            <div className="flex items-center gap-2">
+   604→              <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+   605→                {selectedIds.size} selected
+   606→              </Badge>
+   607→              <Button
+   608→                size="sm"
+   609→                variant="destructive"
+   610→                className="h-8 bg-red-600 hover:bg-red-700"
+   611→                onClick={() => setBulkDeleteOpen(true)}
+   612→              >
+   613→                <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+   614→              </Button>
+   615→              <Button
+   616→                size="sm"
+   617→                variant="ghost"
+   618→                className="h-8 text-slate-400 hover:bg-slate-800"
+   619→                onClick={clearSelection}
+   620→                title="Clear selection"
+   621→              >
+   622→                <X className="w-3.5 h-3.5" />
+   623→              </Button>
+   624→            </div>
+   625→          )}
+   626→        </div>
+   627→        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+   628→          {items.map((item) => {
+   629→            const isSelected = selectedIds.has(item.id);
+   630→            return (
+   631→            <Card key={item.id} className={`bg-slate-900 hover:border-slate-700 transition-colors group relative ${isSelected ? 'border-red-800 bg-red-950/20' : 'border-slate-800'}`}>
+   632→              <div className="absolute top-2 right-2 z-10">
+   633→                <Checkbox
+   634→                  checked={isSelected}
+   635→                  onCheckedChange={() => toggleSelectOne(item.id)}
+   636→                  aria-label={`Select ${item.name}`}
+   637→                />
+   638→              </div>
+   639→              <CardContent className="p-4">
+   640→                <div className="flex items-start gap-3">
+   641→                  {item.image ? (
+   642→                    <img src={item.image} alt={item.name} className="w-12 h-12 rounded-lg object-cover shrink-0" />
+   643→                  ) : (
+   644→                    <div className="w-12 h-12 rounded-lg flex items-center justify-center shrink-0" style={{ backgroundColor: (item.color || '#10b981') + '22' }}>
+   645→                      <FolderTree className="w-6 h-6" style={{ color: item.color || '#10b981' }} />
+   646→                    </div>
+   647→                  )}
+   648→                  <div className="flex-1 min-w-0">
+   649→                    <div className="flex items-center gap-2 flex-wrap">
+   650→                      <h4 className="text-white font-medium truncate">{item.name}</h4>
+   651→                      {item.isPremium ? (
+   652→                        <Badge variant="outline" className="bg-amber-950/60 text-amber-400 border-amber-800/50 shrink-0">
+   653→                          <Crown className="w-3 h-3 mr-1" /> ₹{item.premiumPrice || 0}
+   654→                        </Badge>
+   655→                      ) : null}
+   656→                      <Badge variant="outline" className="text-slate-500 border-slate-700 shrink-0">{subjectCountMap[item.id] || 0} subjects</Badge>
+   657→                    </div>
+   658→                    {item.description && <p className="text-slate-500 text-xs mt-1 line-clamp-2">{item.description}</p>}
+   659→                    <p className="text-slate-600 text-[10px] mt-1">/{item.slug}</p>
+   660→                  </div>
+   661→                </div>
+   662→                <div className="flex gap-2 mt-3 opacity-0 group-hover:opacity-100 transition-opacity">
+   663→                  <Button size="sm" variant="outline" className="h-8 border-slate-700 text-slate-300 hover:bg-slate-800" onClick={() => openEdit(item)}>
+   664→                    <Pencil className="w-3 h-3 mr-1" /> Edit
+   665→                  </Button>
+   666→                  <Button size="sm" variant="ghost" className="h-8 text-red-400 hover:bg-red-950/40" onClick={() => setDeleteId(item.id)}>
+   667→                    <Trash2 className="w-3 h-3 mr-1" /> Delete
+   668→                  </Button>
+   669→                </div>
+   670→              </CardContent>
+   671→            </Card>
+   672→            );
+   673→          })}
+   674→        </div>
+   675→        </>
+   676→      )}
+   677→
+   678→      {/* Add/Edit Dialog */}
+   679→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   680→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
+   681→          <DialogHeader>
+   682→            <DialogTitle>{editingId ? 'Edit Category' : 'Add Category'}</DialogTitle>
+   683→          </DialogHeader>
+   684→          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+   685→            <div className="space-y-2">
+   686→              <Label>Name *</Label>
+   687→              <Input
+   688→                value={form.name}
+   689→                onChange={(e) => setForm({ ...form, name: e.target.value, slug: form.slug || slugify(e.target.value) })}
+   690→                placeholder="e.g. SSC, Railway, UPSC"
+   691→                className="bg-slate-800 border-slate-700"
+   692→              />
+   693→            </div>
+   694→            <div className="space-y-2">
+   695→              <Label>Slug</Label>
+   696→              <Input value={form.slug} onChange={(e) => setForm({ ...form, slug: e.target.value })} placeholder="auto-generated" className="bg-slate-800 border-slate-700" />
+   697→            </div>
+   698→            <div className="grid grid-cols-2 gap-3">
+   699→              <div className="space-y-2">
+   700→                <Label>Icon (emoji)</Label>
+   701→                <Input value={form.icon} onChange={(e) => setForm({ ...form, icon: e.target.value })} placeholder="🚂" className="bg-slate-800 border-slate-700" />
+   702→              </div>
+   703→              <div className="space-y-2">
+   704→                <Label>Color</Label>
+   705→                <div className="flex gap-2">
+   706→                  <input type="color" value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="w-12 h-9 rounded border border-slate-700 bg-slate-800 cursor-pointer" />
+   707→                  <Input value={form.color} onChange={(e) => setForm({ ...form, color: e.target.value })} className="bg-slate-800 border-slate-700" />
+   708→                </div>
+   709→              </div>
+   710→            </div>
+   711→            <div className="space-y-2">
+   712→              <Label>Description</Label>
+   713→              <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Short description" className="bg-slate-800 border-slate-700" rows={2} />
+   714→            </div>
+   715→            <div className="space-y-2">
+   716→              <Label>Image</Label>
+   717→              <div className="flex items-center gap-3">
+   718→                {form.image && (
+   719→                  <div className="relative">
+   720→                    <img src={form.image} alt="preview" className="w-16 h-16 rounded-lg object-cover" />
+   721→                    <button onClick={() => setForm({ ...form, image: '' })} className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-white">
+   722→                      <X className="w-3 h-3" />
+   723→                    </button>
+   724→                  </div>
+   725→                )}
+   726→                <input ref={fileRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+   727→                <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading} className="border-slate-700 text-slate-300">
+   728→                  {uploading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ImageIcon className="w-4 h-4 mr-1" />}
+   729→                  {uploading ? 'Uploading...' : 'Upload'}
+   730→                </Button>
+   731→              </div>
+   732→            </div>
+   733→            <div className="space-y-2">
+   734→              <Label>Order</Label>
+   735→              <Input type="number" value={form.order} onChange={(e) => setForm({ ...form, order: Number(e.target.value) })} className="bg-slate-800 border-slate-700" />
+   736→            </div>
+   737→            {/* Premium toggle */}
+   738→            <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 space-y-3">
+   739→              <div className="flex items-center justify-between gap-2">
+   740→                <div className="flex items-center gap-2">
+   741→                  <Crown className="w-4 h-4 text-amber-400" />
+   742→                  <Label className="cursor-pointer font-semibold text-white">Premium Category</Label>
+   743→                </div>
+   744→                <Switch
+   745→                  checked={form.isPremium}
+   746→                  onCheckedChange={(v) => setForm({ ...form, isPremium: v })}
+   747→                />
+   748→              </div>
+   749→              <p className="text-xs text-slate-500">
+   750→                Premium categories require a subscription to access their tests & content.
+   751→              </p>
+   752→              {form.isPremium && (
+   753→                <div className="space-y-3 pt-1 border-t border-slate-700">
+   754→                  <div className="grid grid-cols-2 gap-3">
+   755→                    <div className="space-y-2">
+   756→                      <Label className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> Price (₹) *</Label>
+   757→                      <Input
+   758→                        type="number"
+   759→                        value={form.premiumPrice}
+   760→                        onChange={(e) => setForm({ ...form, premiumPrice: Number(e.target.value) })}
+   761→                        placeholder="99"
+   762→                        min="1"
+   763→                        className="bg-slate-800 border-slate-700"
+   764→                      />
+   765→                    </div>
+   766→                    <div className="space-y-2">
+   767→                      <Label>Duration (months)</Label>
+   768→                      <Select
+   769→                        value={String(form.premiumDurationMonths)}
+   770→                        onValueChange={(v) => setForm({ ...form, premiumDurationMonths: Number(v) })}
+   771→                      >
+   772→                        <SelectTrigger className="bg-slate-800 border-slate-700">
+   773→                          <SelectValue />
+   774→                        </SelectTrigger>
+   775→                        <SelectContent className="bg-slate-800 border-slate-700">
+   776→                          <SelectItem value="1">1 month</SelectItem>
+   777→                          <SelectItem value="3">3 months</SelectItem>
+   778→                          <SelectItem value="6">6 months</SelectItem>
+   779→                          <SelectItem value="12">12 months</SelectItem>
+   780→                          <SelectItem value="120">Lifetime (10 years)</SelectItem>
+   781→                        </SelectContent>
+   782→                      </Select>
+   783→                    </div>
+   784→                  </div>
+   785→                  <p className="text-xs text-amber-400/80 bg-amber-950/30 border border-amber-900/40 rounded px-2 py-1.5">
+   786→                    💡 This price is what users pay to unlock THIS exam. It shows as
+   787→                    "Unlock this exam (₹{form.premiumPrice || 0})" in the user app.
+   788→                    Must be at least ₹1 (Razorpay minimum). Without a valid price,
+   789→                    the lock shows but users can't buy.
+   790→                  </p>
+   791→                </div>
+   792→              )}
+   793→            </div>
+   794→          </div>
+   795→          <DialogFooter>
+   796→            <Button variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-700 text-slate-300">Cancel</Button>
+   797→            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   798→              {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   799→              {editingId ? 'Update' : 'Add'}
+   800→            </Button>
+   801→          </DialogFooter>
+   802→        </DialogContent>
+   803→      </Dialog>
+   804→
+   805→      {/* Bulk Add Dialog */}
+   806→      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+   807→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+   808→          <DialogHeader>
+   809→            <DialogTitle>Bulk Add Categories</DialogTitle>
+   810→          </DialogHeader>
+   811→          <div className="space-y-3">
+   812→            <div className="flex items-center justify-between gap-2">
+   813→              <p className="text-xs text-slate-500">
+   814→                Paste a JSON array of category objects below, or paste CSV rows (first row = column headers).
+   815→              </p>
+   816→              <div className="flex items-center gap-2">
+   817→                <Button
+   818→                  type="button"
+   819→                  variant="outline"
+   820→                  size="sm"
+   821→                  onClick={() => downloadJson('categories-template', JSON.parse(BULK_SAMPLE))}
+   822→                  className="border-slate-700 text-slate-300 h-8"
+   823→                >
+   824→                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+   825→                </Button>
+   826→                <Button
+   827→                  type="button"
+   828→                  variant="outline"
+   829→                  size="sm"
+   830→                  onClick={() => downloadCsv('categories-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+   831→                  className="border-slate-700 text-slate-300 h-8"
+   832→                >
+   833→                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
+   834→                </Button>
+   835→                <Button
+   836→                  type="button"
+   837→                  variant="outline"
+   838→                  size="sm"
+   839→                  onClick={() => setBulkText(BULK_SAMPLE)}
+   840→                  className="border-slate-700 text-slate-300 h-8"
+   841→                >
+   842→                  Load Sample
+   843→                </Button>
+   844→              </div>
+   845→            </div>
+   846→            <BulkTextarea
+   847→              value={bulkText}
+   848→              onChange={setBulkText}
+   849→              placeholder='[{"name":"SSC","description":"...","icon":"📋","color":"#10b981","order":1,"isActive":true}]'
+   850→            />
+   851→            <p className="text-xs text-slate-500">
+   852→              Fields: <span className="text-slate-400">name</span>,{' '}
+   853→              <span className="text-slate-400">description</span>,{' '}
+   854→              <span className="text-slate-400">icon</span> (emoji),{' '}
+   855→              <span className="text-slate-400">image</span> (URL string — banner image),{' '}
+   856→              <span className="text-slate-400">color</span> (hex),{' '}
+   857→              <span className="text-slate-400">order</span> (number),{' '}
+   858→              <span className="text-slate-400">isPremium</span> (boolean),{' '}
+   859→              <span className="text-slate-400">premiumPrice</span> (number, INR),{' '}
+   860→              <span className="text-slate-400">isActive</span> (boolean)
+   861→            </p>
+   862→            <p className="text-xs text-slate-500">
+   863→              Tip: <code className="text-emerald-300">image</code> accepts a
+   864→              direct URL (e.g. https://example.com/banner.png). Categories are
+   865→              the root of the hierarchy — add them first, then bulk-add
+   866→              subjects by <code className="text-emerald-300">categoryName</code>.
+   867→            </p>
+   868→          </div>
+   869→          <DialogFooter>
+   870→            <Button
+   871→              variant="outline"
+   872→              onClick={() => setBulkOpen(false)}
+   873→              className="border-slate-700 text-slate-300"
+   874→            >
+   875→              Cancel
+   876→            </Button>
+   877→            <Button
+   878→              onClick={handleBulkImport}
+   879→              disabled={bulkSaving || !bulkText.trim()}
+   880→              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   881→            >
+   882→              {bulkSaving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   883→              Validate & Import
+   884→            </Button>
+   885→          </DialogFooter>
+   886→        </DialogContent>
+   887→      </Dialog>
+   888→
+   889→      {/* Delete confirmation */}
+   890→      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+   891→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+   892→          <AlertDialogHeader>
+   893→            <AlertDialogTitle>Delete this category?</AlertDialogTitle>
+   894→            <AlertDialogDescription className="text-slate-400">
+   895→              This action cannot be undone. Subjects and tests under this category will remain but lose their category link.
+   896→            </AlertDialogDescription>
+   897→          </AlertDialogHeader>
+   898→          <AlertDialogFooter>
+   899→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   900→            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+   901→          </AlertDialogFooter>
+   902→        </AlertDialogContent>
+   903→      </AlertDialog>
+   904→
+   905→      {/* Bulk Delete Confirmation */}
+   906→      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+   907→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+   908→          <AlertDialogHeader>
+   909→            <AlertDialogTitle className="flex items-center gap-2">
+   910→              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} categor{selectedIds.size === 1 ? 'y' : 'ies'}?
+   911→            </AlertDialogTitle>
+   912→            <AlertDialogDescription className="text-slate-400">
+   913→              This will permanently delete {selectedIds.size} categor{selectedIds.size === 1 ? 'y' : 'ies'} from Firestore.
+   914→              Subjects and tests under these categories will remain but lose their category link.
+   915→              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+   916→            </AlertDialogDescription>
+   917→          </AlertDialogHeader>
+   918→          <AlertDialogFooter>
+   919→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   920→            <AlertDialogAction
+   921→              onClick={handleBulkDelete}
+   922→              disabled={bulkDeleting}
+   923→              className="bg-red-600 hover:bg-red-700 text-white"
+   924→            >
+   925→              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   926→              Delete {selectedIds.size} categor{selectedIds.size === 1 ? 'y' : 'ies'}
+   927→            </AlertDialogAction>
+   928→          </AlertDialogFooter>
+   929→        </AlertDialogContent>
+   930→      </AlertDialog>
+   931→
+   932→      {/* Re-sync Premium Flags Confirmation */}
+   933→      <AlertDialog open={resyncOpen} onOpenChange={setResyncOpen}>
+   934→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+   935→          <AlertDialogHeader>
+   936→            <AlertDialogTitle className="flex items-center gap-2">
+   937→              <RefreshCw className="w-5 h-5 text-amber-400" /> Re-sync premium flags?
+   938→            </AlertDialogTitle>
+   939→            <AlertDialogDescription className="text-slate-400">
+   940→              This re-marks every test's <b>isPremium</b> flag to match its
+   941→              category's premium setting (resolved via subjects). Premium
+   942→              categories → tests become premium; free categories → tests become
+   943→              free.
+   944→              <span className="block mt-2 text-slate-300">
+   945→                Use this to repair tests that were left free inside premium
+   946→                categories by a previous bug. Safe to run repeatedly.
+   947→              </span>
+   948→            </AlertDialogDescription>
+   949→          </AlertDialogHeader>
+   950→          <AlertDialogFooter>
+   951→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   952→            <AlertDialogAction
+   953→              onClick={handleResyncPremium}
+   954→              disabled={resyncing}
+   955→              className="bg-amber-600 hover:bg-amber-700 text-white"
+   956→            >
+   957→              {resyncing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   958→              Re-sync all
+   959→            </AlertDialogAction>
+   960→          </AlertDialogFooter>
+   961→        </AlertDialogContent>
+   962→      </AlertDialog>
+   963→    </div>
+   964→  );
+   965→}
+   966→

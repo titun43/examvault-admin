@@ -18,6 +18,8 @@ import {
   formatDate,
   timestampToDate,
   deleteItems,
+  deleteDocWithFiles,
+  deleteItemsWithFiles,
 } from '@/lib/admin-firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
@@ -360,7 +362,7 @@ export default function CurrentAffairs() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'current_affairs', deleteId));
+      await deleteDocWithFiles('current_affairs', deleteId, ['pdfUrl', 'imageUrl']);
       toast.success('Current affair deleted');
       setDeleteId(null);
     } catch (err: any) {
@@ -401,7 +403,7 @@ export default function CurrentAffairs() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItems('current_affairs', ids);
+      await deleteItemsWithFiles('current_affairs', ids, ['pdfUrl', 'imageUrl']);
       toast.success(`${ids.length} current affair${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();

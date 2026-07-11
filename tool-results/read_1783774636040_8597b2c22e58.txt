@@ -1,0 +1,891 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useRef } from 'react';
+     4→import {
+     5→  collection,
+     6→  onSnapshot,
+     7→  addDoc,
+     8→  updateDoc,
+     9→  deleteDoc,
+    10→  doc,
+    11→  serverTimestamp,
+    12→  writeBatch,
+    13→} from 'firebase/firestore';
+    14→import { db } from '@/lib/firebase';
+    15→import {
+    16→  uploadImage,
+    17→  toDateTimeInputValue,
+    18→  formatDate,
+    19→  timestampToDate,
+    20→  deleteItems,
+    21→} from '@/lib/admin-firestore';
+    22→import { Checkbox } from '@/components/ui/checkbox';
+    23→import { Button } from '@/components/ui/button';
+    24→import { Input } from '@/components/ui/input';
+    25→import { Label } from '@/components/ui/label';
+    26→import { Textarea } from '@/components/ui/textarea';
+    27→import { BulkTextarea } from './bulk-textarea';
+    28→import { Card, CardContent } from '@/components/ui/card';
+    29→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+    30→import {
+    31→  AlertDialog,
+    32→  AlertDialogAction,
+    33→  AlertDialogCancel,
+    34→  AlertDialogContent,
+    35→  AlertDialogDescription,
+    36→  AlertDialogFooter,
+    37→  AlertDialogHeader,
+    38→  AlertDialogTitle,
+    39→} from '@/components/ui/alert-dialog';
+    40→import { Badge } from '@/components/ui/badge';
+    41→import { Switch } from '@/components/ui/switch';
+    42→import {
+    43→  Select,
+    44→  SelectContent,
+    45→  SelectItem,
+    46→  SelectTrigger,
+    47→  SelectValue,
+    48→} from '@/components/ui/select';
+    49→import {
+    50→  Table,
+    51→  TableBody,
+    52→  TableCell,
+    53→  TableHead,
+    54→  TableHeader,
+    55→  TableRow,
+    56→} from '@/components/ui/table';
+    57→import {
+    58→  Plus,
+    59→  Pencil,
+    60→  Trash2,
+    61→  Loader2,
+    62→  Newspaper,
+    63→  Image as ImageIcon,
+    64→  X,
+    65→  FileText,
+    66→  Star,
+    67→  Tag as TagIcon,
+    68→  Upload,
+    69→  Layers,
+    70→  Download,
+    71→  FileSpreadsheet,
+    72→} from 'lucide-react';
+    73→import { toast } from 'sonner';
+    74→import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
+    75→
+    76→interface CurrentAffair {
+    77→  id: string;
+    78→  date?: any;
+    79→  title?: string;
+    80→  content?: string;
+    81→  summary?: string;
+    82→  pdfUrl?: string;
+    83→  imageUrl?: string;
+    84→  source?: string;
+    85→  category?: string;
+    86→  categoryId?: string;
+    87→  isImportant?: boolean;
+    88→  tags?: string[];
+    89→  createdAt?: any;
+    90→  updatedAt?: any;
+    91→}
+    92→
+    93→interface Category {
+    94→  id: string;
+    95→  name?: string;
+    96→}
+    97→
+    98→const emptyForm = {
+    99→  date: '',
+   100→  title: '',
+   101→  summary: '',
+   102→  content: '',
+   103→  source: '',
+   104→  category: '',
+   105→  categoryId: 'none',
+   106→  isImportant: false,
+   107→  tags: '',
+   108→  pdfUrl: '',
+   109→  imageUrl: '',
+   110→};
+   111→
+   112→const CATEGORY_COLORS: Record<string, string> = {
+   113→  National: 'bg-emerald-950/60 text-emerald-400 border-emerald-800/50',
+   114→  International: 'bg-purple-950/60 text-purple-400 border-purple-800/50',
+   115→  Sports: 'bg-amber-950/60 text-amber-400 border-amber-800/50',
+   116→  Economy: 'bg-cyan-950/60 text-cyan-400 border-cyan-800/50',
+   117→  Science: 'bg-pink-950/60 text-pink-400 border-pink-800/50',
+   118→  Technology: 'bg-blue-950/60 text-blue-400 border-blue-800/50',
+   119→};
+   120→
+   121→function getCategoryColor(cat?: string): string {
+   122→  if (!cat) return 'bg-slate-800 text-slate-400 border-slate-700';
+   123→  return CATEGORY_COLORS[cat] || 'bg-slate-800 text-slate-400 border-slate-700';
+   124→}
+   125→
+   126→export default function CurrentAffairs() {
+   127→  const [items, setItems] = useState<CurrentAffair[]>([]);
+   128→  const [categories, setCategories] = useState<Category[]>([]);
+   129→  const [loading, setLoading] = useState(true);
+   130→  const [dialogOpen, setDialogOpen] = useState(false);
+   131→  const [editingId, setEditingId] = useState<string | null>(null);
+   132→  const [form, setForm] = useState(emptyForm);
+   133→  const [saving, setSaving] = useState(false);
+   134→  const [uploadingImage, setUploadingImage] = useState(false);
+   135→  const [uploadingPdf, setUploadingPdf] = useState(false);
+   136→  const [deleteId, setDeleteId] = useState<string | null>(null);
+   137→  const [bulkOpen, setBulkOpen] = useState(false);
+   138→  const [bulkText, setBulkText] = useState('');
+   139→  const [bulkSaving, setBulkSaving] = useState(false);
+   140→  const imageRef = useRef<HTMLInputElement>(null);
+   141→  const pdfRef = useRef<HTMLInputElement>(null);
+   142→  // Bulk delete state
+   143→  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+   144→  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+   145→  const [bulkDeleting, setBulkDeleting] = useState(false);
+   146→
+   147→  const BULK_SAMPLE = '[{"date":"2024-01-15T00:00:00.000Z","title":"Sample News 1","summary":"Brief summary","content":"Full content here","source":"Newspaper","category":"National","imageUrl":"https://example.com/news1.jpg","isImportant":false,"tags":["india","politics"]},{"date":"2024-01-14T00:00:00.000Z","title":"Sample News 2","summary":"Brief summary 2","content":"Full content 2","source":"TV","category":"Sports","imageUrl":"https://example.com/news2.jpg","isImportant":true,"tags":["cricket"]}]';
+   148→
+   149→  const CSV_HEADERS = ['date', 'source', 'title', 'summary', 'content', 'category', 'imageUrl', 'tags', 'isImportant'];
+   150→  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+   151→    ['2024-01-15', 'Newspaper', 'Sample News 1', 'Brief summary', 'Full content here', 'National', 'https://example.com/news1.jpg', 'india,politics', false],
+   152→    ['2024-01-14', 'TV', 'Sample News 2', 'Brief summary 2', 'Full content 2', 'Sports', 'https://example.com/news2.jpg', 'cricket', true],
+   153→  ];
+   154→
+   155→  const handleBulkImport = async () => {
+   156→    let parsed: any;
+   157→    const text = bulkText.trim();
+   158→    if (!text) {
+   159→      toast.error('Please paste JSON or CSV data first');
+   160→      return;
+   161→    }
+   162→    let isCsv = false;
+   163→    try {
+   164→      parsed = JSON.parse(text);
+   165→    } catch {
+   166→      try {
+   167→        const rows = parseCsv(text);
+   168→        if (rows.length < 2) {
+   169→          toast.error('CSV must have a header row and at least 1 data row');
+   170→          return;
+   171→        }
+   172→        const headers = rows[0].map((h) => h.trim());
+   173→        parsed = rows
+   174→          .slice(1)
+   175→          .filter((r) => r.some((c) => c.trim() !== ''))
+   176→          .map((r) => {
+   177→            const obj: any = {};
+   178→            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+   179→            if ('isImportant' in obj) obj.isImportant = String(obj.isImportant).toLowerCase() === 'true';
+   180→            // Convert comma-separated tags into an array
+   181→            if ('tags' in obj && typeof obj.tags === 'string') {
+   182→              obj.tags = obj.tags.split(',').map((t: string) => t.trim()).filter(Boolean);
+   183→            }
+   184→            return obj;
+   185→          });
+   186→        isCsv = true;
+   187→      } catch (e: any) {
+   188→        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+   189→        return;
+   190→      }
+   191→    }
+   192→    if (!Array.isArray(parsed)) {
+   193→      toast.error('Input must be a JSON array or a CSV with a header row');
+   194→      return;
+   195→    }
+   196→    setBulkSaving(true);
+   197→    try {
+   198→      const batch = writeBatch(db);
+   199→      const colRef = collection(db, 'current_affairs');
+   200→      parsed.forEach((item) => {
+   201→        const ref = doc(colRef);
+   202→        const payload = { ...item };
+   203→        // Convert ISO date strings to Date objects if present
+   204→        if (typeof payload.date === 'string') payload.date = new Date(payload.date);
+   205→        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+   206→        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+   207→        batch.set(ref, payload);
+   208→      });
+   209→      await batch.commit();
+   210→      toast.success(`Imported ${parsed.length} items successfully` + (isCsv ? ' (from CSV)' : ''));
+   211→      setBulkOpen(false);
+   212→      setBulkText('');
+   213→    } catch (err: any) {
+   214→      toast.error(err?.message || 'Bulk import failed');
+   215→    } finally {
+   216→      setBulkSaving(false);
+   217→    }
+   218→  };
+   219→
+   220→  useEffect(() => {
+   221→    const unsub1 = onSnapshot(
+   222→      collection(db, 'current_affairs'),
+   223→      (snap) => {
+   224→        const list = snap.docs
+   225→          .map((d) => ({ id: d.id, ...d.data() }) as CurrentAffair)
+   226→          .sort((a, b) => {
+   227→            const dA = timestampToDate(a.date)?.getTime() || 0;
+   228→            const dB = timestampToDate(b.date)?.getTime() || 0;
+   229→            return dB - dA;
+   230→          });
+   231→        setItems(list);
+   232→        setLoading(false);
+   233→      },
+   234→      () => setLoading(false),
+   235→    );
+   236→    const unsub2 = onSnapshot(collection(db, 'categories'), (snap) => {
+   237→      const cats = snap.docs
+   238→        .map((d) => ({ id: d.id, ...d.data() }) as Category)
+   239→        .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+   240→      setCategories(cats);
+   241→    });
+   242→    return () => {
+   243→      unsub1();
+   244→      unsub2();
+   245→    };
+   246→  }, []);
+   247→
+   248→  const openAdd = () => {
+   249→    setForm({ ...emptyForm, date: toDateTimeInputValue(new Date()) });
+   250→    setEditingId(null);
+   251→    setDialogOpen(true);
+   252→  };
+   253→
+   254→  const openEdit = (item: CurrentAffair) => {
+   255→    setForm({
+   256→      date: item.date ? toDateTimeInputValue(item.date) : '',
+   257→      title: item.title || '',
+   258→      summary: item.summary || '',
+   259→      content: item.content || '',
+   260→      source: item.source || '',
+   261→      category: item.category || '',
+   262→      categoryId: item.categoryId || 'none',
+   263→      isImportant: !!item.isImportant,
+   264→      tags: Array.isArray(item.tags) ? item.tags.join(', ') : '',
+   265→      pdfUrl: item.pdfUrl || '',
+   266→      imageUrl: item.imageUrl || '',
+   267→    });
+   268→    setEditingId(item.id);
+   269→    setDialogOpen(true);
+   270→  };
+   271→
+   272→  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   273→    const file = e.target.files?.[0];
+   274→    if (!file) return;
+   275→    setUploadingImage(true);
+   276→    try {
+   277→      const url = await uploadImage('current_affairs_pdf', file);
+   278→      setForm((f) => ({ ...f, imageUrl: url }));
+   279→      toast.success('Image uploaded');
+   280→    } catch {
+   281→      toast.error('Image upload failed');
+   282→    } finally {
+   283→      setUploadingImage(false);
+   284→    }
+   285→  };
+   286→
+   287→  const handlePdfUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   288→    const file = e.target.files?.[0];
+   289→    if (!file) return;
+   290→    setUploadingPdf(true);
+   291→    try {
+   292→      const url = await uploadImage('current_affairs_pdf', file);
+   293→      setForm((f) => ({ ...f, pdfUrl: url }));
+   294→      toast.success('PDF uploaded');
+   295→    } catch {
+   296→      toast.error('PDF upload failed');
+   297→    } finally {
+   298→      setUploadingPdf(false);
+   299→    }
+   300→  };
+   301→
+   302→  const handleSave = async () => {
+   303→    if (!form.date) {
+   304→      toast.error('Date is required');
+   305→      return;
+   306→    }
+   307→    if (!form.title.trim()) {
+   308→      toast.error('Title is required');
+   309→      return;
+   310→    }
+   311→    if (!form.summary.trim()) {
+   312→      toast.error('Summary is required');
+   313→      return;
+   314→    }
+   315→    if (!form.content.trim()) {
+   316→      toast.error('Content is required');
+   317→      return;
+   318→    }
+   319→    setSaving(true);
+   320→    try {
+   321→      const tagsArray = form.tags
+   322→        .split(',')
+   323→        .map((s) => s.trim())
+   324→        .filter(Boolean);
+   325→      const data: Record<string, any> = {
+   326→        date: new Date(form.date),
+   327→        title: form.title.trim(),
+   328→        summary: form.summary.trim(),
+   329→        content: form.content.trim(),
+   330→        source: form.source.trim() || null,
+   331→        category: form.category.trim() || null,
+   332→        categoryId: form.categoryId === 'none' ? null : form.categoryId,
+   333→        isImportant: !!form.isImportant,
+   334→        tags: tagsArray,
+   335→        pdfUrl: form.pdfUrl || null,
+   336→        imageUrl: form.imageUrl || null,
+   337→      };
+   338→      if (editingId) {
+   339→        await updateDoc(doc(db, 'current_affairs', editingId), {
+   340→          ...data,
+   341→          updatedAt: serverTimestamp(),
+   342→        });
+   343→        toast.success('Current affair updated');
+   344→      } else {
+   345→        await addDoc(collection(db, 'current_affairs'), {
+   346→          ...data,
+   347→          createdAt: serverTimestamp(),
+   348→          updatedAt: serverTimestamp(),
+   349→        });
+   350→        toast.success('Current affair added');
+   351→      }
+   352→      setDialogOpen(false);
+   353→    } catch (err: any) {
+   354→      toast.error(err?.message || 'Save failed');
+   355→    } finally {
+   356→      setSaving(false);
+   357→    }
+   358→  };
+   359→
+   360→  const handleDelete = async () => {
+   361→    if (!deleteId) return;
+   362→    try {
+   363→      await deleteDoc(doc(db, 'current_affairs', deleteId));
+   364→      toast.success('Current affair deleted');
+   365→      setDeleteId(null);
+   366→    } catch (err: any) {
+   367→      toast.error(err?.message || 'Delete failed');
+   368→    }
+   369→  };
+   370→
+   371→  // ---- Bulk selection helpers ----
+   372→  const filteredIds = items.map((c) => c.id);
+   373→  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+   374→  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+   375→
+   376→  const toggleSelectAll = () => {
+   377→    setSelectedIds((prev) => {
+   378→      const next = new Set(prev);
+   379→      if (allFilteredSelected) {
+   380→        filteredIds.forEach((id) => next.delete(id));
+   381→      } else {
+   382→        filteredIds.forEach((id) => next.add(id));
+   383→      }
+   384→      return next;
+   385→    });
+   386→  };
+   387→
+   388→  const toggleSelectOne = (id: string) => {
+   389→    setSelectedIds((prev) => {
+   390→      const next = new Set(prev);
+   391→      if (next.has(id)) next.delete(id);
+   392→      else next.add(id);
+   393→      return next;
+   394→    });
+   395→  };
+   396→
+   397→  const clearSelection = () => setSelectedIds(new Set());
+   398→
+   399→  const handleBulkDelete = async () => {
+   400→    if (selectedIds.size === 0) return;
+   401→    setBulkDeleting(true);
+   402→    try {
+   403→      const ids = Array.from(selectedIds);
+   404→      await deleteItems('current_affairs', ids);
+   405→      toast.success(`${ids.length} current affair${ids.length === 1 ? '' : 's'} deleted`);
+   406→      setBulkDeleteOpen(false);
+   407→      clearSelection();
+   408→    } catch (err: any) {
+   409→      toast.error(err?.message || 'Bulk delete failed');
+   410→    } finally {
+   411→      setBulkDeleting(false);
+   412→    }
+   413→  };
+   414→
+   415→  return (
+   416→    <div className="space-y-4">
+   417→      <div className="flex items-center justify-between gap-3">
+   418→        <div>
+   419→          <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+   420→            <Newspaper className="w-5 h-5 text-emerald-400" /> Current Affairs
+   421→          </h3>
+   422→          <p className="text-slate-500 text-sm">Daily current affairs updates for users</p>
+   423→        </div>
+   424→        <div className="flex items-center gap-2">
+   425→          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   426→            <Plus className="w-4 h-4 mr-1" /> Add Current Affair
+   427→          </Button>
+   428→          <Button
+   429→            variant="outline"
+   430→            onClick={() => setBulkOpen(true)}
+   431→            className="border-slate-700 text-slate-200 hover:bg-slate-800"
+   432→          >
+   433→            <Layers className="w-4 h-4 mr-1" /> Bulk Add
+   434→          </Button>
+   435→        </div>
+   436→      </div>
+   437→
+   438→      {loading ? (
+   439→        <div className="flex justify-center py-20">
+   440→          <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
+   441→        </div>
+   442→      ) : items.length === 0 ? (
+   443→        <Card className="bg-slate-900 border-slate-800 border-dashed">
+   444→          <CardContent className="py-16 text-center">
+   445→            <Newspaper className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+   446→            <p className="text-slate-500">No current affairs yet. Add your first one!</p>
+   447→          </CardContent>
+   448→        </Card>
+   449→      ) : (
+   450→        <>
+   451→        {selectedIds.size > 0 && (
+   452→          <div className="flex items-center gap-2 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-1.5 flex-wrap">
+   453→            <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+   454→              {selectedIds.size} selected
+   455→            </Badge>
+   456→            <Button
+   457→              size="sm"
+   458→              variant="destructive"
+   459→              className="h-8 bg-red-600 hover:bg-red-700"
+   460→              onClick={() => setBulkDeleteOpen(true)}
+   461→            >
+   462→              <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+   463→            </Button>
+   464→            <Button
+   465→              size="sm"
+   466→              variant="ghost"
+   467→              className="h-8 text-slate-400 hover:bg-slate-800"
+   468→              onClick={clearSelection}
+   469→              title="Clear selection"
+   470→            >
+   471→              <X className="w-3.5 h-3.5" />
+   472→            </Button>
+   473→          </div>
+   474→        )}
+   475→        <Card className="bg-slate-900 border-slate-800">
+   476→          <CardContent className="p-0">
+   477→            <div className="max-h-[70vh] overflow-y-auto">
+   478→              <Table>
+   479→                <TableHeader>
+   480→                  <TableRow className="border-slate-800 hover:bg-transparent">
+   481→                    <TableHead className="text-slate-400 w-[44px]">
+   482→                      <Checkbox
+   483→                        checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+   484→                        onCheckedChange={toggleSelectAll}
+   485→                        aria-label="Select all current affairs"
+   486→                      />
+   487→                    </TableHead>
+   488→                    <TableHead className="text-slate-400">Date</TableHead>
+   489→                    <TableHead className="text-slate-400">Title</TableHead>
+   490→                    <TableHead className="text-slate-400 hidden md:table-cell">Category</TableHead>
+   491→                    <TableHead className="text-slate-400 hidden lg:table-cell">Source</TableHead>
+   492→                    <TableHead className="text-slate-400 text-right">Actions</TableHead>
+   493→                  </TableRow>
+   494→                </TableHeader>
+   495→                <TableBody>
+   496→                  {items.map((item) => {
+   497→                    const isSelected = selectedIds.has(item.id);
+   498→                    return (
+   499→                    <TableRow key={item.id} className={`border-slate-800 hover:bg-slate-800/40 ${isSelected ? 'bg-red-950/20' : ''}`}>
+   500→                      <TableCell>
+   501→                        <Checkbox
+   502→                          checked={isSelected}
+   503→                          onCheckedChange={() => toggleSelectOne(item.id)}
+   504→                          aria-label={`Select ${item.title}`}
+   505→                        />
+   506→                      </TableCell>
+   507→                      <TableCell className="text-slate-300 whitespace-nowrap">
+   508→                        {formatDate(item.date)}
+   509→                      </TableCell>
+   510→                      <TableCell className="max-w-xs">
+   511→                        <div className="flex items-start gap-2">
+   512→                          {item.isImportant && (
+   513→                            <Star className="w-4 h-4 text-amber-400 fill-amber-400 shrink-0 mt-0.5" />
+   514→                          )}
+   515→                          <div className="min-w-0">
+   516→                            <p className="text-white font-medium truncate">{item.title}</p>
+   517→                            <p className="text-slate-500 text-xs line-clamp-1">{item.summary}</p>
+   518→                            {Array.isArray(item.tags) && item.tags.length > 0 && (
+   519→                              <div className="flex flex-wrap gap-1 mt-1">
+   520→                                {item.tags.slice(0, 2).map((t, i) => (
+   521→                                  <span
+   522→                                    key={i}
+   523→                                    className="text-[10px] px-1.5 py-0.5 rounded bg-slate-800 text-slate-400 inline-flex items-center"
+   524→                                  >
+   525→                                    <TagIcon className="w-2.5 h-2.5 mr-1" />
+   526→                                    {t}
+   527→                                  </span>
+   528→                                ))}
+   529→                              </div>
+   530→                            )}
+   531→                          </div>
+   532→                        </div>
+   533→                      </TableCell>
+   534→                      <TableCell className="hidden md:table-cell">
+   535→                        {item.category ? (
+   536→                          <Badge variant="outline" className={getCategoryColor(item.category)}>
+   537→                            {item.category}
+   538→                          </Badge>
+   539→                        ) : (
+   540→                          <span className="text-slate-600 text-sm">—</span>
+   541→                        )}
+   542→                      </TableCell>
+   543→                      <TableCell className="hidden lg:table-cell text-slate-400 text-sm">
+   544→                        {item.source || '—'}
+   545→                      </TableCell>
+   546→                      <TableCell className="text-right">
+   547→                        <div className="flex items-center justify-end gap-1.5">
+   548→                          {item.pdfUrl && (
+   549→                            <a
+   550→                              href={item.pdfUrl}
+   551→                              target="_blank"
+   552→                              rel="noreferrer"
+   553→                              className="inline-flex items-center justify-center w-8 h-8 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800"
+   554→                              title="Open PDF"
+   555→                            >
+   556→                              <FileText className="w-3.5 h-3.5" />
+   557→                            </a>
+   558→                          )}
+   559→                          <Button
+   560→                            size="sm"
+   561→                            variant="outline"
+   562→                            className="h-8 border-slate-700 text-slate-300 hover:bg-slate-800"
+   563→                            onClick={() => openEdit(item)}
+   564→                          >
+   565→                            <Pencil className="w-3 h-3" />
+   566→                          </Button>
+   567→                          <Button
+   568→                            size="sm"
+   569→                            variant="ghost"
+   570→                            className="h-8 text-red-400 hover:bg-red-950/40"
+   571→                            onClick={() => setDeleteId(item.id)}
+   572→                          >
+   573→                            <Trash2 className="w-3 h-3" />
+   574→                          </Button>
+   575→                        </div>
+   576→                      </TableCell>
+   577→                    </TableRow>
+   578→                    );
+   579→                  })}
+   580→                </TableBody>
+   581→              </Table>
+   582→            </div>
+   583→          </CardContent>
+   584→        </Card>
+   585→        </>
+   586→      )}
+   587→
+   588→      {/* Add/Edit Dialog */}
+   589→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   590→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
+   591→          <DialogHeader>
+   592→            <DialogTitle>{editingId ? 'Edit Current Affair' : 'Add Current Affair'}</DialogTitle>
+   593→          </DialogHeader>
+   594→          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
+   595→            <div className="grid grid-cols-2 gap-3">
+   596→              <div className="space-y-2">
+   597→                <Label>Date *</Label>
+   598→                <Input
+   599→                  type="datetime-local"
+   600→                  value={form.date}
+   601→                  onChange={(e) => setForm({ ...form, date: e.target.value })}
+   602→                  className="bg-slate-800 border-slate-700"
+   603→                />
+   604→              </div>
+   605→              <div className="space-y-2">
+   606→                <Label>Source</Label>
+   607→                <Input
+   608→                  value={form.source}
+   609→                  onChange={(e) => setForm({ ...form, source: e.target.value })}
+   610→                  placeholder="PIB, The Hindu..."
+   611→                  className="bg-slate-800 border-slate-700"
+   612→                />
+   613→              </div>
+   614→            </div>
+   615→            <div className="space-y-2">
+   616→              <Label>Title *</Label>
+   617→              <Input
+   618→                value={form.title}
+   619→                onChange={(e) => setForm({ ...form, title: e.target.value })}
+   620→                placeholder="Headline of the current affair"
+   621→                className="bg-slate-800 border-slate-700"
+   622→              />
+   623→            </div>
+   624→            <div className="space-y-2">
+   625→              <Label>Summary *</Label>
+   626→              <Textarea
+   627→                value={form.summary}
+   628→                onChange={(e) => setForm({ ...form, summary: e.target.value })}
+   629→                placeholder="Short one-line summary"
+   630→                className="bg-slate-800 border-slate-700"
+   631→                rows={2}
+   632→              />
+   633→            </div>
+   634→            <div className="space-y-2">
+   635→              <Label>Content *</Label>
+   636→              <Textarea
+   637→                value={form.content}
+   638→                onChange={(e) => setForm({ ...form, content: e.target.value })}
+   639→                placeholder="Full content of the current affair"
+   640→                className="bg-slate-800 border-slate-700"
+   641→                rows={5}
+   642→              />
+   643→            </div>
+   644→            <div className="grid grid-cols-2 gap-3">
+   645→              <div className="space-y-2">
+   646→                <Label>Category</Label>
+   647→                <Input
+   648→                  value={form.category}
+   649→                  onChange={(e) => setForm({ ...form, category: e.target.value })}
+   650→                  placeholder="National, Sports..."
+   651→                  className="bg-slate-800 border-slate-700"
+   652→                />
+   653→              </div>
+   654→              <div className="space-y-2">
+   655→                <Label>Linked Category</Label>
+   656→                <Select
+   657→                  value={form.categoryId}
+   658→                  onValueChange={(v) => setForm({ ...form, categoryId: v })}
+   659→                >
+   660→                  <SelectTrigger className="bg-slate-800 border-slate-700">
+   661→                    <SelectValue placeholder="None" />
+   662→                  </SelectTrigger>
+   663→                  <SelectContent className="bg-slate-800 border-slate-700">
+   664→                    <SelectItem value="none">None</SelectItem>
+   665→                    {categories.map((c) => (
+   666→                      <SelectItem key={c.id} value={c.id}>
+   667→                        {c.name}
+   668→                      </SelectItem>
+   669→                    ))}
+   670→                  </SelectContent>
+   671→                </Select>
+   672→              </div>
+   673→            </div>
+   674→            <div className="space-y-2">
+   675→              <Label>Tags (comma-separated)</Label>
+   676→              <Input
+   677→                value={form.tags}
+   678→                onChange={(e) => setForm({ ...form, tags: e.target.value })}
+   679→                placeholder="economy, policy, budget"
+   680→                className="bg-slate-800 border-slate-700"
+   681→              />
+   682→            </div>
+   683→            <div className="grid grid-cols-2 gap-3">
+   684→              <div className="space-y-2">
+   685→                <Label>Image</Label>
+   686→                <div className="flex items-center gap-2">
+   687→                  {form.imageUrl ? (
+   688→                    <div className="relative">
+   689→                      <img src={form.imageUrl} alt="preview" className="w-12 h-12 rounded-lg object-cover" />
+   690→                      <button
+   691→                        onClick={() => setForm({ ...form, imageUrl: '' })}
+   692→                        className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-white"
+   693→                      >
+   694→                        <X className="w-3 h-3" />
+   695→                      </button>
+   696→                    </div>
+   697→                  ) : (
+   698→                    <Button
+   699→                      type="button"
+   700→                      variant="outline"
+   701→                      onClick={() => imageRef.current?.click()}
+   702→                      disabled={uploadingImage}
+   703→                      className="border-slate-700 text-slate-300 h-12"
+   704→                    >
+   705→                      {uploadingImage ? <Loader2 className="w-4 h-4 animate-spin" /> : <ImageIcon className="w-4 h-4" />}
+   706→                    </Button>
+   707→                  )}
+   708→                  <input ref={imageRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+   709→                </div>
+   710→              </div>
+   711→              <div className="space-y-2">
+   712→                <Label>PDF</Label>
+   713→                <div className="flex items-center gap-2">
+   714→                  {form.pdfUrl ? (
+   715→                    <div className="flex items-center gap-1.5 bg-slate-800 border border-slate-700 rounded-lg px-2 py-2 max-w-full">
+   716→                      <FileText className="w-4 h-4 text-emerald-400 shrink-0" />
+   717→                      <a
+   718→                        href={form.pdfUrl}
+   719→                        target="_blank"
+   720→                        rel="noreferrer"
+   721→                        className="text-xs text-slate-300 truncate max-w-[80px]"
+   722→                      >
+   723→                        View PDF
+   724→                      </a>
+   725→                      <button
+   726→                        onClick={() => setForm({ ...form, pdfUrl: '' })}
+   727→                        className="text-red-400 hover:text-red-300"
+   728→                      >
+   729→                        <X className="w-3.5 h-3.5" />
+   730→                      </button>
+   731→                    </div>
+   732→                  ) : (
+   733→                    <Button
+   734→                      type="button"
+   735→                      variant="outline"
+   736→                      onClick={() => pdfRef.current?.click()}
+   737→                      disabled={uploadingPdf}
+   738→                      className="border-slate-700 text-slate-300 h-12"
+   739→                    >
+   740→                      {uploadingPdf ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+   741→                    </Button>
+   742→                  )}
+   743→                  <input ref={pdfRef} type="file" accept="application/pdf" onChange={handlePdfUpload} className="hidden" />
+   744→                </div>
+   745→              </div>
+   746→            </div>
+   747→            <div className="flex items-center gap-2 pt-1">
+   748→              <Switch
+   749→                checked={form.isImportant}
+   750→                onCheckedChange={(v) => setForm({ ...form, isImportant: v })}
+   751→              />
+   752→              <Label className="cursor-pointer">Mark as important</Label>
+   753→            </div>
+   754→          </div>
+   755→          <DialogFooter>
+   756→            <Button variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-700 text-slate-300">
+   757→              Cancel
+   758→            </Button>
+   759→            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   760→              {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   761→              {editingId ? 'Update' : 'Add'}
+   762→            </Button>
+   763→          </DialogFooter>
+   764→        </DialogContent>
+   765→      </Dialog>
+   766→
+   767→      {/* Bulk Add Dialog */}
+   768→      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+   769→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+   770→          <DialogHeader>
+   771→            <DialogTitle>Bulk Add Current Affairs</DialogTitle>
+   772→          </DialogHeader>
+   773→          <div className="space-y-3">
+   774→            <div className="flex items-center justify-between gap-2">
+   775→              <p className="text-xs text-slate-500">
+   776→                Paste a JSON array of current affair objects below, or paste CSV rows (first row = column headers).
+   777→              </p>
+   778→              <div className="flex items-center gap-2">
+   779→                <Button
+   780→                  type="button"
+   781→                  variant="outline"
+   782→                  size="sm"
+   783→                  onClick={() => downloadJson('current-affairs-template', JSON.parse(BULK_SAMPLE))}
+   784→                  className="border-slate-700 text-slate-300 h-8"
+   785→                >
+   786→                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+   787→                </Button>
+   788→                <Button
+   789→                  type="button"
+   790→                  variant="outline"
+   791→                  size="sm"
+   792→                  onClick={() => downloadCsv('current-affairs-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+   793→                  className="border-slate-700 text-slate-300 h-8"
+   794→                >
+   795→                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
+   796→                </Button>
+   797→                <Button
+   798→                  type="button"
+   799→                  variant="outline"
+   800→                  size="sm"
+   801→                  onClick={() => setBulkText(BULK_SAMPLE)}
+   802→                  className="border-slate-700 text-slate-300 h-8"
+   803→                >
+   804→                  Load Sample
+   805→                </Button>
+   806→              </div>
+   807→            </div>
+   808→            <BulkTextarea
+   809→              value={bulkText}
+   810→              onChange={setBulkText}
+   811→              placeholder='[{"date":"2024-01-15T00:00:00.000Z","title":"...","summary":"...","content":"..."}]'
+   812→            />
+   813→            <p className="text-xs text-slate-500">
+   814→              Fields: <span className="text-slate-400">date</span> (ISO string),{' '}
+   815→              <span className="text-slate-400">title</span>,{' '}
+   816→              <span className="text-slate-400">summary</span>,{' '}
+   817→              <span className="text-slate-400">content</span>,{' '}
+   818→              <span className="text-slate-400">source</span>,{' '}
+   819→              <span className="text-slate-400">category</span> (National | Sports | Economy | Science | Technology | International),{' '}
+   820→              <span className="text-slate-400">isImportant</span> (boolean),{' '}
+   821→              <span className="text-slate-400">tags</span> (string array)
+   822→            </p>
+   823→          </div>
+   824→          <DialogFooter>
+   825→            <Button
+   826→              variant="outline"
+   827→              onClick={() => setBulkOpen(false)}
+   828→              className="border-slate-700 text-slate-300"
+   829→            >
+   830→              Cancel
+   831→            </Button>
+   832→            <Button
+   833→              onClick={handleBulkImport}
+   834→              disabled={bulkSaving || !bulkText.trim()}
+   835→              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   836→            >
+   837→              {bulkSaving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   838→              Validate & Import
+   839→            </Button>
+   840→          </DialogFooter>
+   841→        </DialogContent>
+   842→      </Dialog>
+   843→
+   844→      {/* Delete confirmation */}
+   845→      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+   846→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+   847→          <AlertDialogHeader>
+   848→            <AlertDialogTitle>Delete this current affair?</AlertDialogTitle>
+   849→            <AlertDialogDescription className="text-slate-400">
+   850→              This action cannot be undone. The current affair will be removed from all user apps immediately.
+   851→            </AlertDialogDescription>
+   852→          </AlertDialogHeader>
+   853→          <AlertDialogFooter>
+   854→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   855→            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">
+   856→              Delete
+   857→            </AlertDialogAction>
+   858→          </AlertDialogFooter>
+   859→        </AlertDialogContent>
+   860→      </AlertDialog>
+   861→
+   862→      {/* Bulk Delete Confirmation */}
+   863→      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+   864→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+   865→          <AlertDialogHeader>
+   866→            <AlertDialogTitle className="flex items-center gap-2">
+   867→              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} current affair{selectedIds.size === 1 ? '' : 's'}?
+   868→            </AlertDialogTitle>
+   869→            <AlertDialogDescription className="text-slate-400">
+   870→              This will permanently delete {selectedIds.size} current affair{selectedIds.size === 1 ? '' : 's'} from Firestore.
+   871→              They will be removed from all user apps immediately.
+   872→              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+   873→            </AlertDialogDescription>
+   874→          </AlertDialogHeader>
+   875→          <AlertDialogFooter>
+   876→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   877→            <AlertDialogAction
+   878→              onClick={handleBulkDelete}
+   879→              disabled={bulkDeleting}
+   880→              className="bg-red-600 hover:bg-red-700 text-white"
+   881→            >
+   882→              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   883→              Delete {selectedIds.size} current affair{selectedIds.size === 1 ? '' : 's'}
+   884→            </AlertDialogAction>
+   885→          </AlertDialogFooter>
+   886→        </AlertDialogContent>
+   887→      </AlertDialog>
+   888→    </div>
+   889→  );
+   890→}
+   891→

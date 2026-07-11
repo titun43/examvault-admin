@@ -1,0 +1,731 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useRef } from 'react';
+     4→import {
+     5→  collection,
+     6→  onSnapshot,
+     7→  addDoc,
+     8→  updateDoc,
+     9→  deleteDoc,
+    10→  doc,
+    11→  serverTimestamp,
+    12→  query,
+    13→  where,
+    14→  writeBatch,
+    15→  getDocs,
+    16→} from 'firebase/firestore';
+    17→import { db } from '@/lib/firebase';
+    18→import { useAppStore } from '@/lib/store';
+    19→import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+    20→import { Checkbox } from '@/components/ui/checkbox';
+    21→import { Button } from '@/components/ui/button';
+    22→import { Input } from '@/components/ui/input';
+    23→import { Label } from '@/components/ui/label';
+    24→import { Textarea } from '@/components/ui/textarea';
+    25→import { BulkTextarea } from './bulk-textarea';
+    26→import { resolveTestIdByName } from '@/lib/bulk-resolve';
+    27→import { Card, CardContent } from '@/components/ui/card';
+    28→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+    29→import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+    30→import { Switch } from '@/components/ui/switch';
+    31→import { Badge } from '@/components/ui/badge';
+    32→import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers, Download, FileSpreadsheet } from 'lucide-react';
+    33→import { toast } from 'sonner';
+    34→import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
+    35→
+    36→interface Question {
+    37→  id: string;
+    38→  testId: string;
+    39→  question: string;
+    40→  options: string[];
+    41→  correctAnswerIndex: number;
+    42→  explanation?: string;
+    43→  subjectTopic?: string;
+    44→  marks: number;
+    45→  isPremium: boolean;
+    46→  imageUrl?: string;
+    47→}
+    48→
+    49→const emptyForm = {
+    50→  question: '', options: ['', '', '', ''], correctAnswerIndex: 0,
+    51→  explanation: '', subjectTopic: '', marks: 1, isPremium: false, imageUrl: '',
+    52→};
+    53→
+    54→export default function Questions() {
+    55→  const { selectedTestId, selectedTestTitle, setCurrentSection } = useAppStore();
+    56→  const [items, setItems] = useState<Question[]>([]);
+    57→  const [loading, setLoading] = useState(true);
+    58→  const [dialogOpen, setDialogOpen] = useState(false);
+    59→  const [editingId, setEditingId] = useState<string | null>(null);
+    60→  const [form, setForm] = useState(emptyForm);
+    61→  const [saving, setSaving] = useState(false);
+    62→  const [uploading, setUploading] = useState(false);
+    63→  const [deleteId, setDeleteId] = useState<string | null>(null);
+    64→  const [bulkOpen, setBulkOpen] = useState(false);
+    65→  const [bulkText, setBulkText] = useState('');
+    66→  const [bulkSaving, setBulkSaving] = useState(false);
+    67→  const fileRef = useRef<HTMLInputElement>(null);
+    68→  // Bulk delete state
+    69→  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    70→  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+    71→  const [bulkDeleting, setBulkDeleting] = useState(false);
+    72→
+    73→  const BULK_SAMPLE = '[{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"What is 2+2?","options":["3","4","5","6"],"correctAnswer":1,"explanation":"2+2=4","difficulty":"easy","marks":1},{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"Capital of India?","options":["Mumbai","Delhi","Kolkata","Chennai"],"correctAnswer":1,"explanation":"New Delhi is the capital","difficulty":"easy","marks":1}]';
+    74→
+    75→  const CSV_HEADERS = ['testTitle', 'subjectName', 'categoryName', 'question', 'option1', 'option2', 'option3', 'option4', 'correctAnswerIndex', 'explanation', 'subjectTopic', 'marks', 'isPremium'];
+    76→  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+    77→    ['SSC Mock 1', 'Quantitative Aptitude', 'SSC', 'What is 2+2?', '3', '4', '5', '6', 1, '2+2=4', 'Math', 1, false],
+    78→    ['SSC Mock 1', 'Quantitative Aptitude', 'SSC', 'Capital of India?', 'Mumbai', 'Delhi', 'Kolkata', 'Chennai', 1, 'New Delhi is the capital', 'GK', 1, false],
+    79→  ];
+    80→
+    81→  const handleBulkImport = async () => {
+    82→    let parsed: any;
+    83→    const text = bulkText.trim();
+    84→    if (!text) {
+    85→      toast.error('Please paste JSON or CSV data first');
+    86→      return;
+    87→    }
+    88→    let isCsv = false;
+    89→    try {
+    90→      parsed = JSON.parse(text);
+    91→    } catch {
+    92→      try {
+    93→        const rows = parseCsv(text);
+    94→        if (rows.length < 2) {
+    95→          toast.error('CSV must have a header row and at least 1 data row');
+    96→          return;
+    97→        }
+    98→        const headers = rows[0].map((h) => h.trim());
+    99→        parsed = rows
+   100→          .slice(1)
+   101→          .filter((r) => r.some((c) => c.trim() !== ''))
+   102→          .map((r) => {
+   103→            const obj: any = {};
+   104→            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+   105→            // Transform CSV-only columns into the Firestore object shape
+   106→            const opt1 = obj.option1 ?? '';
+   107→            const opt2 = obj.option2 ?? '';
+   108→            const opt3 = obj.option3 ?? '';
+   109→            const opt4 = obj.option4 ?? '';
+   110→            obj.options = [opt1, opt2, opt3, opt4];
+   111→            delete obj.option1;
+   112→            delete obj.option2;
+   113→            delete obj.option3;
+   114→            delete obj.option4;
+   115→            if ('correctAnswerIndex' in obj) {
+   116→              obj.correctAnswerIndex = Number(obj.correctAnswerIndex) || 0;
+   117→            }
+   118→            if ('marks' in obj) obj.marks = Number(obj.marks) || 0;
+   119→            if ('isPremium' in obj) obj.isPremium = String(obj.isPremium).toLowerCase() === 'true';
+   120→            // CSV fallback: only attach to selected test if the row has NO
+   121→            // test reference at all (no testId AND no testTitle). If the row
+   122→            // has a testTitle, let the resolution loop below handle it.
+   123→            if (selectedTestId && !obj.testId && !obj.testTitle) {
+   124→              obj.testId = selectedTestId;
+   125→            }
+   126→            return obj;
+   127→          });
+   128→        isCsv = true;
+   129→      } catch (e: any) {
+   130→        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+   131→        return;
+   132→      }
+   133→    }
+   134→    if (!Array.isArray(parsed)) {
+   135→      toast.error('Input must be a JSON array or a CSV with a header row');
+   136→      return;
+   137→    }
+   138→    setBulkSaving(true);
+   139→    try {
+   140→      // ---- Name-based parent resolution ----
+   141→      // Each row can use EITHER `testId` (explicit Firestore doc id —
+   142→      // backward compatible) OR `testTitle` (resolved to id via Firestore
+   143→      // lookup, optionally disambiguated by `subjectName` + `categoryName`).
+   144→      // If both are present, testId wins.
+   145→      //
+   146→      // IMPORTANT for CSV users: CSV rows do NOT carry a test reference, so
+   147→      // they fall back to the currently-selected test in the dropdown above
+   148→      // (selectedTestId). This preserves the previous CSV behaviour.
+   149→      // -----------------------------------------------------------------
+   150→      const skipList: { row: number; reason: string }[] = [];
+   151→      const resolved: any[] = [];
+   152→      const testIdCache = new Map<string, string | null>();
+   153→
+   154→      for (let i = 0; i < parsed.length; i++) {
+   155→        const item = parsed[i];
+   156→        const rowNo = i + 1;
+   157→        let testId = (item.testId ?? '').toString().trim();
+   158→        const testTitle = (item.testTitle ?? '').toString().trim();
+   159→        const subjName = (item.subjectName ?? '').toString().trim();
+   160→        const catName = (item.categoryName ?? '').toString().trim();
+   161→
+   162→        const testKey = `${testTitle.toLowerCase()}||${subjName.toLowerCase()}||${catName.toLowerCase()}`;
+   163→
+   164→        if (!testId && testTitle) {
+   165→          if (testIdCache.has(testKey)) {
+   166→            testId = testIdCache.get(testKey) ?? '';
+   167→          } else {
+   168→            const r = await resolveTestIdByName(
+   169→              testTitle,
+   170→              subjName || undefined,
+   171→              catName || undefined,
+   172→            );
+   173→            testIdCache.set(testKey, r.id);
+   174→            testId = r.id ?? '';
+   175→          }
+   176→          if (!testId) {
+   177→            skipList.push({
+   178→              row: rowNo,
+   179→              reason: `test "${testTitle}"${subjName ? ` (in ${subjName}${catName ? ` / ${catName}` : ''})` : ''} not found`,
+   180→            });
+   181→            continue;
+   182→          }
+   183→        }
+   184→        // CSV fallback: if no test reference at all, attach to selected test.
+   185→        if (!testId && selectedTestId) {
+   186→          testId = selectedTestId;
+   187→        }
+   188→        if (!testId) {
+   189→          skipList.push({
+   190→            row: rowNo,
+   191→            reason: 'no testId, testTitle, or selected test in the dropdown',
+   192→          });
+   193→          continue;
+   194→        }
+   195→
+   196→        const payload = { ...item };
+   197→        payload.testId = testId;
+   198→        delete payload.testTitle;
+   199→        delete payload.subjectName;
+   200→        delete payload.categoryName;
+   201→        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+   202→        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+   203→        resolved.push(payload);
+   204→      }
+   205→
+   206→      if (resolved.length === 0) {
+   207→        const sample = skipList.slice(0, 3).map((s) => `Row ${s.row}: ${s.reason}`).join('; ');
+   208→        toast.error(`No rows to import. ${sample}${skipList.length > 3 ? ` (+${skipList.length - 3} more)` : ''}`);
+   209→        return;
+   210→      }
+   211→
+   212→      const batch = writeBatch(db);
+   213→      const colRef = collection(db, 'questions');
+   214→      resolved.forEach((payload) => {
+   215→        const ref = doc(colRef);
+   216→        batch.set(ref, payload);
+   217→      });
+   218→      await batch.commit();
+   219→
+   220→      // ---- Sync questionCount on every affected test doc ----
+   221→      // The Test model stores a denormalized `questionCount` field that the
+   222→      // Flutter user app reads directly (it doesn't count questions itself).
+   223→      // The single-add / single-delete paths below update this field, but
+   224→      // bulk-import never did — so after a bulk import the count stayed at
+   225→      // 0 (or stale) until someone opened the Tests admin page (whose own
+   226→      // onSnapshot writeback would eventually fix it).
+   227→      //
+   228→      // We now write the ABSOLUTE count (via a fresh getDocs query per
+   229→      // affected test) instead of `increment(N)` to avoid races with the
+   230→      // Tests page's own writeback. Both writebacks are idempotent and
+   231→      // write the same value, so order doesn't matter.
+   232→      const affectedTestIds = Array.from(
+   233→        new Set(resolved.map((r) => r.testId).filter(Boolean)),
+   234→      );
+   235→      await Promise.all(
+   236→        affectedTestIds.map(async (testId) => {
+   237→          try {
+   238→            const qsnap = await getDocs(
+   239→              query(collection(db, 'questions'), where('testId', '==', testId)),
+   240→            );
+   241→            await updateDoc(doc(db, 'tests', testId), {
+   242→              questionCount: qsnap.size,
+   243→              updatedAt: serverTimestamp(),
+   244→            });
+   245→          } catch (e) {
+   246→            // Don't fail the whole import if one test's count sync fails —
+   247→            // the Tests admin page's onSnapshot will reconcile it later.
+   248→            console.warn('[questions bulk] count sync failed for', testId, e);
+   249→          }
+   250→        }),
+   251→      );
+   252→
+   253→      const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';
+   254→      toast.success(`Imported ${resolved.length} question${resolved.length === 1 ? '' : 's'}${skippedNote}` + (isCsv ? ' (from CSV)' : ''));
+   255→      if (skipList.length > 0) {
+   256→        console.warn('[questions bulk] skipped rows:', skipList);
+   257→      }
+   258→      setBulkOpen(false);
+   259→      setBulkText('');
+   260→    } catch (err: any) {
+   261→      toast.error(err?.message || 'Bulk import failed');
+   262→    } finally {
+   263→      setBulkSaving(false);
+   264→    }
+   265→  };
+   266→
+   267→  useEffect(() => {
+   268→    if (!selectedTestId) { setLoading(false); return; }
+   269→    setLoading(true);
+   270→    const q = query(collection(db, 'questions'), where('testId', '==', selectedTestId));
+   271→    const unsub = onSnapshot(q, (snap) => {
+   272→      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Question));
+   273→      setLoading(false);
+   274→    }, () => setLoading(false));
+   275→    return () => unsub();
+   276→  }, [selectedTestId]);
+   277→
+   278→  const openAdd = () => { setForm(emptyForm); setEditingId(null); setDialogOpen(true); };
+   279→  const openEdit = (item: Question) => {
+   280→    setForm({
+   281→      question: item.question,
+   282→      options: item.options?.length === 4 ? item.options : ['', '', '', ''],
+   283→      correctAnswerIndex: item.correctAnswerIndex ?? 0,
+   284→      explanation: item.explanation || '',
+   285→      subjectTopic: item.subjectTopic || '',
+   286→      marks: item.marks || 1,
+   287→      isPremium: item.isPremium || false,
+   288→      imageUrl: item.imageUrl || '',
+   289→    });
+   290→    setEditingId(item.id);
+   291→    setDialogOpen(true);
+   292→  };
+   293→
+   294→  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+   295→    const file = e.target.files?.[0];
+   296→    if (!file) return;
+   297→    setUploading(true);
+   298→    try {
+   299→      const url = await uploadImage('test_images', file);
+   300→      setForm((f) => ({ ...f, imageUrl: url }));
+   301→      toast.success('Image uploaded');
+   302→    } catch { toast.error('Upload failed'); } finally { setUploading(false); }
+   303→  };
+   304→
+   305→  const handleSave = async () => {
+   306→    if (!form.question.trim()) { toast.error('Question text is required'); return; }
+   307→    if (form.options.some((o) => !o.trim())) { toast.error('All 4 options are required'); return; }
+   308→    setSaving(true);
+   309→    try {
+   310→      const data = {
+   311→        testId: selectedTestId,
+   312→        question: form.question.trim(),
+   313→        options: form.options.map((o) => o.trim()),
+   314→        correctAnswerIndex: Number(form.correctAnswerIndex),
+   315→        explanation: form.explanation || null,
+   316→        subjectTopic: form.subjectTopic || null,
+   317→        marks: Number(form.marks) || 1,
+   318→        isPremium: form.isPremium,
+   319→        imageUrl: form.imageUrl || null,
+   320→      };
+   321→      if (editingId) {
+   322→        await updateDoc(doc(db, 'questions', editingId), { ...data, updatedAt: serverTimestamp() });
+   323→        toast.success('Question updated');
+   324→      } else {
+   325→        await addDoc(collection(db, 'questions'), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+   326→        // Increment questionCount on the test
+   327→        const testRef = doc(db, 'tests', selectedTestId!);
+   328→        await updateDoc(testRef, { questionCount: items.length + 1 });
+   329→        toast.success('Question added');
+   330→      }
+   331→      setDialogOpen(false);
+   332→    } catch (err: any) {
+   333→      toast.error(err?.message || 'Save failed');
+   334→    } finally {
+   335→      setSaving(false);
+   336→    }
+   337→  };
+   338→
+   339→  const handleDelete = async () => {
+   340→    if (!deleteId) return;
+   341→    try {
+   342→      await deleteDoc(doc(db, 'questions', deleteId));
+   343→      // Decrement questionCount
+   344→      if (selectedTestId) {
+   345→        const testRef = doc(db, 'tests', selectedTestId);
+   346→        await updateDoc(testRef, { questionCount: Math.max(0, items.length - 1) });
+   347→      }
+   348→      toast.success('Question deleted');
+   349→      setDeleteId(null);
+   350→    } catch (err: any) { toast.error(err?.message || 'Delete failed'); }
+   351→  };
+   352→
+   353→  // ---- Bulk selection helpers ----
+   354→  const filteredIds = items.map((q) => q.id);
+   355→  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+   356→  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+   357→
+   358→  const toggleSelectAll = () => {
+   359→    setSelectedIds((prev) => {
+   360→      const next = new Set(prev);
+   361→      if (allFilteredSelected) {
+   362→        filteredIds.forEach((id) => next.delete(id));
+   363→      } else {
+   364→        filteredIds.forEach((id) => next.add(id));
+   365→      }
+   366→      return next;
+   367→    });
+   368→  };
+   369→
+   370→  const toggleSelectOne = (id: string) => {
+   371→    setSelectedIds((prev) => {
+   372→      const next = new Set(prev);
+   373→      if (next.has(id)) next.delete(id);
+   374→      else next.add(id);
+   375→      return next;
+   376→    });
+   377→  };
+   378→
+   379→  const clearSelection = () => setSelectedIds(new Set());
+   380→
+   381→  const handleBulkDelete = async () => {
+   382→    if (selectedIds.size === 0) return;
+   383→    setBulkDeleting(true);
+   384→    try {
+   385→      const ids = Array.from(selectedIds);
+   386→      await deleteItems('questions', ids);
+   387→      // Decrement questionCount on the test
+   388→      if (selectedTestId) {
+   389→        const testRef = doc(db, 'tests', selectedTestId);
+   390→        await updateDoc(testRef, { questionCount: Math.max(0, items.length - ids.length) });
+   391→      }
+   392→      toast.success(`${ids.length} question${ids.length === 1 ? '' : 's'} deleted`);
+   393→      setBulkDeleteOpen(false);
+   394→      clearSelection();
+   395→    } catch (err: any) {
+   396→      toast.error(err?.message || 'Bulk delete failed');
+   397→    } finally {
+   398→      setBulkDeleting(false);
+   399→    }
+   400→  };
+   401→
+   402→  if (!selectedTestId) {
+   403→    return (
+   404→      <Card className="bg-slate-900 border-slate-800 border-dashed">
+   405→        <CardContent className="py-16 text-center">
+   406→          <FileQuestion className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+   407→          <p className="text-slate-400 mb-4">No test selected. Please select a test first to manage its questions.</p>
+   408→          <Button onClick={() => setCurrentSection('tests')} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   409→            <ArrowLeft className="w-4 h-4 mr-1" /> Go to Tests
+   410→          </Button>
+   411→        </CardContent>
+   412→      </Card>
+   413→    );
+   414→  }
+   415→
+   416→  return (
+   417→    <div className="space-y-4">
+   418→      <div className="flex items-center justify-between gap-3 flex-wrap">
+   419→        <div className="flex items-center gap-3 min-w-0">
+   420→          <Button variant="ghost" size="icon" className="text-slate-400 hover:text-white hover:bg-slate-800 shrink-0" onClick={() => setCurrentSection('tests')}>
+   421→            <ArrowLeft className="w-5 h-5" />
+   422→          </Button>
+   423→          <div className="min-w-0">
+   424→            <h3 className="text-white font-semibold text-lg flex items-center gap-2 truncate">
+   425→              <FileQuestion className="w-5 h-5 text-emerald-400 shrink-0" />
+   426→              <span className="truncate">Questions</span>
+   427→            </h3>
+   428→            <p className="text-slate-500 text-sm truncate">for: {selectedTestTitle}</p>
+   429→          </div>
+   430→        </div>
+   431→        <div className="flex items-center gap-2">
+   432→          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white shrink-0">
+   433→            <Plus className="w-4 h-4 mr-1" /> Add Question
+   434→          </Button>
+   435→          <Button
+   436→            variant="outline"
+   437→            onClick={() => setBulkOpen(true)}
+   438→            className="border-slate-700 text-slate-200 hover:bg-slate-800 shrink-0"
+   439→          >
+   440→            <Layers className="w-4 h-4 mr-1" /> Bulk Add
+   441→          </Button>
+   442→        </div>
+   443→      </div>
+   444→
+   445→      {loading ? (
+   446→        <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-emerald-500 animate-spin" /></div>
+   447→      ) : items.length === 0 ? (
+   448→        <Card className="bg-slate-900 border-slate-800 border-dashed">
+   449→          <CardContent className="py-16 text-center">
+   450→            <FileQuestion className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+   451→            <p className="text-slate-500">No questions yet. Add your first one!</p>
+   452→          </CardContent>
+   453→        </Card>
+   454→      ) : (
+   455→        <>
+   456→        <div className="flex items-center gap-3 flex-wrap rounded-md border border-slate-800 bg-slate-900/50 px-3 py-2">
+   457→          <div className="flex items-center gap-2">
+   458→            <Checkbox
+   459→              checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+   460→              onCheckedChange={toggleSelectAll}
+   461→              aria-label="Select all questions"
+   462→            />
+   463→            <span className="text-sm text-slate-400">
+   464→              {allFilteredSelected ? 'All selected' : someFilteredSelected ? `${selectedIds.size} selected` : 'Select all'}
+   465→            </span>
+   466→          </div>
+   467→          <div className="flex-1" />
+   468→          {selectedIds.size > 0 && (
+   469→            <div className="flex items-center gap-2">
+   470→              <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+   471→                {selectedIds.size} selected
+   472→              </Badge>
+   473→              <Button
+   474→                size="sm"
+   475→                variant="destructive"
+   476→                className="h-8 bg-red-600 hover:bg-red-700"
+   477→                onClick={() => setBulkDeleteOpen(true)}
+   478→              >
+   479→                <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+   480→              </Button>
+   481→              <Button
+   482→                size="sm"
+   483→                variant="ghost"
+   484→                className="h-8 text-slate-400 hover:bg-slate-800"
+   485→                onClick={clearSelection}
+   486→                title="Clear selection"
+   487→              >
+   488→                <X className="w-3.5 h-3.5" />
+   489→              </Button>
+   490→            </div>
+   491→          )}
+   492→        </div>
+   493→        <div className="space-y-3">
+   494→          {items.map((item, idx) => {
+   495→            const isSelected = selectedIds.has(item.id);
+   496→            return (
+   497→            <Card key={item.id} className={`bg-slate-900 hover:border-slate-700 transition-colors group ${isSelected ? 'border-red-800 bg-red-950/20' : 'border-slate-800'}`}>
+   498→              <CardContent className="p-4">
+   499→                <div className="flex items-start gap-3">
+   500→                  <Checkbox
+   501→                    checked={isSelected}
+   502→                    onCheckedChange={() => toggleSelectOne(item.id)}
+   503→                    aria-label={`Select question ${idx + 1}`}
+   504→                    className="mt-1"
+   505→                  />
+   506→                  <div className="w-7 h-7 rounded-full bg-emerald-950/60 text-emerald-400 text-xs font-bold flex items-center justify-center shrink-0 mt-0.5">{idx + 1}</div>
+   507→                  <div className="flex-1 min-w-0">
+   508→                    <div className="flex items-start gap-2 flex-wrap">
+   509→                      <p className="text-white font-medium flex-1 min-w-0">{item.question}</p>
+   510→                      {item.isPremium && <Badge variant="outline" className="border-amber-700 text-amber-400 bg-amber-950/40 shrink-0"><Crown className="w-3 h-3 mr-1" />Premium</Badge>}
+   511→                      <Badge variant="outline" className="border-slate-700 text-slate-400 shrink-0">{item.marks}m</Badge>
+   512→                    </div>
+   513→                    {item.imageUrl && <img src={item.imageUrl} alt="question" className="mt-2 max-h-40 rounded-lg" />}
+   514→                    <div className="mt-3 grid sm:grid-cols-2 gap-2">
+   515→                      {item.options?.map((opt, i) => (
+   516→                        <div key={i} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm ${i === item.correctAnswerIndex ? 'bg-emerald-950/40 border border-emerald-800/50 text-emerald-300' : 'bg-slate-800/50 text-slate-400'}`}>
+   517→                          {i === item.correctAnswerIndex ? <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" /> : <Circle className="w-4 h-4 text-slate-600 shrink-0" />}
+   518→                          <span className="font-mono text-xs text-slate-500">{String.fromCharCode(65 + i)}.</span>
+   519→                          <span className="truncate">{opt}</span>
+   520→                        </div>
+   521→                      ))}
+   522→                    </div>
+   523→                    {item.explanation && (
+   524→                      <div className="mt-2 p-2 rounded-lg bg-slate-800/30 border border-slate-800">
+   525→                        <p className="text-xs text-slate-500">Explanation:</p>
+   526→                        <p className="text-xs text-slate-400 mt-0.5">{item.explanation}</p>
+   527→                      </div>
+   528→                    )}
+   529→                    {item.subjectTopic && <p className="text-xs text-slate-600 mt-1">Topic: {item.subjectTopic}</p>}
+   530→                  </div>
+   531→                  <div className="flex flex-col gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+   532→                    <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800" onClick={() => openEdit(item)}>
+   533→                      <Pencil className="w-3.5 h-3.5" />
+   534→                    </Button>
+   535→                    <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:bg-red-950/40" onClick={() => setDeleteId(item.id)}>
+   536→                      <Trash2 className="w-3.5 h-3.5" />
+   537→                    </Button>
+   538→                  </div>
+   539→                </div>
+   540→              </CardContent>
+   541→            </Card>
+   542→            );
+   543→          })}
+   544→        </div>
+   545→        </>
+   546→      )}
+   547→
+   548→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   549→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
+   550→          <DialogHeader><DialogTitle>{editingId ? 'Edit Question' : 'Add Question'}</DialogTitle></DialogHeader>
+   551→          <div className="space-y-4">
+   552→            <div className="space-y-2">
+   553→              <Label>Question *</Label>
+   554→              <Textarea value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} rows={3} placeholder="Enter the question..." className="bg-slate-800 border-slate-700" />
+   555→            </div>
+   556→            {form.imageUrl && (
+   557→              <div className="relative inline-block">
+   558→                <img src={form.imageUrl} alt="preview" className="max-h-32 rounded-lg" />
+   559→                <button onClick={() => setForm({ ...form, imageUrl: '' })} className="absolute -top-2 -right-2 w-5 h-5 bg-red-600 rounded-full flex items-center justify-center text-white"><X className="w-3 h-3" /></button>
+   560→              </div>
+   561→            )}
+   562→            <div className="space-y-2">
+   563→              <Label>Options * (select the correct answer)</Label>
+   564→              <div className="space-y-2">
+   565→                {form.options.map((opt, i) => (
+   566→                  <div key={i} className="flex items-center gap-2">
+   567→                    <button type="button" onClick={() => setForm({ ...form, correctAnswerIndex: i })} className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 transition-colors ${i === form.correctAnswerIndex ? 'bg-emerald-600 border-emerald-500 text-white' : 'border-slate-600 text-slate-500 hover:border-slate-500'}`}>
+   568→                      {String.fromCharCode(65 + i)}
+   569→                    </button>
+   570→                    <Input value={opt} onChange={(e) => { const opts = [...form.options]; opts[i] = e.target.value; setForm({ ...form, options: opts }); }} placeholder={`Option ${String.fromCharCode(65 + i)}`} className="bg-slate-800 border-slate-700" />
+   571→                  </div>
+   572→                ))}
+   573→              </div>
+   574→              <p className="text-xs text-slate-500">Click the letter button to mark the correct answer (currently: <span className="text-emerald-400 font-semibold">{String.fromCharCode(65 + form.correctAnswerIndex)}</span>)</p>
+   575→            </div>
+   576→            <div className="space-y-2">
+   577→              <Label>Explanation</Label>
+   578→              <Textarea value={form.explanation} onChange={(e) => setForm({ ...form, explanation: e.target.value })} rows={2} placeholder="Why is this the correct answer?" className="bg-slate-800 border-slate-700" />
+   579→            </div>
+   580→            <div className="grid grid-cols-2 gap-3">
+   581→              <div className="space-y-2"><Label>Subject Topic</Label><Input value={form.subjectTopic} onChange={(e) => setForm({ ...form, subjectTopic: e.target.value })} placeholder="e.g. Indian Polity" className="bg-slate-800 border-slate-700" /></div>
+   582→              <div className="space-y-2"><Label>Marks</Label><Input type="number" value={form.marks} onChange={(e) => setForm({ ...form, marks: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
+   583→            </div>
+   584→            <div className="flex items-center gap-6 flex-wrap">
+   585→              <div className="flex items-center gap-2"><Switch checked={form.isPremium} onCheckedChange={(v) => setForm({ ...form, isPremium: v })} /><Label className="cursor-pointer flex items-center gap-1"><Crown className="w-3.5 h-3.5 text-amber-400" /> Premium only</Label></div>
+   586→              <input ref={fileRef} type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
+   587→              <Button type="button" variant="outline" onClick={() => fileRef.current?.click()} disabled={uploading} className="border-slate-700 text-slate-300">
+   588→                {uploading ? <Loader2 className="w-4 h-4 mr-1 animate-spin" /> : <ImageIcon className="w-4 h-4 mr-1" />}
+   589→                {form.imageUrl ? 'Change Image' : 'Add Image'}
+   590→              </Button>
+   591→            </div>
+   592→          </div>
+   593→          <DialogFooter>
+   594→            <Button variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-700 text-slate-300">Cancel</Button>
+   595→            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   596→              {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   597→              {editingId ? 'Update' : 'Add'}
+   598→            </Button>
+   599→          </DialogFooter>
+   600→        </DialogContent>
+   601→      </Dialog>
+   602→
+   603→      {/* Bulk Add Dialog */}
+   604→      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+   605→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+   606→          <DialogHeader>
+   607→            <DialogTitle>Bulk Add Questions</DialogTitle>
+   608→          </DialogHeader>
+   609→          <div className="space-y-3">
+   610→            <div className="flex items-center justify-between gap-2">
+   611→              <p className="text-xs text-slate-500">
+   612→                Paste a JSON array of question objects below, or paste CSV rows (first row = column headers).
+   613→              </p>
+   614→              <div className="flex items-center gap-2">
+   615→                <Button
+   616→                  type="button"
+   617→                  variant="outline"
+   618→                  size="sm"
+   619→                  onClick={() => downloadJson('questions-template', JSON.parse(BULK_SAMPLE))}
+   620→                  className="border-slate-700 text-slate-300 h-8"
+   621→                >
+   622→                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+   623→                </Button>
+   624→                <Button
+   625→                  type="button"
+   626→                  variant="outline"
+   627→                  size="sm"
+   628→                  onClick={() => downloadCsv('questions-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+   629→                  className="border-slate-700 text-slate-300 h-8"
+   630→                >
+   631→                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
+   632→                </Button>
+   633→                <Button
+   634→                  type="button"
+   635→                  variant="outline"
+   636→                  size="sm"
+   637→                  onClick={() => setBulkText(BULK_SAMPLE)}
+   638→                  className="border-slate-700 text-slate-300 h-8"
+   639→                >
+   640→                  Load Sample
+   641→                </Button>
+   642→              </div>
+   643→            </div>
+   644→            <BulkTextarea
+   645→              value={bulkText}
+   646→              onChange={setBulkText}
+   647→              placeholder='[{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"...","options":["A","B","C","D"],"correctAnswer":1}]'
+   648→            />
+   649→            <p className="text-xs text-slate-500">
+   650→              Fields: <span className="text-slate-400 text-emerald-300">testTitle</span> (parent test — recommended) or{' '}
+   651→              <span className="text-slate-400">testId</span> (existing id),{' '}
+   652→              <span className="text-slate-400 text-emerald-300">subjectName</span> +{' '}
+   653→              <span className="text-slate-400 text-emerald-300">categoryName</span> (optional, disambiguates same-name tests),{' '}
+   654→              <span className="text-slate-400">question</span> (string),{' '}
+   655→              <span className="text-slate-400">options</span> (array of 4 strings),{' '}
+   656→              <span className="text-slate-400">correctAnswer</span> (0-based index),{' '}
+   657→              <span className="text-slate-400">explanation</span> (string),{' '}
+   658→              <span className="text-slate-400">difficulty</span> (easy | medium | hard),{' '}
+   659→              <span className="text-slate-400">marks</span> (number),{' '}
+   660→              <span className="text-slate-400">imageUrl</span> (URL string),{' '}
+   661→              <span className="text-slate-400">isPremium</span> (boolean)
+   662→            </p>
+   663→            <p className="text-xs text-slate-500">
+   664→              Tip: add tests first, then bulk-add questions by{' '}
+   665→              <code className="text-emerald-300">testTitle</code>. For CSV
+   666→              without a test column, questions attach to the test selected in
+   667→              the dropdown above.
+   668→            </p>
+   669→          </div>
+   670→          <DialogFooter>
+   671→            <Button
+   672→              variant="outline"
+   673→              onClick={() => setBulkOpen(false)}
+   674→              className="border-slate-700 text-slate-300"
+   675→            >
+   676→              Cancel
+   677→            </Button>
+   678→            <Button
+   679→              onClick={handleBulkImport}
+   680→              disabled={bulkSaving || !bulkText.trim()}
+   681→              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   682→            >
+   683→              {bulkSaving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   684→              Validate & Import
+   685→            </Button>
+   686→          </DialogFooter>
+   687→        </DialogContent>
+   688→      </Dialog>
+   689→
+   690→      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+   691→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+   692→          <AlertDialogHeader>
+   693→            <AlertDialogTitle>Delete this question?</AlertDialogTitle>
+   694→            <AlertDialogDescription className="text-slate-400">This action cannot be undone.</AlertDialogDescription>
+   695→          </AlertDialogHeader>
+   696→          <AlertDialogFooter>
+   697→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   698→            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+   699→          </AlertDialogFooter>
+   700→        </AlertDialogContent>
+   701→      </AlertDialog>
+   702→
+   703→      {/* Bulk Delete Confirmation */}
+   704→      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+   705→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+   706→          <AlertDialogHeader>
+   707→            <AlertDialogTitle className="flex items-center gap-2">
+   708→              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} question{selectedIds.size === 1 ? '' : 's'}?
+   709→            </AlertDialogTitle>
+   710→            <AlertDialogDescription className="text-slate-400">
+   711→              This will permanently delete {selectedIds.size} question{selectedIds.size === 1 ? '' : 's'} from Firestore.
+   712→              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+   713→            </AlertDialogDescription>
+   714→          </AlertDialogHeader>
+   715→          <AlertDialogFooter>
+   716→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   717→            <AlertDialogAction
+   718→              onClick={handleBulkDelete}
+   719→              disabled={bulkDeleting}
+   720→              className="bg-red-600 hover:bg-red-700 text-white"
+   721→            >
+   722→              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   723→              Delete {selectedIds.size} question{selectedIds.size === 1 ? '' : 's'}
+   724→            </AlertDialogAction>
+   725→          </AlertDialogFooter>
+   726→        </AlertDialogContent>
+   727→      </AlertDialog>
+   728→    </div>
+   729→  );
+   730→}
+   731→

@@ -11,7 +11,7 @@ import {
   serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
-import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+import { uploadImage, deleteItems, deleteDocWithFiles, deleteItemsWithFiles } from '@/lib/admin-firestore';
 import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -314,7 +314,7 @@ export default function StudyMaterials() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDoc(doc(db, 'study_materials', deleteId));
+      await deleteDocWithFiles('study_materials', deleteId, ['pdfUrl', 'thumbnailUrl']);
       toast.success('Study material deleted');
       setDeleteId(null);
     } catch (err: any) {
@@ -355,7 +355,7 @@ export default function StudyMaterials() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItems('study_materials', ids);
+      await deleteItemsWithFiles('study_materials', ids, ['pdfUrl', 'thumbnailUrl']);
       toast.success(`${ids.length} study material${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();

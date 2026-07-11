@@ -1,0 +1,842 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useMemo, useState } from 'react';
+     4→import {
+     5→  collection,
+     6→  onSnapshot,
+     7→  addDoc,
+     8→  updateDoc,
+     9→  deleteDoc,
+    10→  doc,
+    11→  serverTimestamp,
+    12→} from 'firebase/firestore';
+    13→import { db } from '@/lib/firebase';
+    14→import { uploadImage, deleteItems } from '@/lib/admin-firestore';
+    15→import { Checkbox } from '@/components/ui/checkbox';
+    16→import { Button } from '@/components/ui/button';
+    17→import { Input } from '@/components/ui/input';
+    18→import { Label } from '@/components/ui/label';
+    19→import { Textarea } from '@/components/ui/textarea';
+    20→import { Card, CardContent } from '@/components/ui/card';
+    21→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+    22→import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+    23→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    24→import { Switch } from '@/components/ui/switch';
+    25→import { Badge } from '@/components/ui/badge';
+    26→import {
+    27→  Plus,
+    28→  Pencil,
+    29→  Trash2,
+    30→  Loader2,
+    31→  Library,
+    32→  ClipboardList,
+    33→  BookOpen,
+    34→  FileText,
+    35→  Crown,
+    36→  X,
+    37→  Upload,
+    38→  FileType2,
+    39→  Eye,
+    40→  EyeOff,
+    41→  Filter,
+    42→} from 'lucide-react';
+    43→import { toast } from 'sonner';
+    44→
+    45→// ---------------------------------------------------------------------------
+    46→// Types — mirrors the Firestore `study_materials` collection contract that
+    47→// the Flutter user app reads (SubjectDetail screen content-type cards).
+    48→// ---------------------------------------------------------------------------
+    49→type MaterialType = 'previousPaper' | 'notes' | 'syllabus';
+    50→
+    51→interface StudyMaterial {
+    52→  id: string;
+    53→  subjectId: string;
+    54→  categoryId: string;
+    55→  type: MaterialType;
+    56→  title: string;
+    57→  description?: string | null;
+    58→  pdfUrl: string;
+    59→  thumbnailUrl?: string | null;
+    60→  year?: number | null;
+    61→  pages?: number | null;
+    62→  isPremium: boolean;
+    63→  isPublished: boolean;
+    64→  order: number;
+    65→  downloadCount?: number;
+    66→  createdAt?: any;
+    67→  updatedAt?: any;
+    68→}
+    69→
+    70→interface Subject { id: string; name: string; categoryId: string; }
+    71→interface Category { id: string; name: string; }
+    72→
+    73→// ---------------------------------------------------------------------------
+    74→// Type metadata (label + icon + badge classes) used by table, dialog & filters
+    75→// ---------------------------------------------------------------------------
+    76→const TYPE_META: Record<MaterialType, { label: string; Icon: typeof ClipboardList; badge: string }> = {
+    77→  previousPaper: {
+    78→    label: 'Previous Paper',
+    79→    Icon: ClipboardList,
+    80→    badge: 'border-amber-700 text-amber-400 bg-amber-950/40',
+    81→  },
+    82→  notes: {
+    83→    label: 'Study Notes',
+    84→    Icon: BookOpen,
+    85→    badge: 'border-emerald-700 text-emerald-400 bg-emerald-950/40',
+    86→  },
+    87→  syllabus: {
+    88→    label: 'Syllabus',
+    89→    Icon: FileText,
+    90→    badge: 'border-sky-700 text-sky-400 bg-sky-950/40',
+    91→  },
+    92→};
+    93→
+    94→const emptyForm = {
+    95→  type: 'previousPaper' as MaterialType,
+    96→  subjectId: '',
+    97→  title: '',
+    98→  description: '',
+    99→  year: new Date().getFullYear(),
+   100→  pages: 0,
+   101→  isPremium: false,
+   102→  isPublished: true,
+   103→  order: 0,
+   104→  // Existing URL (kept when editing & user doesn't pick a new file).
+   105→  pdfUrl: '',
+   106→  thumbnailUrl: '',
+   107→  // Newly-selected files; uploaded on Save.
+   108→  pdfFile: null as File | null,
+   109→  thumbnailFile: null as File | null,
+   110→};
+   111→
+   112→export default function StudyMaterials() {
+   113→  const [items, setItems] = useState<StudyMaterial[]>([]);
+   114→  const [subjects, setSubjects] = useState<Subject[]>([]);
+   115→  const [categories, setCategories] = useState<Category[]>([]);
+   116→  const [loading, setLoading] = useState(true);
+   117→  const [dialogOpen, setDialogOpen] = useState(false);
+   118→  const [editingId, setEditingId] = useState<string | null>(null);
+   119→  const [form, setForm] = useState(emptyForm);
+   120→  const [saving, setSaving] = useState(false);
+   121→  const [uploadingPdf, setUploadingPdf] = useState(false);
+   122→  const [uploadingThumb, setUploadingThumb] = useState(false);
+   123→  const [deleteId, setDeleteId] = useState<string | null>(null);
+   124→  // Bulk delete state
+   125→  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+   126→  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+   127→  const [bulkDeleting, setBulkDeleting] = useState(false);
+   128→  // Filter bar state
+   129→  const [filterSubject, setFilterSubject] = useState<string>('all');
+   130→  const [filterType, setFilterType] = useState<'all' | MaterialType>('all');
+   131→  const [filterPremium, setFilterPremium] = useState<'all' | 'free' | 'premium'>('all');
+   132→
+   133→  useEffect(() => {
+   134→    // Listen to the WHOLE study_materials collection. We filter client-side
+   135→    // because (a) the list is small, (b) we need flexible multi-filter combos,
+   136→    // and (c) Firestore `where` queries can't combine `in` + multiple
+   137→    // inequality filters without composite indexes.
+   138→    const u1 = onSnapshot(collection(db, 'study_materials'), (snap) => {
+   139→      const list = snap.docs
+   140→        .map((d) => ({ id: d.id, ...d.data() }) as StudyMaterial)
+   141→        .sort((a, b) => {
+   142→          // Newest first; fall back to order field if timestamps missing.
+   143→          const at = a.createdAt?.toMillis?.() || 0;
+   144→          const bt = b.createdAt?.toMillis?.() || 0;
+   145→          if (bt !== at) return bt - at;
+   146→          return (a.order || 0) - (b.order || 0);
+   147→        });
+   148→      setItems(list);
+   149→      setLoading(false);
+   150→    }, () => setLoading(false));
+   151→    const u2 = onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Subject)));
+   152→    const u3 = onSnapshot(collection(db, 'categories'), (snap) => setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Category)));
+   153→    return () => { u1(); u2(); u3(); };
+   154→  }, []);
+   155→
+   156→  // ---- Lookup helpers ----
+   157→  const subjectName = (id: string) => subjects.find((s) => s.id === id)?.name || '—';
+   158→  const subjectCategoryId = (sid: string) => subjects.find((s) => s.id === sid)?.categoryId || '';
+   159→  const categoryName = (sid: string) => {
+   160→    const cid = subjectCategoryId(sid);
+   161→    if (!cid) return '—';
+   162→    return categories.find((c) => c.id === cid)?.name || '—';
+   163→  };
+   164→
+   165→  // ---- Filtered items (client-side) ----
+   166→  const filteredItems = useMemo(() => {
+   167→    return items.filter((m) => {
+   168→      if (filterSubject !== 'all' && m.subjectId !== filterSubject) return false;
+   169→      if (filterType !== 'all' && m.type !== filterType) return false;
+   170→      if (filterPremium === 'free' && m.isPremium) return false;
+   171→      if (filterPremium === 'premium' && !m.isPremium) return false;
+   172→      return true;
+   173→    });
+   174→  }, [items, filterSubject, filterType, filterPremium]);
+   175→
+   176→  // ---- Dialog open helpers ----
+   177→  const openAdd = () => {
+   178→    setForm(emptyForm);
+   179→    setEditingId(null);
+   180→    setDialogOpen(true);
+   181→  };
+   182→  const openEdit = (item: StudyMaterial) => {
+   183→    setForm({
+   184→      type: item.type,
+   185→      subjectId: item.subjectId,
+   186→      title: item.title,
+   187→      description: item.description || '',
+   188→      year: item.year || new Date().getFullYear(),
+   189→      pages: item.pages || 0,
+   190→      isPremium: item.isPremium,
+   191→      isPublished: item.isPublished,
+   192→      order: item.order || 0,
+   193→      pdfUrl: item.pdfUrl || '',
+   194→      thumbnailUrl: item.thumbnailUrl || '',
+   195→      pdfFile: null,
+   196→      thumbnailFile: null,
+   197→    });
+   198→    setEditingId(item.id);
+   199→    setDialogOpen(true);
+   200→  };
+   201→
+   202→  // ---- Save (add or update) ----
+   203→  // Uploads happen here (not on file select), per the task spec.
+   204→  // Storage path is `study_materials/{materialId}/{timestamp}_{filename}`.
+   205→  // For ADD we must first create the doc to get its id, then upload, then
+   206→  // patch the URL onto the doc.
+   207→  const handleSave = async () => {
+   208→    if (!form.title.trim()) { toast.error('Title is required'); return; }
+   209→    if (!form.subjectId) { toast.error('Please select a subject'); return; }
+   210→    if (!editingId && !form.pdfFile) { toast.error('Please select a PDF file'); return; }
+   211→    if (form.type !== 'previousPaper' && (!editingId && !form.pdfFile)) {
+   212→      toast.error('Please select a PDF file');
+   213→      return;
+   214→    }
+   215→
+   216→    setSaving(true);
+   217→    try {
+   218→      const categoryId = subjectCategoryId(form.subjectId);
+   219→      const baseData = {
+   220→        subjectId: form.subjectId,
+   221→        categoryId,
+   222→        type: form.type,
+   223→        title: form.title.trim(),
+   224→        description: form.description.trim() || null,
+   225→        year: form.type === 'previousPaper' ? (Number(form.year) || null) : null,
+   226→        pages: Number(form.pages) > 0 ? Number(form.pages) : null,
+   227→        isPremium: form.isPremium,
+   228→        isPublished: form.isPublished,
+   229→        order: Number(form.order) || 0,
+   230→      };
+   231→
+   232→      if (editingId) {
+   233→        // ---- UPDATE ----
+   234→        // Upload new files (if any) BEFORE writing the doc so we don't end
+   235→        // up with a stale URL if the upload fails. Storage path uses the
+   236→        // existing doc id.
+   237→        let nextPdfUrl = form.pdfUrl;
+   238→        let nextThumbUrl = form.thumbnailUrl;
+   239→
+   240→        if (form.pdfFile) {
+   241→          setUploadingPdf(true);
+   242→          try {
+   243→            nextPdfUrl = await uploadImage(`study_materials/${editingId}`, form.pdfFile);
+   244→          } finally {
+   245→            setUploadingPdf(false);
+   246→          }
+   247→        }
+   248→        if (form.thumbnailFile) {
+   249→          setUploadingThumb(true);
+   250→          try {
+   251→            nextThumbUrl = await uploadImage(`study_materials/${editingId}`, form.thumbnailFile);
+   252→          } finally {
+   253→            setUploadingThumb(false);
+   254→          }
+   255→        }
+   256→
+   257→        await updateDoc(doc(db, 'study_materials', editingId), {
+   258→          ...baseData,
+   259→          pdfUrl: nextPdfUrl,
+   260→          thumbnailUrl: nextThumbUrl || null,
+   261→          updatedAt: serverTimestamp(),
+   262→        });
+   263→        toast.success('Study material updated');
+   264→      } else {
+   265→        // ---- ADD ----
+   266→        // Create the doc first with a placeholder pdfUrl so we have an id
+   267→        // to use in the storage path. Then upload the PDF (and optional
+   268→        // thumbnail), then patch the URLs back.
+   269→        const ref = await addDoc(collection(db, 'study_materials'), {
+   270→          ...baseData,
+   271→          pdfUrl: '', // patched below after upload
+   272→          thumbnailUrl: null,
+   273→          downloadCount: 0,
+   274→          createdAt: serverTimestamp(),
+   275→          updatedAt: serverTimestamp(),
+   276→        });
+   277→        const newId = ref.id;
+   278→
+   279→        setUploadingPdf(true);
+   280→        let pdfUrl = '';
+   281→        try {
+   282→          pdfUrl = await uploadImage(`study_materials/${newId}`, form.pdfFile!);
+   283→        } finally {
+   284→          setUploadingPdf(false);
+   285→        }
+   286→
+   287→        let thumbnailUrl: string | null = null;
+   288→        if (form.thumbnailFile) {
+   289→          setUploadingThumb(true);
+   290→          try {
+   291→            thumbnailUrl = await uploadImage(`study_materials/${newId}`, form.thumbnailFile);
+   292→          } finally {
+   293→            setUploadingThumb(false);
+   294→          }
+   295→        }
+   296→
+   297→        await updateDoc(doc(db, 'study_materials', newId), {
+   298→          pdfUrl,
+   299→          thumbnailUrl,
+   300→          updatedAt: serverTimestamp(),
+   301→        });
+   302→        toast.success('Study material added');
+   303→      }
+   304→      setDialogOpen(false);
+   305→    } catch (err: any) {
+   306→      toast.error(err?.message || 'Save failed');
+   307→    } finally {
+   308→      setSaving(false);
+   309→      setUploadingPdf(false);
+   310→      setUploadingThumb(false);
+   311→    }
+   312→  };
+   313→
+   314→  const handleDelete = async () => {
+   315→    if (!deleteId) return;
+   316→    try {
+   317→      await deleteDoc(doc(db, 'study_materials', deleteId));
+   318→      toast.success('Study material deleted');
+   319→      setDeleteId(null);
+   320→    } catch (err: any) {
+   321→      toast.error(err?.message || 'Delete failed');
+   322→    }
+   323→  };
+   324→
+   325→  // ---- Bulk selection helpers ----
+   326→  const filteredIds = filteredItems.map((m) => m.id);
+   327→  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+   328→  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+   329→
+   330→  const toggleSelectAll = () => {
+   331→    setSelectedIds((prev) => {
+   332→      const next = new Set(prev);
+   333→      if (allFilteredSelected) {
+   334→        filteredIds.forEach((id) => next.delete(id));
+   335→      } else {
+   336→        filteredIds.forEach((id) => next.add(id));
+   337→      }
+   338→      return next;
+   339→    });
+   340→  };
+   341→
+   342→  const toggleSelectOne = (id: string) => {
+   343→    setSelectedIds((prev) => {
+   344→      const next = new Set(prev);
+   345→      if (next.has(id)) next.delete(id);
+   346→      else next.add(id);
+   347→      return next;
+   348→    });
+   349→  };
+   350→
+   351→  const clearSelection = () => setSelectedIds(new Set());
+   352→
+   353→  const handleBulkDelete = async () => {
+   354→    if (selectedIds.size === 0) return;
+   355→    setBulkDeleting(true);
+   356→    try {
+   357→      const ids = Array.from(selectedIds);
+   358→      await deleteItems('study_materials', ids);
+   359→      toast.success(`${ids.length} study material${ids.length === 1 ? '' : 's'} deleted`);
+   360→      setBulkDeleteOpen(false);
+   361→      clearSelection();
+   362→    } catch (err: any) {
+   363→      toast.error(err?.message || 'Bulk delete failed');
+   364→    } finally {
+   365→      setBulkDeleting(false);
+   366→    }
+   367→  };
+   368→
+   369→  const isUploading = uploadingPdf || uploadingThumb;
+   370→  const saveLabel = uploadingPdf ? 'Uploading PDF…' : uploadingThumb ? 'Uploading thumbnail…' : editingId ? 'Update' : 'Add';
+   371→
+   372→  return (
+   373→    <div className="space-y-4">
+   374→      <div className="flex items-center justify-between gap-3 flex-wrap">
+   375→        <div>
+   376→          <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+   377→            <Library className="w-5 h-5 text-emerald-400" /> Study Materials
+   378→          </h3>
+   379→          <p className="text-slate-500 text-sm">
+   380→            PDF content (Previous Papers, Notes, Syllabus) for subject detail screens in the user app
+   381→          </p>
+   382→        </div>
+   383→        <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   384→          <Plus className="w-4 h-4 mr-1" /> Add Material
+   385→        </Button>
+   386→      </div>
+   387→
+   388→      {/* Filter bar */}
+   389→      <Card className="bg-slate-900 border-slate-800">
+   390→        <CardContent className="p-3 flex flex-wrap items-end gap-3">
+   391→          <div className="flex items-center gap-2 text-slate-400 text-xs uppercase tracking-wider pr-2">
+   392→            <Filter className="w-3.5 h-3.5" /> Filter
+   393→          </div>
+   394→          <div className="space-y-1">
+   395→            <Label className="text-xs text-slate-500">Subject</Label>
+   396→            <Select value={filterSubject} onValueChange={setFilterSubject}>
+   397→              <SelectTrigger className="bg-slate-800 border-slate-700 w-[200px]">
+   398→                <SelectValue placeholder="All subjects" />
+   399→              </SelectTrigger>
+   400→              <SelectContent className="bg-slate-800 border-slate-700">
+   401→                <SelectItem value="all">All subjects</SelectItem>
+   402→                {subjects.map((s) => (
+   403→                  <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+   404→                ))}
+   405→              </SelectContent>
+   406→            </Select>
+   407→          </div>
+   408→          <div className="space-y-1">
+   409→            <Label className="text-xs text-slate-500">Type</Label>
+   410→            <Select value={filterType} onValueChange={(v) => setFilterType(v as 'all' | MaterialType)}>
+   411→              <SelectTrigger className="bg-slate-800 border-slate-700 w-[170px]">
+   412→                <SelectValue placeholder="All types" />
+   413→              </SelectTrigger>
+   414→              <SelectContent className="bg-slate-800 border-slate-700">
+   415→                <SelectItem value="all">All types</SelectItem>
+   416→                <SelectItem value="previousPaper">Previous Paper</SelectItem>
+   417→                <SelectItem value="notes">Study Notes</SelectItem>
+   418→                <SelectItem value="syllabus">Syllabus</SelectItem>
+   419→              </SelectContent>
+   420→            </Select>
+   421→          </div>
+   422→          <div className="space-y-1">
+   423→            <Label className="text-xs text-slate-500">Access</Label>
+   424→            <Select value={filterPremium} onValueChange={(v) => setFilterPremium(v as 'all' | 'free' | 'premium')}>
+   425→              <SelectTrigger className="bg-slate-800 border-slate-700 w-[140px]">
+   426→                <SelectValue placeholder="All" />
+   427→              </SelectTrigger>
+   428→              <SelectContent className="bg-slate-800 border-slate-700">
+   429→                <SelectItem value="all">All</SelectItem>
+   430→                <SelectItem value="free">Free</SelectItem>
+   431→                <SelectItem value="premium">Premium</SelectItem>
+   432→              </SelectContent>
+   433→            </Select>
+   434→          </div>
+   435→          {(filterSubject !== 'all' || filterType !== 'all' || filterPremium !== 'all') && (
+   436→            <Button
+   437→              size="sm"
+   438→              variant="ghost"
+   439→              className="h-9 text-slate-400 hover:bg-slate-800"
+   440→              onClick={() => { setFilterSubject('all'); setFilterType('all'); setFilterPremium('all'); }}
+   441→            >
+   442→              <X className="w-3.5 h-3.5 mr-1" /> Clear
+   443→            </Button>
+   444→          )}
+   445→          <div className="ml-auto text-xs text-slate-500">
+   446→            {filteredItems.length} of {items.length}
+   447→          </div>
+   448→        </CardContent>
+   449→      </Card>
+   450→
+   451→      {loading ? (
+   452→        <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-emerald-500 animate-spin" /></div>
+   453→      ) : items.length === 0 ? (
+   454→        <Card className="bg-slate-900 border-slate-800 border-dashed">
+   455→          <CardContent className="py-16 text-center">
+   456→            <Library className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+   457→            <p className="text-slate-500">No study materials yet. Add your first PDF!</p>
+   458→          </CardContent>
+   459→        </Card>
+   460→      ) : filteredItems.length === 0 ? (
+   461→        <Card className="bg-slate-900 border-slate-800 border-dashed">
+   462→          <CardContent className="py-16 text-center">
+   463→            <Filter className="w-10 h-10 text-slate-700 mx-auto mb-3" />
+   464→            <p className="text-slate-500">No materials match your filters.</p>
+   465→          </CardContent>
+   466→        </Card>
+   467→      ) : (
+   468→        <>
+   469→          {selectedIds.size > 0 && (
+   470→            <div className="flex items-center gap-2 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-1.5 flex-wrap">
+   471→              <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+   472→                {selectedIds.size} selected
+   473→              </Badge>
+   474→              <Button
+   475→                size="sm"
+   476→                variant="destructive"
+   477→                className="h-8 bg-red-600 hover:bg-red-700"
+   478→                onClick={() => setBulkDeleteOpen(true)}
+   479→              >
+   480→                <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+   481→              </Button>
+   482→              <Button
+   483→                size="sm"
+   484→                variant="ghost"
+   485→                className="h-8 text-slate-400 hover:bg-slate-800"
+   486→                onClick={clearSelection}
+   487→                title="Clear selection"
+   488→              >
+   489→                <X className="w-3.5 h-3.5" />
+   490→              </Button>
+   491→            </div>
+   492→          )}
+   493→          <Card className="bg-slate-900 border-slate-800">
+   494→            <CardContent className="p-0">
+   495→              <div className="overflow-x-auto">
+   496→                <table className="w-full text-sm">
+   497→                  <thead>
+   498→                    <tr className="border-b border-slate-800 text-slate-500 text-xs uppercase">
+   499→                      <th className="text-left p-4 font-medium w-[44px]">
+   500→                        <Checkbox
+   501→                          checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+   502→                          onCheckedChange={toggleSelectAll}
+   503→                          aria-label="Select all study materials"
+   504→                        />
+   505→                      </th>
+   506→                      <th className="text-left p-4 font-medium">Material</th>
+   507→                      <th className="text-left p-4 font-medium">Subject / Category</th>
+   508→                      <th className="text-center p-4 font-medium">Type</th>
+   509→                      <th className="text-center p-4 font-medium">Year</th>
+   510→                      <th className="text-center p-4 font-medium">Access</th>
+   511→                      <th className="text-center p-4 font-medium">Status</th>
+   512→                      <th className="text-right p-4 font-medium">Actions</th>
+   513→                    </tr>
+   514→                  </thead>
+   515→                  <tbody>
+   516→                    {filteredItems.map((item) => {
+   517→                      const isSelected = selectedIds.has(item.id);
+   518→                      const TypeIcon = TYPE_META[item.type]?.Icon || FileText;
+   519→                      return (
+   520→                        <tr key={item.id} className={`border-b border-slate-800/50 hover:bg-slate-800/30 group ${isSelected ? 'bg-red-950/20' : ''}`}>
+   521→                          <td className="p-4">
+   522→                            <Checkbox
+   523→                              checked={isSelected}
+   524→                              onCheckedChange={() => toggleSelectOne(item.id)}
+   525→                              aria-label={`Select ${item.title}`}
+   526→                            />
+   527→                          </td>
+   528→                          <td className="p-4">
+   529→                            <div className="flex items-center gap-3">
+   530→                              {/* Thumbnail (or type-icon placeholder) */}
+   531→                              <div className="w-9 h-11 rounded-md overflow-hidden bg-slate-800 border border-slate-700 flex items-center justify-center shrink-0">
+   532→                                {item.thumbnailUrl ? (
+   533→                                  <img src={item.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+   534→                                ) : (
+   535→                                  <TypeIcon className="w-4 h-4 text-slate-500" />
+   536→                                )}
+   537→                              </div>
+   538→                              <div className="min-w-0">
+   539→                                <p className="text-white font-medium truncate max-w-[260px]">{item.title}</p>
+   540→                                {item.description && (
+   541→                                  <p className="text-slate-500 text-xs truncate max-w-[260px]">{item.description}</p>
+   542→                                )}
+   543→                                {item.pages ? (
+   544→                                  <p className="text-slate-600 text-xs">{item.pages} pages · {item.downloadCount || 0} downloads</p>
+   545→                                ) : (
+   546→                                  <p className="text-slate-600 text-xs">{item.downloadCount || 0} downloads</p>
+   547→                                )}
+   548→                              </div>
+   549→                            </div>
+   550→                          </td>
+   551→                          <td className="p-4">
+   552→                            <p className="text-slate-300">{subjectName(item.subjectId)}</p>
+   553→                            <p className="text-slate-600 text-xs">{categoryName(item.subjectId)}</p>
+   554→                          </td>
+   555→                          <td className="p-4 text-center">
+   556→                            <Badge variant="outline" className={TYPE_META[item.type]?.badge || ''}>
+   557→                              <TypeIcon className="w-3 h-3 mr-1" />
+   558→                              {TYPE_META[item.type]?.label || item.type}
+   559→                            </Badge>
+   560→                          </td>
+   561→                          <td className="p-4 text-center">
+   562→                            {item.year ? (
+   563→                              <Badge variant="outline" className="border-amber-700 text-amber-400 bg-amber-950/40">{item.year}</Badge>
+   564→                            ) : (
+   565→                              <span className="text-slate-600">—</span>
+   566→                            )}
+   567→                          </td>
+   568→                          <td className="p-4 text-center">
+   569→                            {item.isPremium ? (
+   570→                              <Badge variant="outline" className="border-amber-700 text-amber-400 bg-amber-950/40">
+   571→                                <Crown className="w-3 h-3 mr-1" /> Premium
+   572→                              </Badge>
+   573→                            ) : (
+   574→                              <Badge variant="outline" className="border-emerald-700 text-emerald-400 bg-emerald-950/40">Free</Badge>
+   575→                            )}
+   576→                          </td>
+   577→                          <td className="p-4 text-center">
+   578→                            {item.isPublished ? (
+   579→                              <span className="inline-flex items-center gap-1 text-emerald-400 text-xs">
+   580→                                <Eye className="w-3.5 h-3.5" /> Published
+   581→                              </span>
+   582→                            ) : (
+   583→                              <span className="inline-flex items-center gap-1 text-slate-500 text-xs">
+   584→                                <EyeOff className="w-3.5 h-3.5" /> Draft
+   585→                              </span>
+   586→                            )}
+   587→                          </td>
+   588→                          <td className="p-4">
+   589→                            <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+   590→                              {item.pdfUrl && (
+   591→                                <Button
+   592→                                  size="icon"
+   593→                                  variant="ghost"
+   594→                                  className="h-8 w-8 text-slate-400 hover:text-emerald-400 hover:bg-slate-800"
+   595→                                  onClick={() => window.open(item.pdfUrl, '_blank')}
+   596→                                  title="Open PDF"
+   597→                                >
+   598→                                  <FileType2 className="w-3.5 h-3.5" />
+   599→                                </Button>
+   600→                              )}
+   601→                              <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800" onClick={() => openEdit(item)}>
+   602→                                <Pencil className="w-3.5 h-3.5" />
+   603→                              </Button>
+   604→                              <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:bg-red-950/40" onClick={() => setDeleteId(item.id)}>
+   605→                                <Trash2 className="w-3.5 h-3.5" />
+   606→                              </Button>
+   607→                            </div>
+   608→                          </td>
+   609→                        </tr>
+   610→                      );
+   611→                    })}
+   612→                  </tbody>
+   613→                </table>
+   614→              </div>
+   615→            </CardContent>
+   616→          </Card>
+   617→        </>
+   618→      )}
+   619→
+   620→      {/* Add / Edit Dialog */}
+   621→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   622→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
+   623→          <DialogHeader>
+   624→            <DialogTitle>{editingId ? 'Edit Study Material' : 'Add Study Material'}</DialogTitle>
+   625→          </DialogHeader>
+   626→          <div className="space-y-4">
+   627→            <div className="grid grid-cols-2 gap-3">
+   628→              <div className="space-y-2">
+   629→                <Label>Type *</Label>
+   630→                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v as MaterialType })}>
+   631→                  <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue placeholder="Select type" /></SelectTrigger>
+   632→                  <SelectContent className="bg-slate-800 border-slate-700">
+   633→                    <SelectItem value="previousPaper">Previous Paper</SelectItem>
+   634→                    <SelectItem value="notes">Study Notes</SelectItem>
+   635→                    <SelectItem value="syllabus">Syllabus</SelectItem>
+   636→                  </SelectContent>
+   637→                </Select>
+   638→              </div>
+   639→              <div className="space-y-2">
+   640→                <Label>Subject *</Label>
+   641→                <Select value={form.subjectId} onValueChange={(v) => setForm({ ...form, subjectId: v })}>
+   642→                  <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue placeholder="Select subject" /></SelectTrigger>
+   643→                  <SelectContent className="bg-slate-800 border-slate-700">
+   644→                    {subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+   645→                  </SelectContent>
+   646→                </Select>
+   647→              </div>
+   648→            </div>
+   649→
+   650→            <div className="space-y-2">
+   651→              <Label>Title *</Label>
+   652→              <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="e.g. RRB NTPC 2023 Previous Paper" className="bg-slate-800 border-slate-700" />
+   653→            </div>
+   654→
+   655→            {form.type === 'previousPaper' && (
+   656→              <div className="grid grid-cols-2 gap-3">
+   657→                <div className="space-y-2">
+   658→                  <Label>Year *</Label>
+   659→                  <Input type="number" value={form.year} onChange={(e) => setForm({ ...form, year: Number(e.target.value) })} className="bg-slate-800 border-slate-700" />
+   660→                </div>
+   661→                <div className="space-y-2">
+   662→                  <Label>Pages (optional)</Label>
+   663→                  <Input type="number" value={form.pages} onChange={(e) => setForm({ ...form, pages: Number(e.target.value) })} className="bg-slate-800 border-slate-700" />
+   664→                </div>
+   665→              </div>
+   666→            )}
+   667→
+   668→            {form.type !== 'previousPaper' && (
+   669→              <div className="space-y-2">
+   670→                <Label>Pages (optional)</Label>
+   671→                <Input type="number" value={form.pages} onChange={(e) => setForm({ ...form, pages: Number(e.target.value) })} className="bg-slate-800 border-slate-700" />
+   672→              </div>
+   673→            )}
+   674→
+   675→            {/* PDF upload */}
+   676→            <div className="space-y-2">
+   677→              <Label>PDF File {editingId ? '(leave empty to keep current)' : '*'}</Label>
+   678→              <div className="flex items-center gap-2">
+   679→                <label className="flex-1 cursor-pointer">
+   680→                  <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-slate-700 bg-slate-800 hover:bg-slate-700/60 transition-colors">
+   681→                    <Upload className="w-4 h-4 text-slate-400" />
+   682→                    <span className="text-sm text-slate-300 truncate flex-1">
+   683→                      {form.pdfFile ? form.pdfFile.name : editingId && form.pdfUrl ? 'PDF selected (click to replace)' : 'Choose PDF file…'}
+   684→                    </span>
+   685→                    {form.pdfFile && (
+   686→                      <button
+   687→                        type="button"
+   688→                        onClick={(e) => { e.preventDefault(); setForm({ ...form, pdfFile: null }); }}
+   689→                        className="text-slate-500 hover:text-red-400"
+   690→                        title="Remove selection"
+   691→                      >
+   692→                        <X className="w-3.5 h-3.5" />
+   693→                      </button>
+   694→                    )}
+   695→                  </div>
+   696→                  <input
+   697→                    type="file"
+   698→                    accept="application/pdf"
+   699→                    className="hidden"
+   700→                    onChange={(e) => {
+   701→                      const f = e.target.files?.[0] || null;
+   702→                      setForm({ ...form, pdfFile: f });
+   703→                      // Reset the native input so re-selecting the same file fires onChange.
+   704→                      e.target.value = '';
+   705→                    }}
+   706→                  />
+   707→                </label>
+   708→              </div>
+   709→              {uploadingPdf && (
+   710→                <p className="text-xs text-amber-400 flex items-center gap-1">
+   711→                  <Loader2 className="w-3 h-3 animate-spin" /> Uploading PDF…
+   712→                </p>
+   713→              )}
+   714→              {!form.pdfFile && editingId && form.pdfUrl && (
+   715→                <p className="text-xs text-slate-500 flex items-center gap-1">
+   716→                  <FileType2 className="w-3 h-3" /> Current PDF will be kept.
+   717→                </p>
+   718→              )}
+   719→            </div>
+   720→
+   721→            {/* Thumbnail upload (optional) */}
+   722→            <div className="space-y-2">
+   723→              <Label>Thumbnail (optional)</Label>
+   724→              <div className="flex items-center gap-3">
+   725→                <label className="flex-1 cursor-pointer">
+   726→                  <div className="flex items-center gap-2 px-3 py-2 rounded-md border border-slate-700 bg-slate-800 hover:bg-slate-700/60 transition-colors">
+   727→                    <Upload className="w-4 h-4 text-slate-400" />
+   728→                    <span className="text-sm text-slate-300 truncate flex-1">
+   729→                      {form.thumbnailFile ? form.thumbnailFile.name : 'Choose image…'}
+   730→                    </span>
+   731→                    {form.thumbnailFile && (
+   732→                      <button
+   733→                        type="button"
+   734→                        onClick={(e) => { e.preventDefault(); setForm({ ...form, thumbnailFile: null }); }}
+   735→                        className="text-slate-500 hover:text-red-400"
+   736→                        title="Remove selection"
+   737→                      >
+   738→                        <X className="w-3.5 h-3.5" />
+   739→                      </button>
+   740→                    )}
+   741→                  </div>
+   742→                  <input
+   743→                    type="file"
+   744→                    accept="image/*"
+   745→                    className="hidden"
+   746→                    onChange={(e) => {
+   747→                      const f = e.target.files?.[0] || null;
+   748→                      setForm({ ...form, thumbnailFile: f });
+   749→                      e.target.value = '';
+   750→                    }}
+   751→                  />
+   752→                </label>
+   753→                {form.thumbnailUrl && !form.thumbnailFile && (
+   754→                  <img src={form.thumbnailUrl} alt="" className="w-9 h-11 object-cover rounded-md border border-slate-700" />
+   755→                )}
+   756→              </div>
+   757→              {uploadingThumb && (
+   758→                <p className="text-xs text-amber-400 flex items-center gap-1">
+   759→                  <Loader2 className="w-3 h-3 animate-spin" /> Uploading thumbnail…
+   760→                </p>
+   761→              )}
+   762→            </div>
+   763→
+   764→            <div className="space-y-2">
+   765→              <Label>Description</Label>
+   766→              <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="bg-slate-800 border-slate-700" placeholder="Short description shown on the content card" />
+   767→            </div>
+   768→
+   769→            <div className="flex items-center gap-6 flex-wrap">
+   770→              <div className="flex items-center gap-2">
+   771→                <Switch checked={form.isPublished} onCheckedChange={(v) => setForm({ ...form, isPublished: v })} />
+   772→                <Label className="cursor-pointer flex items-center gap-1">
+   773→                  {form.isPublished ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-500" />}
+   774→                  Published
+   775→                </Label>
+   776→              </div>
+   777→              <div className="flex items-center gap-2">
+   778→                <Switch checked={form.isPremium} onCheckedChange={(v) => setForm({ ...form, isPremium: v })} />
+   779→                <Label className="cursor-pointer flex items-center gap-1">
+   780→                  <Crown className="w-3.5 h-3.5 text-amber-400" /> Premium
+   781→                </Label>
+   782→              </div>
+   783→            </div>
+   784→          </div>
+   785→          <DialogFooter>
+   786→            <Button variant="outline" onClick={() => setDialogOpen(false)} disabled={isUploading} className="border-slate-700 text-slate-300">
+   787→              Cancel
+   788→            </Button>
+   789→            <Button onClick={handleSave} disabled={saving || isUploading} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   790→              {(saving || isUploading) && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   791→              {saveLabel}
+   792→            </Button>
+   793→          </DialogFooter>
+   794→        </DialogContent>
+   795→      </Dialog>
+   796→
+   797→      {/* Single delete confirmation */}
+   798→      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+   799→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+   800→          <AlertDialogHeader>
+   801→            <AlertDialogTitle>Delete this study material?</AlertDialogTitle>
+   802→            <AlertDialogDescription className="text-slate-400">
+   803→              The Firestore doc will be removed. The PDF file in Firebase Storage will remain.
+   804→            </AlertDialogDescription>
+   805→          </AlertDialogHeader>
+   806→          <AlertDialogFooter>
+   807→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   808→            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+   809→          </AlertDialogFooter>
+   810→        </AlertDialogContent>
+   811→      </AlertDialog>
+   812→
+   813→      {/* Bulk Delete Confirmation */}
+   814→      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+   815→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+   816→          <AlertDialogHeader>
+   817→            <AlertDialogTitle className="flex items-center gap-2">
+   818→              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} study material{selectedIds.size === 1 ? '' : 's'}?
+   819→            </AlertDialogTitle>
+   820→            <AlertDialogDescription className="text-slate-400">
+   821→              This will permanently delete {selectedIds.size} study material{selectedIds.size === 1 ? '' : 's'} from Firestore.
+   822→              PDF files in Firebase Storage will remain.
+   823→              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+   824→            </AlertDialogDescription>
+   825→          </AlertDialogHeader>
+   826→          <AlertDialogFooter>
+   827→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   828→            <AlertDialogAction
+   829→              onClick={handleBulkDelete}
+   830→              disabled={bulkDeleting}
+   831→              className="bg-red-600 hover:bg-red-700 text-white"
+   832→            >
+   833→              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   834→              Delete {selectedIds.size} study material{selectedIds.size === 1 ? '' : 's'}
+   835→            </AlertDialogAction>
+   836→          </AlertDialogFooter>
+   837→        </AlertDialogContent>
+   838→      </AlertDialog>
+   839→    </div>
+   840→  );
+   841→}
+   842→

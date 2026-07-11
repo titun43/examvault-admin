@@ -2531,3 +2531,31 @@ Stage Summary:
     * Dark theme forced
     * Bulk uploader template downloads
 - After this AAB is in Production, future updates: just push code to main branch → GitHub Actions builds → download AAB → upload to Play Console. Same key now works forever.
+
+---
+Task ID: fresh-start-1
+Agent: main
+Task: User requested fresh start - clone both repositories (examvault + examvault-admin) for new work.
+
+Work Log:
+- Extracted GitHub token from my-project's git remote (titun43 user, examvault-admin repo origin).
+- Created /home/z/work/ directory for fresh clones.
+- Cloned examvault (Flutter app) to /home/z/work/examvault
+    Latest commit: e3a6284 ci: verify AAB signature too (catches wrong-key Play Console rejection)
+    Branch: main
+    Contains: lib/, android/, pubspec.yaml, firebase configs, firestore.rules, storage.rules
+- Cloned examvault-admin (Next.js admin panel) to /home/z/work/examvault-admin
+    Latest commit: bd64a8f feat(app-open-banners): admin panel — full-screen promotional banner management
+    Branch: main
+    Contains: src/, prisma/, package.json, public/, next.config.ts
+- Both clones verified successful with files present and git history intact.
+
+Stage Summary:
+- Both repos are freshly cloned and ready for new development work.
+- examvault (Flutter): mobile app for exam mock tests
+- examvault-admin (Next.js): admin panel for managing content
+- Previous Play Console work (upload key reset approved, AAB ready at v1.51.0+77) is complete and not blocking new development.
+- Production form review still pending (submitted Jul 10, ~7 days), but Closed Testing - Alpha track is open for new uploads.
+- Repos are at:
+    /home/z/work/examvault (Flutter app)
+    /home/z/work/examvault-admin (Next.js admin panel)

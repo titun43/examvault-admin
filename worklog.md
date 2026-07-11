@@ -2559,3 +2559,25 @@ Stage Summary:
 - Repos are at:
     /home/z/work/examvault (Flutter app)
     /home/z/work/examvault-admin (Next.js admin panel)
+
+---
+Task ID: working-protocol-1
+Agent: main
+Task: User defined a working protocol for future tasks. Save it permanently.
+
+Work Log:
+- User defined the following protocol:
+  1. When user reports a problem → first verify it exists, then confirm to user "yes this problem exists"
+  2. Then fix the problem + add code comments explaining the change
+  3. DO NOT auto-push to user app repo (examvault) — wait for explicit push instruction
+  4. EXCEPTION: admin repo (examvault-admin) — push immediately, log by log (no waiting)
+  5. Reason: user app repo has GitHub Actions workflow that triggers on every push, so batch fixes then push once to avoid unnecessary builds
+- Created /home/z/my-project/WORK_PROTOCOL.md with the full protocol documented
+- Includes: problem verification step, fix-with-comments step, repo-specific push rules, comment style guide, project locations, quick checklist
+
+Stage Summary:
+- Working protocol saved to /home/z/my-project/WORK_PROTOCOL.md
+- Both repos freshly cloned and ready for new work:
+  - /home/z/work/examvault (Flutter user app - push only on explicit instruction)
+  - /home/z/work/examvault-admin (Next.js admin - auto-push OK)
+- Ready to receive next problem/task from user.

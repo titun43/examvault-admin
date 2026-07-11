@@ -2785,3 +2785,25 @@ Stage Summary:
   CREATED:  lib/widgets/offline_aware_stream_builder.dart (reusable widget)
   CREATED:  lib/widgets/connectivity_banner.dart (offline indicator)
 - Awaiting user instruction to push, or to apply more fixes before pushing.
+
+---
+Task ID: push-1
+Agent: main
+Task: Push all 3 bundled fixes to examvault repo (user explicit instruction "PUSH KORO TAR POR AMI TEST KORCHI").
+
+Work Log:
+- Staged all changes (23 files: 3 modified services, 4 modified screens, 2 new widgets, 11 new icon PNGs, 1 new logo.png, 3 deleted old icon files)
+- Committed with detailed message covering all 3 fixes:
+  1. OTP auto-verify navigation (auth flow)
+  2. App icon replacement
+  3. Offline mode + Ranks tab after logout
+- Pushed to origin/main: e3a6284..3a31abd
+- Verified push: local and remote both at 3a31abd
+- GitHub Actions workflow will now trigger a single build (bundling all 3 fixes into one commit avoided triggering 3 separate builds)
+
+Stage Summary:
+- Commit: 3a31abd "fix: OTP auto-verify nav, app icon, offline mode + ranks after logout"
+- Pushed to: https://github.com/titun43/examvault.git (main branch)
+- 23 files changed, 684 insertions(+), 89 deletions(-)
+- User will now test the APK/AAB produced by the GitHub Actions workflow.
+- Awaiting user's test results / next problem report.

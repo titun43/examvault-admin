@@ -2633,3 +2633,66 @@ Stage Summary:
   - /home/z/work/examvault/lib/providers/auth_provider.dart
   - /home/z/work/examvault/lib/screens/auth/login_screen.dart
 - Awaiting user instruction to push, or to apply more fixes before pushing.
+
+---
+Task ID: app-icon-replace-1
+Agent: main
+Task: Replace the app's launcher icon with the user's uploaded icon (icon-512.png, from their previous app). Delete the old icon entirely.
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand prior context (working protocol: confirm problem → fix with comments → push only on explicit instruction).
+- Inspected uploaded file: /home/z/my-project/upload/icon-512.png
+    Size: 512x512, mode: RGBA, fully opaque (no transparency)
+    Background: near-white (#FEFEFE) filling the whole image
+    Content (logo): centered, ~407x387 px (79.5% of image), 28.3% of pixels are non-background
+    → This is a "full icon" (white background + centered logo), NOT a transparent foreground
+- Investigated current icon setup in /home/z/work/examvault:
+    pubspec.yaml has `flutter_launcher_icons` configured to use `assets/images/logo.png` as source
+    BUT assets/images/logo.png was NOT in git (only .gitkeep existed) — the file was missing
+    Android launcher icon was a vector drawable: android/app/src/main/res/drawable/ic_launcher_foreground.xml (book/exam icon with white paths on blue background)
+    Adaptive-icon XMLs in mipmap-anydpi-v26/ referenced the vector foreground + blue background color (#1565C0 in colors.xml)
+    NO density-specific PNGs existed (no mipmap-mdpi/hdpi/xhdpi/xxhdpi/xxxhdpi folders)
+    iOS folder does NOT exist (Android-only project)
+    AndroidManifest references: android:icon="@mipmap/ic_launcher", android:roundIcon="@mipmap/ic_launcher_round"
+- FIX APPLIED (complete icon replacement):
+
+  1. Saved uploaded icon as the canonical source:
+     /home/z/work/examvault/assets/images/logo.png (512x512, 245 KB)
+     (This is the path pubspec.yaml expects — flutter_launcher_icons can regenerate from it later if needed.)
+
+  2. Generated density-specific PNGs using Pillow (Lanczos resampling for highest quality):
+     android/app/src/main/res/mipmap-mdpi/ic_launcher.png + ic_launcher_round.png (48x48, 3.7 KB each)
+     android/app/src/main/res/mipmap-hdpi/ic_launcher.png + ic_launcher_round.png (72x72, 7.0 KB each)
+     android/app/src/main/res/mipmap-xhdpi/ic_launcher.png + ic_launcher_round.png (96x96, 11.3 KB each)
+     android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png + ic_launcher_round.png (144x144, 23.0 KB each)
+     android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png + ic_launcher_round.png (192x192, 38.9 KB each)
+     (ic_launcher.png and ic_launcher_round.png are the SAME image — Android applies the round mask itself.)
+
+  3. DELETED old icon resources (the "AGER ICON"):
+     - android/app/src/main/res/drawable/ic_launcher_foreground.xml (vector book/exam icon — DELETED)
+     - android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml (adaptive-icon XML — DELETED)
+     - android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml (adaptive-icon XML — DELETED)
+     - android/app/src/main/res/mipmap-anydpi-v26/ folder (now empty — removed)
+
+  4. Verified no dangling references:
+     - Only remaining mention of `ic_launcher_background` is the unused color definition in colors.xml (#1565C0) — harmless, left as-is
+     - launch_background.xml only references @android:color/white (splash screen, unaffected)
+     - AndroidManifest still references @mipmap/ic_launcher and @mipmap/ic_launcher_round — these now resolve to the new density PNGs
+- Did NOT push to git (per working protocol — user must explicitly say "push" before pushing to examvault repo, because every push triggers GitHub Actions workflow).
+
+Stage Summary:
+- Old book/exam vector icon with blue background is GONE.
+- New user icon (white background + centered logo) is now the launcher icon at all 5 Android density buckets.
+- Source PNG saved as assets/images/logo.png so flutter_launcher_icons can regenerate if needed in the future.
+- Approach chosen: legacy density PNGs (no adaptive icon). On Android 8.0+, the system will use these PNGs directly and apply the device's mask shape (circle/squircle/rounded-square). The white icon background blends seamlessly with the system mask.
+- Files changed (NOT pushed):
+  ADDED:    assets/images/logo.png (source, 512x512)
+  ADDED:    android/app/src/main/res/mipmap-mdpi/ic_launcher.png + ic_launcher_round.png
+  ADDED:    android/app/src/main/res/mipmap-hdpi/ic_launcher.png + ic_launcher_round.png
+  ADDED:    android/app/src/main/res/mipmap-xhdpi/ic_launcher.png + ic_launcher_round.png
+  ADDED:    android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png + ic_launcher_round.png
+  ADDED:    android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png + ic_launcher_round.png
+  DELETED:  android/app/src/main/res/drawable/ic_launcher_foreground.xml
+  DELETED:  android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml
+  DELETED:  android/app/src/main/res/mipmap-anydpi-v26/ic_launcher_round.xml
+- Awaiting user instruction to push (or to bundle with more fixes before pushing).

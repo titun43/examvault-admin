@@ -2581,3 +2581,55 @@ Stage Summary:
   - /home/z/work/examvault (Flutter user app - push only on explicit instruction)
   - /home/z/work/examvault-admin (Next.js admin - auto-push OK)
 - Ready to receive next problem/task from user.
+
+---
+Task ID: auto-verify-nav-1
+Agent: main
+Task: Fix mobile OTP auto-verify silent login — user is logged in by Android SMS auto-retrieval but LoginScreen doesn't navigate, user only sees logged-in state after pressing Back.
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand working protocol (confirm problem → fix with comments → push only on explicit instruction; admin repo can auto-push).
+- Investigated the OTP login flow across three files:
+  - lib/services/auth_service.dart (Firebase Phone Auth wrapper)
+  - lib/providers/auth_provider.dart (ChangeNotifier that forwards callbacks)
+  - lib/screens/auth/login_screen.dart (UI that listens for codeSent/onError)
+- CONFIRMED THE PROBLEM: When Android auto-retrieves the SMS, Firebase calls the `verificationCompleted` callback inside AuthService.verifyPhoneNumber() (auth_service.dart lines 67-74). That callback silently signed the user in via `_auth.signInWithCredential(credential)` and created the Firestore doc, but had NO way to notify the LoginScreen. AuthProvider only forwarded `onCodeSent` and `onError` to the UI — there was no `onAutoVerified` callback. So:
+  1. verificationCompleted fires → user is silently signed in
+  2. authStateChanges fires → AuthProvider.loadUserData() runs → _user is set
+  3. BUT LoginScreen has no callback to react — it stays stuck on the OTP entry / loading panel
+  4. User backs out → MainNavigation sees auth state → shows them as logged in
+  This matches the user's report exactly: "OTP auto verify hoye login hoye jai, but seta dekte pai nai, are OTP enter er jaigai theke jai, login dekhai na, jokhon kichu na kore back kore ashi tokhon dekhi ami login hoye achi."
+
+- FIX APPLIED (3 files, all commented with "BUGFIX (auto-verify navigation)"):
+
+  1. lib/services/auth_service.dart
+     - Added optional `void Function(User? user)? onAutoVerified` parameter to verifyPhoneNumber()
+     - Inside verificationCompleted callback, after successful signInWithCredential + _createOrUpdateUser, calls onAutoVerified(result.user) if non-null
+     - Added detailed doc comment explaining the bug and the fix
+
+  2. lib/providers/auth_provider.dart
+     - Added optional `void Function(User? user)? onAutoVerified` parameter to verifyPhoneNumber()
+     - Forwards it to AuthService.verifyPhoneNumber()
+     - IMPORTANT: did NOT wrap onAutoVerified in settleOnce() because auto-verification typically fires AFTER onCodeSent (codeSent fires first, then verificationCompleted when SMS is auto-read). Wrapping in settleOnce would suppress it whenever onCodeSent already fired — exactly the scenario we need to handle.
+
+  3. lib/screens/auth/login_screen.dart
+     - Added `import 'package:firebase_auth/firebase_auth.dart';` for the User type
+     - In _sendOtp(), added an onAutoVerified handler that:
+       a) Captures ScaffoldMessenger and AuthProvider refs before any await (avoids use_build_context_synchronously lint)
+       b) Calls _stopOtpWait() to clear loading state
+       c) Clears OTP entry state (_otpSent=false, _verificationId=null, _otpController.clear())
+       d) Shows SnackBar "OTP auto-verified! Logging you in..." for 2 seconds
+       e) Awaits auth.loadUserData() to ensure _user is populated before deciding destination (prevents admin from landing on MainNavigation instead of AdminDashboard due to race with authStateChanges listener)
+       f) Re-checks mounted, then calls _routeAfterLogin() — same path as manual OTP verification
+
+- Did NOT run `dart analyze` because neither flutter nor dart SDK is installed in this sandbox (this is a Next.js-focused environment). Verified syntax by careful manual review — all three files use only existing imports/types, no new dependencies, callback signatures match, async/await used correctly with mounted checks.
+- Did NOT push to git (per working protocol — user must explicitly say "push" before pushing to examvault repo, because every push triggers the GitHub Actions workflow).
+
+Stage Summary:
+- Root cause: missing callback bridge between Firebase's `verificationCompleted` (auto-retrieval) and the LoginScreen UI. Auth was happening silently with no UI notification.
+- Fix: added `onAutoVerified` callback through AuthService → AuthProvider → LoginScreen. When auto-retrieval signs the user in, the LoginScreen now stops the loading timer, clears OTP state, shows a confirmation SnackBar, awaits user data load, and navigates to home/admin dashboard.
+- Files modified (NOT pushed):
+  - /home/z/work/examvault/lib/services/auth_service.dart
+  - /home/z/work/examvault/lib/providers/auth_provider.dart
+  - /home/z/work/examvault/lib/screens/auth/login_screen.dart
+- Awaiting user instruction to push, or to apply more fixes before pushing.

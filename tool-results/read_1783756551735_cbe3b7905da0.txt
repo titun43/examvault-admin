@@ -1,0 +1,823 @@
+     1→     1→// =============================================================================
+     2→     2→// ExamVault - Login Screen
+     3→     3→// User login: Mobile OTP (real SMS) OR Email/Password
+     4→     4→// Admin login: HIDDEN — tap the logo 7 times to open the admin login door
+     5→     5→// =============================================================================
+     6→     6→
+     7→     7→import 'dart:async';
+     8→     8→import 'package:flutter/material.dart';
+     9→     9→import 'package:provider/provider.dart';
+    10→    10→import 'package:pinput/pinput.dart';
+    11→    11→import '../../theme/app_theme.dart';
+    12→    12→import '../../providers/auth_provider.dart';
+    13→    13→import '../home/main_navigation.dart';
+    14→    14→import '../../admin/admin_login_screen.dart';
+    15→    15→import '../../admin/admin_dashboard.dart';
+    16→    16→
+    17→    17→class LoginScreen extends StatefulWidget {
+    18→    18→  const LoginScreen({super.key});
+    19→    19→
+    20→    20→  @override
+    21→    21→  State<LoginScreen> createState() => _LoginScreenState();
+    22→    22→}
+    23→    23→
+    24→    24→class _LoginScreenState extends State<LoginScreen> {
+    25→    25→  int _currentMethod = 0; // 0=Mobile, 1=Email
+    26→    26→  int _logoTapCount = 0;
+    27→    27→
+    28→    28→  // Mobile auth
+    29→    29→  final _phoneController = TextEditingController();
+    30→    30→  final _otpController = TextEditingController();
+    31→    31→  String? _verificationId;
+    32→    32→  bool _otpSent = false;
+    33→    33→  // True while we are WAITING for Firebase to send the OTP (between tapping
+    34→    34→  // "Send OTP" and the onCodeSent / onError callback firing). During this
+    35→    35→  // window we show an informative loading panel so the user knows the app is
+    36→    36→  // working — not frozen. Firebase Phone Auth can take 2-20 seconds.
+    37→    37→  bool _isSendingOtp = false;
+    38→    38→  // Elapsed seconds counter for the loading panel — lets us show escalating
+    39→    39→  // hints ("Sending..." -> "Verifying..." -> "Still working...").
+    40→    40→  // Driven by a Timer in _sendOtp().
+    41→    41→  int _otpWaitSeconds = 0;
+    42→    42→  // True when the LAST OTP attempt failed with a Firebase CONFIG error
+    43→    43→  // (operation-not-allowed / app-not-authorized / missing-client-identifier).
+    44→    44→  // When true, we show a persistent banner on the Mobile tab telling the
+    45→    45→  // user to use Email sign-in — instead of silently auto-switching tabs
+    46→    46→  // (which previously crashed the rebuild because _pageController was never
+    47→    47→  // attached to a PageView, leaving the user with NO visible feedback).
+    48→    48→  bool _phoneAuthUnavailable = false;
+    49→    49→  // The full error message from the last OTP attempt — shown inside the
+    50→    50→  // persistent banner so the user / admin can see the EXACT Firebase error
+    51→    51→  // code (operation-not-allowed, app-not-authorized, missing-client-identifier,
+    52→    52→  // quota-exceeded, client-timeout, etc.) without needing adb logcat.
+    53→    53→  // This is critical for remote diagnosis: different codes point to very
+    54→    54→  // different fixes (Blaze plan, SHA-1, Play Integrity, SMS quota, etc.).
+    55→    55→  String? _phoneAuthError;
+    56→    56→
+    57→    57→  // Email auth
+    58→    58→  final _emailController = TextEditingController();
+    59→    59→  final _passwordController = TextEditingController();
+    60→    60→  final _nameController = TextEditingController();
+    61→    61→  bool _isSignUp = false;
+    62→    62→
+    63→    63→  @override
+    64→    64→  void dispose() {
+    65→    65→    _otpWaitTimer?.cancel();
+    66→    66→    _phoneController.dispose();
+    67→    67→    _otpController.dispose();
+    68→    68→    _emailController.dispose();
+    69→    69→    _passwordController.dispose();
+    70→    70→    _nameController.dispose();
+    71→    71→    super.dispose();
+    72→    72→  }
+    73→    73→
+    74→    74→  /// Hidden admin entry — tap the logo 7 times to open AdminLoginScreen.
+    75→    75→  void _onLogoTap() {
+    76→    76→    _logoTapCount++;
+    77→    77→    if (_logoTapCount == 7) {
+    78→    78→      _logoTapCount = 0;
+    79→    79→      Navigator.push(
+    80→    80→        context,
+    81→    81→        MaterialPageRoute(builder: (_) => const AdminLoginScreen()),
+    82→    82→      );
+    83→    83→    }
+    84→    84→  }
+    85→    85→
+    86→    86→  /// Routes the user after a successful login: admin → AdminDashboard, else → MainNavigation.
+    87→    87→  void _routeAfterLogin() {
+    88→    88→    final auth = Provider.of<AuthProvider>(context, listen: false);
+    89→    89→    if (!mounted) return;
+    90→    90→    final dest = auth.isAdmin ? const AdminDashboard() : const MainNavigation();
+    91→    91→    Navigator.pushReplacement(
+    92→    92→      context,
+    93→    93→      MaterialPageRoute(builder: (_) => dest),
+    94→    94→    );
+    95→    95→  }
+    96→    96→
+    97→    97→  @override
+    98→    98→  Widget build(BuildContext context) {
+    99→    99→    return Scaffold(
+   100→   100→      body: SafeArea(
+   101→   101→        child: SingleChildScrollView(
+   102→   102→          padding: const EdgeInsets.all(24),
+   103→   103→          child: Column(
+   104→   104→            crossAxisAlignment: CrossAxisAlignment.stretch,
+   105→   105→            children: [
+   106→   106→              const SizedBox(height: 40),
+   107→   107→              // Logo (secret admin entry — tap 7 times)
+   108→   108→              GestureDetector(
+   109→   109→                onTap: _onLogoTap,
+   110→   110→                child: Container(
+   111→   111→                  width: 80,
+   112→   112→                  height: 80,
+   113→   113→                  margin: const EdgeInsets.only(bottom: 16),
+   114→   114→                  decoration: BoxDecoration(
+   115→   115→                    gradient: AppTheme.primaryGradient,
+   116→   116→                    borderRadius: BorderRadius.circular(20),
+   117→   117→                  ),
+   118→   118→                  child: const Icon(
+   119→   119→                    Icons.school,
+   120→   120→                    size: 40,
+   121→   121→                    color: Colors.white,
+   122→   122→                  ),
+   123→   123→                ),
+   124→   124→              ),
+   125→   125→              const Text(
+   126→   126→                'Welcome to ExamVault',
+   127→   127→                style: TextStyle(
+   128→   128→                  fontSize: 24,
+   129→   129→                  fontWeight: FontWeight.w700,
+   130→   130→                ),
+   131→   131→              ),
+   132→   132→              const SizedBox(height: 8),
+   133→   133→              Text(
+   134→   134→                'Sign in to continue your exam preparation',
+   135→   135→                style: TextStyle(
+   136→   136→                  fontSize: 14,
+   137→   137→                  color: Colors.grey.shade600,
+   138→   138→                ),
+   139→   139→              ),
+   140→   140→              const SizedBox(height: 32),
+   141→   141→
+   142→   142→              // Auth Method Tabs
+   143→   143→              Row(
+   144→   144→                children: [
+   145→   145→                  Expanded(
+   146→   146→                    child: _buildMethodTab('Mobile', 0, Icons.phone),
+   147→   147→                  ),
+   148→   148→                  const SizedBox(width: 12),
+   149→   149→                  Expanded(
+   150→   150→                    child: _buildMethodTab('Email', 1, Icons.email),
+   151→   151→                  ),
+   152→   152→                ],
+   153→   153→              ),
+   154→   154→              const SizedBox(height: 24),
+   155→   155→
+   156→   156→              // Method Content
+   157→   157→              _currentMethod == 0 ? _buildMobileAuth() : _buildEmailAuth(),
+   158→   158→              const SizedBox(height: 32),
+   159→   159→            ],
+   160→   160→          ),
+   161→   161→        ),
+   162→   162→      ),
+   163→   163→    );
+   164→   164→  }
+   165→   165→
+   166→   166→  /// Informative loading panel shown while Firebase is sending the OTP.
+   167→   167→  /// Shows evolving, reassuring messages based on how long we've been
+   168→   168→  /// waiting, so the user knows the app is working — not frozen. Firebase
+   169→   169→  /// Phone Auth can take 2-20 seconds. For Play Store installs it runs
+   170→   170→  /// silently (Play Integrity); for direct APK installs a verification page
+   171→   171→  /// may open (reCAPTCHA fallback — a Firebase SDK 4.x limitation).
+   172→   172→  Widget _buildOtpLoadingPanel() {
+   173→   173→    // Pick a message based on elapsed time — escalating detail.
+   174→   174→    String title;
+   175→   175→    String subtitle;
+   176→   176→    IconData icon;
+   177→   177→    if (_otpWaitSeconds < 3) {
+   178→   178→      title = 'Sending OTP...';
+   179→   179→      subtitle = 'Please wait a moment';
+   180→   180→      icon = Icons.send;
+   181→   181→    } else if (_otpWaitSeconds < 8) {
+   182→   182→      title = 'Verifying...';
+   183→   183→      subtitle = 'Firebase is verifying your number. This may take a few seconds.';
+   184→   184→      icon = Icons.verified_user;
+   185→   185→    } else if (_otpWaitSeconds < 15) {
+   186→   186→      title = 'Still working...';
+   187→   187→      subtitle = 'Verification in progress. If a verification page opens, '
+   188→   188→          'please complete it — the OTP will arrive afterwards.';
+   189→   189→      icon = Icons.hourglass_top;
+   190→   190→    } else {
+   191→   191→      title = 'Taking longer than usual...';
+   192→   192→      subtitle = 'There may be a network issue. Please be patient, or try '
+   193→   193→          'again in a moment.';
+   194→   194→      icon = Icons.signal_wifi_off;
+   195→   195→    }
+   196→   196→    return Container(
+   197→   197→      padding: const EdgeInsets.all(16),
+   198→   198→      decoration: BoxDecoration(
+   199→   199→        color: AppTheme.primaryColor.withOpacity(0.06),
+   200→   200→        borderRadius: BorderRadius.circular(12),
+   201→   201→        border: Border.all(color: AppTheme.primaryColor.withOpacity(0.2)),
+   202→   202→      ),
+   203→   203→      child: Row(
+   204→   204→        crossAxisAlignment: CrossAxisAlignment.start,
+   205→   205→        children: [
+   206→   206→          // Animated spinner
+   207→   207→          const SizedBox(
+   208→   208→            height: 24,
+   209→   209→            width: 24,
+   210→   210→            child: CircularProgressIndicator(
+   211→   211→              strokeWidth: 2.5,
+   212→   212→              valueColor: AlwaysStoppedAnimation<Color>(AppTheme.primaryColor),
+   213→   213→            ),
+   214→   214→          ),
+   215→   215→          const SizedBox(width: 14),
+   216→   216→          Expanded(
+   217→   217→            child: Column(
+   218→   218→              crossAxisAlignment: CrossAxisAlignment.start,
+   219→   219→              children: [
+   220→   220→                Row(
+   221→   221→                  children: [
+   222→   222→                    Icon(icon, size: 16, color: AppTheme.primaryColor),
+   223→   223→                    const SizedBox(width: 6),
+   224→   224→                    Expanded(
+   225→   225→                      child: Text(
+   226→   226→                        title,
+   227→   227→                        style: TextStyle(
+   228→   228→                          color: AppTheme.primaryColor,
+   229→   229→                          fontWeight: FontWeight.w700,
+   230→   230→                          fontSize: 14,
+   231→   231→                        ),
+   232→   232→                      ),
+   233→   233→                    ),
+   234→   234→                    // Elapsed seconds badge
+   235→   235→                    Container(
+   236→   236→                      padding: const EdgeInsets.symmetric(
+   237→   237→                          horizontal: 8, vertical: 2),
+   238→   238→                      decoration: BoxDecoration(
+   239→   239→                        color: AppTheme.primaryColor.withOpacity(0.12),
+   240→   240→                        borderRadius: BorderRadius.circular(10),
+   241→   241→                      ),
+   242→   242→                      child: Text(
+   243→   243→                        '${_otpWaitSeconds}s',
+   244→   244→                        style: TextStyle(
+   245→   245→                          color: AppTheme.primaryColor,
+   246→   246→                          fontSize: 11,
+   247→   247→                          fontWeight: FontWeight.w600,
+   248→   248→                          fontFamily: 'monospace',
+   249→   249→                        ),
+   250→   250→                      ),
+   251→   251→                    ),
+   252→   252→                  ],
+   253→   253→                ),
+   254→   254→                const SizedBox(height: 6),
+   255→   255→                Text(
+   256→   256→                  subtitle,
+   257→   257→                  style: TextStyle(
+   258→   258→                    color: Colors.grey.shade700,
+   259→   259→                    fontSize: 12,
+   260→   260→                    height: 1.4,
+   261→   261→                  ),
+   262→   262→                ),
+   263→   263→              ],
+   264→   264→            ),
+   265→   265→          ),
+   266→   266→        ],
+   267→   267→      ),
+   268→   268→    );
+   269→   269→  }
+   270→   270→
+   271→   271→  Widget _buildMethodTab(String title, int index, IconData icon) {
+   272→   272→    final isSelected = _currentMethod == index;
+   273→   273→    return GestureDetector(
+   274→   274→      onTap: () {
+   275→   275→        setState(() {
+   276→   276→          _currentMethod = index;
+   277→   277→          // Clear any stale OTP-unavailable banner + provider error when the
+   278→   278→          // user moves away from / back to the Mobile tab, so a fresh attempt
+   279→   279→          // starts clean.
+   280→   280→          _phoneAuthUnavailable = false;
+   281→   281→          _phoneAuthError = null;
+   282→   282→          Provider.of<AuthProvider>(context, listen: false).clearError();
+   283→   283→        });
+   284→   284→      },
+   285→   285→      child: Container(
+   286→   286→        padding: const EdgeInsets.symmetric(vertical: 12),
+   287→   287→        decoration: BoxDecoration(
+   288→   288→          color: isSelected ? AppTheme.primaryColor : Colors.grey.shade100,
+   289→   289→          borderRadius: BorderRadius.circular(12),
+   290→   290→        ),
+   291→   291→        child: Row(
+   292→   292→          mainAxisAlignment: MainAxisAlignment.center,
+   293→   293→          children: [
+   294→   294→            Icon(
+   295→   295→              icon,
+   296→   296→              size: 18,
+   297→   297→              color: isSelected ? Colors.white : Colors.grey.shade600,
+   298→   298→            ),
+   299→   299→            const SizedBox(width: 8),
+   300→   300→            Text(
+   301→   301→              title,
+   302→   302→              style: TextStyle(
+   303→   303→                color: isSelected ? Colors.white : Colors.grey.shade600,
+   304→   304→                fontWeight: FontWeight.w600,
+   305→   305→              ),
+   306→   306→            ),
+   307→   307→          ],
+   308→   308→        ),
+   309→   309→      ),
+   310→   310→    );
+   311→   311→  }
+   312→   312→
+   313→   313→  // ==================== MOBILE OTP AUTH ====================
+   314→   314→  Widget _buildMobileAuth() {
+   315→   315→    return Column(
+   316→   316→      children: [
+   317→   317→        // Persistent "OTP unavailable" banner — shown when the last attempt
+   318→   318→        // failed with a Firebase config error (Phone Auth not enabled in the
+   319→   319→        // Firebase Console, or the app's SHA-1/SHA-256 not registered).
+   320→   320→        // This replaces the old behavior of silently auto-switching to the
+   321→   321→        // Email tab (which crashed the rebuild and left the user with zero
+   322→   322→        // visible feedback — "kichui hoi na").
+   323→   323→        if (_phoneAuthUnavailable) ...[
+   324→   324→          Container(
+   325→   325→            padding: const EdgeInsets.all(12),
+   326→   326→            decoration: BoxDecoration(
+   327→   327→              color: AppTheme.errorColor.withOpacity(0.08),
+   328→   328→              borderRadius: BorderRadius.circular(12),
+   329→   329→              border: Border.all(color: AppTheme.errorColor.withOpacity(0.4)),
+   330→   330→            ),
+   331→   331→            child: Row(
+   332→   332→              crossAxisAlignment: CrossAxisAlignment.start,
+   333→   333→              children: [
+   334→   334→                Icon(Icons.sms_failed, size: 20, color: AppTheme.errorColor),
+   335→   335→                const SizedBox(width: 10),
+   336→   336→                Expanded(
+   337→   337→                  child: Column(
+   338→   338→                    crossAxisAlignment: CrossAxisAlignment.start,
+   339→   339→                    children: [
+   340→   340→                      Text(
+   341→   341→                        'Mobile OTP is currently unavailable',
+   342→   342→                        style: TextStyle(
+   343→   343→                          color: AppTheme.errorColor,
+   344→   344→                          fontWeight: FontWeight.w700,
+   345→   345→                          fontSize: 13,
+   346→   346→                        ),
+   347→   347→                      ),
+   348→   348→                      const SizedBox(height: 4),
+   349→   349→                      Text(
+   350→   350→                        'Please use Email sign-in — tap the "Email" tab above.',
+   351→   351→                        style: TextStyle(
+   352→   352→                          color: AppTheme.errorColor,
+   353→   353→                          fontSize: 12,
+   354→   354→                          height: 1.4,
+   355→   355→                        ),
+   356→   356→                      ),
+   357→   357→                      // Show the EXACT Firebase error code/message so the
+   358→   358→                      // admin can diagnose remotely. Different codes need
+   359→   359→                      // different fixes:
+   360→   360→                      //   operation-not-allowed  → Firebase Spark plan (upgrade to Blaze) OR Phone Auth not enabled
+   361→   361→                      //   app-not-authorized      → SHA-1 fingerprint not registered in Firebase Console
+   362→   362→                      //   missing-client-identifier → reCAPTCHA / Play Integrity / SHA issue
+   363→   363→                      //   quota-exceeded          → daily SMS limit hit
+   364→   364→                      //   client-timeout          → 20s safety-net fired (network / Play Integrity hung)
+   365→   365→                      if (_phoneAuthError != null) ...[
+   366→   366→                        const SizedBox(height: 6),
+   367→   367→                        Container(
+   368→   368→                          padding: const EdgeInsets.symmetric(
+   369→   369→                              horizontal: 8, vertical: 4),
+   370→   370→                          decoration: BoxDecoration(
+   371→   371→                            color: AppTheme.errorColor.withOpacity(0.1),
+   372→   372→                            borderRadius: BorderRadius.circular(6),
+   373→   373→                          ),
+   374→   374→                          child: Text(
+   375→   375→                            _phoneAuthError!,
+   376→   376→                            style: TextStyle(
+   377→   377→                              color: AppTheme.errorColor,
+   378→   378→                              fontSize: 11,
+   379→   379→                              fontFamily: 'monospace',
+   380→   380→                              height: 1.3,
+   381→   381→                            ),
+   382→   382→                          ),
+   383→   383→                        ),
+   384→   384→                      ],
+   385→   385→                    ],
+   386→   386→                  ),
+   387→   387→                ),
+   388→   388→              ],
+   389→   389→            ),
+   390→   390→          ),
+   391→   391→          const SizedBox(height: 16),
+   392→   392→        ],
+   393→   393→        TextField(
+   394→   394→          controller: _phoneController,
+   395→   395→          keyboardType: TextInputType.phone,
+   396→   396→          maxLength: 10,
+   397→   397→          enabled: !_otpSent,
+   398→   398→          decoration: InputDecoration(
+   399→   399→            labelText: 'Mobile Number',
+   400→   400→            hintText: '9876543210',
+   401→   401→            prefixText: '+91 ',
+   402→   402→            prefixIcon: const Icon(Icons.phone_outlined),
+   403→   403→            counterText: '',
+   404→   404→            border: OutlineInputBorder(
+   405→   405→              borderRadius: BorderRadius.circular(12),
+   406→   406→            ),
+   407→   407→          ),
+   408→   408→        ),
+   409→   409→        if (_otpSent) ...[
+   410→   410→          const SizedBox(height: 16),
+   411→   411→          Text(
+   412→   412→            'Enter OTP sent to +91 ${_phoneController.text}',
+   413→   413→            style: TextStyle(color: Colors.grey.shade600, fontSize: 13),
+   414→   414→          ),
+   415→   415→          const SizedBox(height: 12),
+   416→   416→          Pinput(
+   417→   417→            controller: _otpController,
+   418→   418→            length: 6,
+   419→   419→            defaultPinTheme: PinTheme(
+   420→   420→              width: 50,
+   421→   421→              height: 56,
+   422→   422→              textStyle: const TextStyle(
+   423→   423→                fontSize: 20,
+   424→   424→                fontWeight: FontWeight.w600,
+   425→   425→              ),
+   426→   426→              decoration: BoxDecoration(
+   427→   427→                border: Border.all(color: Colors.grey.shade300),
+   428→   428→                borderRadius: BorderRadius.circular(12),
+   429→   429→              ),
+   430→   430→            ),
+   431→   431→            onCompleted: (pin) {
+   432→   432→              _verifyOtp();
+   433→   433→            },
+   434→   434→          ),
+   435→   435→        ],
+   436→   436→        const SizedBox(height: 16),
+   437→   437→        Consumer<AuthProvider>(
+   438→   438→          builder: (context, auth, _) {
+   439→   439→            return Column(
+   440→   440→              children: [
+   441→   441→                ElevatedButton(
+   442→   442→                  onPressed: auth.isLoading
+   443→   443→                      ? null
+   444→   444→                      : () {
+   445→   445→                          // Clear any previous error so the inline message
+   446→   446→                          // disappears as soon as the user retries.
+   447→   447→                          auth.clearError();
+   448→   448→                          if (_otpSent) {
+   449→   449→                            _verifyOtp();
+   450→   450→                          } else {
+   451→   451→                            _sendOtp();
+   452→   452→                          }
+   453→   453→                        },
+   454→   454→                  child: auth.isLoading
+   455→   455→                      ? const SizedBox(
+   456→   456→                          height: 20,
+   457→   457→                          width: 20,
+   458→   458→                          child: CircularProgressIndicator(
+   459→   459→                            color: Colors.white,
+   460→   460→                            strokeWidth: 2,
+   461→   461→                          ),
+   462→   462→                        )
+   463→   463→                      : Text(_otpSent ? 'Verify OTP & Login' : 'Send OTP'),
+   464→   464→                ),
+   465→   465→                // ─── Informative loading panel while sending OTP ───
+   466→   466→                // Firebase Phone Auth can take 2-20 seconds. Without this
+   467→   467→                // panel the user sees a dead spinner and thinks the app has
+   468→   468→                // frozen ("kichui hocche na"). We show evolving, reassuring
+   469→   469→                // messages so the user knows the app is working.
+   470→   470→                if (_isSendingOtp && !_otpSent) ...[
+   471→   471→                  const SizedBox(height: 16),
+   472→   472→                  _buildOtpLoadingPanel(),
+   473→   473→                ],
+   474→   474→                if (_otpSent) ...[
+   475→   475→                  const SizedBox(height: 8),
+   476→   476→                  Row(
+   477→   477→                    mainAxisAlignment: MainAxisAlignment.center,
+   478→   478→                    children: [
+   479→   479→                      TextButton(
+   480→   480→                        onPressed: auth.isLoading
+   481→   481→                            ? null
+   482→   482→                            : () {
+   483→   483→                                auth.clearError();
+   484→   484→                                _otpController.clear();
+   485→   485→                                _sendOtp(); // resend uses forceResendingToken
+   486→   486→                              },
+   487→   487→                        child: const Text('Resend OTP'),
+   488→   488→                      ),
+   489→   489→                      const Text('•', style: TextStyle(color: Colors.grey)),
+   490→   490→                      TextButton(
+   491→   491→                        onPressed: () {
+   492→   492→                          final a = Provider.of<AuthProvider>(context, listen: false);
+   493→   493→                          a.clearError();
+   494→   494→                          a.resetOtpState();
+   495→   495→                          setState(() {
+   496→   496→                            _otpSent = false;
+   497→   497→                            _otpController.clear();
+   498→   498→                            _verificationId = null;
+   499→   499→                          });
+   500→   500→                        },
+   501→   501→                        child: const Text('Change number'),
+   502→   502→                      ),
+   503→   503→                    ],
+   504→   504→                  ),
+   505→   505→                ],
+   506→   506→                // Inline error display — persists below the button so the user
+   507→   507→                // can read WHY the OTP did not arrive (e.g. app-not-authorized,
+   508→   508→                // quota-exceeded) instead of a fleeting SnackBar that is easy
+   509→   509→                // to miss. Replaces the old amber "Did not receive OTP?" hint.
+   510→   510→                if (auth.errorMessage != null && !_otpSent) ...[
+   511→   511→                  const SizedBox(height: 12),
+   512→   512→                  Container(
+   513→   513→                    padding: const EdgeInsets.all(10),
+   514→   514→                    decoration: BoxDecoration(
+   515→   515→                      color: AppTheme.errorColor.withOpacity(0.08),
+   516→   516→                      borderRadius: BorderRadius.circular(8),
+   517→   517→                      border: Border.all(color: AppTheme.errorColor.withOpacity(0.3)),
+   518→   518→                    ),
+   519→   519→                    child: Row(
+   520→   520→                      crossAxisAlignment: CrossAxisAlignment.start,
+   521→   521→                      children: [
+   522→   522→                        Icon(Icons.error_outline,
+   523→   523→                            size: 16, color: AppTheme.errorColor),
+   524→   524→                        const SizedBox(width: 8),
+   525→   525→                        Expanded(
+   526→   526→                          child: Text(
+   527→   527→                            auth.errorMessage!,
+   528→   528→                            style: TextStyle(
+   529→   529→                              fontSize: 12,
+   530→   530→                              color: AppTheme.errorColor,
+   531→   531→                              fontWeight: FontWeight.w500,
+   532→   532→                            ),
+   533→   533→                          ),
+   534→   534→                        ),
+   535→   535→                      ],
+   536→   536→                    ),
+   537→   537→                  ),
+   538→   538→                ],
+   539→   539→              ],
+   540→   540→            );
+   541→   541→          },
+   542→   542→        ),
+   543→   543→      ],
+   544→   544→    );
+   545→   545→  }
+   546→   546→
+   547→   547→  // ==================== EMAIL AUTH ====================
+   548→   548→  Widget _buildEmailAuth() {
+   549→   549→    return Column(
+   550→   550→      children: [
+   551→   551→        if (_isSignUp)
+   552→   552→          TextField(
+   553→   553→            controller: _nameController,
+   554→   554→            decoration: InputDecoration(
+   555→   555→              labelText: 'Full Name',
+   556→   556→              prefixIcon: const Icon(Icons.person_outline),
+   557→   557→              border: OutlineInputBorder(
+   558→   558→                borderRadius: BorderRadius.circular(12),
+   559→   559→              ),
+   560→   560→            ),
+   561→   561→          ),
+   562→   562→        if (_isSignUp) const SizedBox(height: 16),
+   563→   563→        TextField(
+   564→   564→          controller: _emailController,
+   565→   565→          keyboardType: TextInputType.emailAddress,
+   566→   566→          decoration: InputDecoration(
+   567→   567→            labelText: 'Email',
+   568→   568→            prefixIcon: const Icon(Icons.email_outlined),
+   569→   569→            border: OutlineInputBorder(
+   570→   570→              borderRadius: BorderRadius.circular(12),
+   571→   571→            ),
+   572→   572→          ),
+   573→   573→        ),
+   574→   574→        const SizedBox(height: 16),
+   575→   575→        TextField(
+   576→   576→          controller: _passwordController,
+   577→   577→          obscureText: true,
+   578→   578→          decoration: InputDecoration(
+   579→   579→            labelText: 'Password',
+   580→   580→            prefixIcon: const Icon(Icons.lock_outline),
+   581→   581→            border: OutlineInputBorder(
+   582→   582→              borderRadius: BorderRadius.circular(12),
+   583→   583→            ),
+   584→   584→          ),
+   585→   585→        ),
+   586→   586→        const SizedBox(height: 16),
+   587→   587→        Consumer<AuthProvider>(
+   588→   588→          builder: (context, auth, _) {
+   589→   589→            return ElevatedButton(
+   590→   590→              onPressed: auth.isLoading ? null : _emailAuth,
+   591→   591→              child: auth.isLoading
+   592→   592→                  ? const SizedBox(
+   593→   593→                      height: 20,
+   594→   594→                      width: 20,
+   595→   595→                      child: CircularProgressIndicator(
+   596→   596→                        color: Colors.white,
+   597→   597→                        strokeWidth: 2,
+   598→   598→                      ),
+   599→   599→                    )
+   600→   600→                  : Text(_isSignUp ? 'Sign Up' : 'Sign In'),
+   601→   601→            );
+   602→   602→          },
+   603→   603→        ),
+   604→   604→        const SizedBox(height: 12),
+   605→   605→        TextButton(
+   606→   606→          onPressed: () {
+   607→   607→            setState(() {
+   608→   608→              _isSignUp = !_isSignUp;
+   609→   609→            });
+   610→   610→          },
+   611→   611→          child: Text(
+   612→   612→            _isSignUp
+   613→   613→                ? 'Already have an account? Sign In'
+   614→   614→                : 'Don\'t have an account? Sign Up',
+   615→   615→          ),
+   616→   616→        ),
+   617→   617→      ],
+   618→   618→    );
+   619→   619→  }
+   620→   620→
+   621→   621→  // ==================== OTP METHODS ====================
+   622→   622→  Timer? _otpWaitTimer;
+   623→   623→
+   624→   624→  void _sendOtp() async {
+   625→   625→    // Reset the "OTP unavailable" banner for this fresh attempt — it will be
+   626→   626→    // re-set if THIS attempt fails with a config error.
+   627→   627→    _phoneAuthUnavailable = false;
+   628→   628→    _phoneAuthError = null;
+   629→   629→    final rawPhone = _phoneController.text.trim();
+   630→   630→    if (rawPhone.isEmpty) {
+   631→   631→      ScaffoldMessenger.of(context).showSnackBar(
+   632→   632→        const SnackBar(content: Text('Please enter phone number')),
+   633→   633→      );
+   634→   634→      return;
+   635→   635→    }
+   636→   636→
+   637→   637→    // Normalize: digits only
+   638→   638→    final digits = rawPhone.replaceAll(RegExp(r'[^\d]'), '');
+   639→   639→
+   640→   640→    // Build full phone with country code
+   641→   641→    String fullPhone;
+   642→   642→    if (rawPhone.startsWith('+')) {
+   643→   643→      fullPhone = rawPhone;
+   644→   644→    } else if (digits.length == 10) {
+   645→   645→      // 10-digit Indian number → prepend +91
+   646→   646→      fullPhone = '+91$digits';
+   647→   647→    } else if (digits.length > 10) {
+   648→   648→      // Already includes country code (e.g. 919876543210)
+   649→   649→      fullPhone = '+$digits';
+   650→   650→    } else {
+   651→   651→      ScaffoldMessenger.of(context).showSnackBar(
+   652→   652→        const SnackBar(
+   653→   653→            content: Text('Please enter a valid 10-digit mobile number')),
+   654→   654→      );
+   655→   655→      return;
+   656→   656→    }
+   657→   657→
+   658→   658→    // ─── Start the "sending OTP" loading state ───
+   659→   659→    // Firebase Phone Auth can take 2-20 seconds. For Play Store installs
+   660→   660→    // it runs silently (Play Integrity). For direct APK installs it may
+   661→   661→    // open a verification page (reCAPTCHA fallback) — that's a Firebase
+   662→   662→    // SDK limitation in 4.x, not an app bug. Without a visible loading
+   663→   663→    // indicator the user thinks the app has frozen ("kichui hocche na").
+   664→   664→    // We tick a counter every second and show escalating messages.
+   665→   665→    _isSendingOtp = true;
+   666→   666→    _otpWaitSeconds = 0;
+   667→   667→    setState(() {});
+   668→   668→    _otpWaitTimer?.cancel();
+   669→   669→    _otpWaitTimer = Timer.periodic(const Duration(seconds: 1), (_) {
+   670→   670→      if (!_isSendingOtp || !mounted) return;
+   671→   671→      _otpWaitSeconds++;
+   672→   672→      setState(() {});
+   673→   673→    });
+   674→   674→
+   675→   675→    final auth = Provider.of<AuthProvider>(context, listen: false);
+   676→   676→    await auth.verifyPhoneNumber(
+   677→   677→      phoneNumber: fullPhone,
+   678→   678→      onCodeSent: (verificationId, _) {
+   679→   679→        _stopOtpWait();
+   680→   680→        setState(() {
+   681→   681→          _verificationId = verificationId;
+   682→   682→          _otpSent = true;
+   683→   683→        });
+   684→   684→        ScaffoldMessenger.of(context).showSnackBar(
+   685→   685→          SnackBar(content: Text('OTP sent to $fullPhone')),
+   686→   686→        );
+   687→   687→      },
+   688→   688→      onError: (error) {
+   689→   689→        _stopOtpWait();
+   690→   690→        // Show a persistent banner with the EXACT error message on the Mobile
+   691→   691→        // tab. We NO LONGER auto-switch to the Email tab — the old code called
+   692→   692→        // _pageController.animateToPage(), but _pageController was never
+   693→   693→        // attached to a PageView (the tabs use conditional rendering, not a
+   694→   694→        // PageView). That call threw inside setState, which prevented
+   695→   695→        // markNeedsBuild() from running, so the UI never rebuilt AND the
+   696→   696→        // SnackBar below was never reached — the user saw nothing
+   697→   697→        // ("kichui hoi na"). Now we set a flag + show the SnackBar reliably.
+   698→   698→        //
+   699→   699→        // We show the banner for ALL errors (not just config errors) so the
+   700→   700→        // admin can see timeout / quota errors too — they all need different
+   701→   701→        // fixes:
+   702→   702→        //   operation-not-allowed     → Firebase Spark plan OR Phone Auth not enabled
+   703→   703→        //   app-not-authorized        → SHA-1 fingerprint not in Firebase Console
+   704→   704→        //   missing-client-identifier → reCAPTCHA / Play Integrity / SHA issue
+   705→   705→        //   quota-exceeded            → daily SMS limit hit
+   706→   706→        //   client-timeout            → 20s safety-net fired (network/Integrity hung)
+   707→   707→        _phoneAuthUnavailable = true;
+   708→   708→        _phoneAuthError = error;
+   709→   709→        if (!mounted) return;
+   710→   710→        setState(() {}); // rebuild to show the banner
+   711→   711→        ScaffoldMessenger.of(context).showSnackBar(
+   712→   712→          SnackBar(
+   713→   713→            content: Text(error),
+   714→   714→            duration: const Duration(seconds: 6),
+   715→   715→            backgroundColor: AppTheme.errorColor,
+   716→   716→          ),
+   717→   717→        );
+   718→   718→      },
+   719→   719→    );
+   720→   720→  }
+   721→   721→
+   722→   722→  /// Stops the OTP-wait timer and clears the loading flag. Called from both
+   723→   723→  /// onCodeSent and onError so the UI always settles no matter which path
+   724→   724→  /// Firebase takes.
+   725→   725→  void _stopOtpWait() {
+   726→   726→    _isSendingOtp = false;
+   727→   727→    _otpWaitSeconds = 0;
+   728→   728→    _otpWaitTimer?.cancel();
+   729→   729→    _otpWaitTimer = null;
+   730→   730→    if (mounted) setState(() {});
+   731→   731→  }
+   732→   732→
+   733→   733→  void _verifyOtp() async {
+   734→   734→    if (_otpController.text.length != 6) {
+   735→   735→      ScaffoldMessenger.of(context).showSnackBar(
+   736→   736→        const SnackBar(content: Text('Please enter the 6-digit OTP')),
+   737→   737→      );
+   738→   738→      return;
+   739→   739→    }
+   740→   740→    if (_verificationId == null) {
+   741→   741→      ScaffoldMessenger.of(context).showSnackBar(
+   742→   742→        const SnackBar(content: Text('Please request OTP first')),
+   743→   743→      );
+   744→   744→      return;
+   745→   745→    }
+   746→   746→
+   747→   747→    final auth = Provider.of<AuthProvider>(context, listen: false);
+   748→   748→    final success = await auth.verifyOtp(
+   749→   749→      verificationId: _verificationId!,
+   750→   750→      smsCode: _otpController.text,
+   751→   751→    );
+   752→   752→
+   753→   753→    if (success && mounted) {
+   754→   754→      _routeAfterLogin();
+   755→   755→    } else if (auth.errorMessage != null && mounted) {
+   756→   756→      ScaffoldMessenger.of(context).showSnackBar(
+   757→   757→        SnackBar(
+   758→   758→          content: Text(auth.errorMessage!),
+   759→   759→          backgroundColor: AppTheme.errorColor,
+   760→   760→        ),
+   761→   761→      );
+   762→   762→    }
+   763→   763→  }
+   764→   764→
+   765→   765→  // ==================== EMAIL AUTH METHODS ====================
+   766→   766→  void _emailAuth() async {
+   767→   767→    final email = _emailController.text.trim();
+   768→   768→    final password = _passwordController.text;
+   769→   769→
+   770→   770→    if (email.isEmpty || password.isEmpty) {
+   771→   771→      ScaffoldMessenger.of(context).showSnackBar(
+   772→   772→        const SnackBar(content: Text('Please fill all fields')),
+   773→   773→      );
+   774→   774→      return;
+   775→   775→    }
+   776→   776→    if (!RegExp(r'^[\w.+-]+@[\w-]+\.[\w.-]+$').hasMatch(email)) {
+   777→   777→      ScaffoldMessenger.of(context).showSnackBar(
+   778→   778→        const SnackBar(content: Text('Please enter a valid email address')),
+   779→   779→      );
+   780→   780→      return;
+   781→   781→    }
+   782→   782→    if (password.length < 6) {
+   783→   783→      ScaffoldMessenger.of(context).showSnackBar(
+   784→   784→        const SnackBar(content: Text('Password must be at least 6 characters')),
+   785→   785→      );
+   786→   786→      return;
+   787→   787→    }
+   788→   788→    if (_isSignUp && _nameController.text.trim().isEmpty) {
+   789→   789→      ScaffoldMessenger.of(context).showSnackBar(
+   790→   790→        const SnackBar(content: Text('Please enter your name')),
+   791→   791→      );
+   792→   792→      return;
+   793→   793→    }
+   794→   794→
+   795→   795→    final auth = Provider.of<AuthProvider>(context, listen: false);
+   796→   796→    bool success;
+   797→   797→    if (_isSignUp) {
+   798→   798→      success = await auth.signUpWithEmail(
+   799→   799→        email: email,
+   800→   800→        password: password,
+   801→   801→        name: _nameController.text.trim(),
+   802→   802→      );
+   803→   803→    } else {
+   804→   804→      success = await auth.signInWithEmail(
+   805→   805→        email: email,
+   806→   806→        password: password,
+   807→   807→      );
+   808→   808→    }
+   809→   809→
+   810→   810→    if (success && mounted) {
+   811→   811→      _routeAfterLogin();
+   812→   812→    } else if (auth.errorMessage != null && mounted) {
+   813→   813→      ScaffoldMessenger.of(context).showSnackBar(
+   814→   814→        SnackBar(
+   815→   815→          content: Text(auth.errorMessage!),
+   816→   816→          duration: const Duration(seconds: 5),
+   817→   817→          backgroundColor: AppTheme.errorColor,
+   818→   818→        ),
+   819→   819→      );
+   820→   820→    }
+   821→   821→  }
+   822→   822→}
+   823→   823→

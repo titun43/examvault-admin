@@ -1,0 +1,760 @@
+     1→// =============================================================================
+     2→// ExamVault - Auth Provider
+     3→// =============================================================================
+     4→
+     5→import 'dart:async';
+     6→import 'package:flutter/material.dart';
+     7→import 'package:firebase_auth/firebase_auth.dart';
+     8→import 'package:cloud_firestore/cloud_firestore.dart';
+     9→import '../models/user_model.dart';
+    10→import '../services/auth_service.dart';
+    11→import '../services/firebase_service.dart';
+    12→import '../services/premium_cache_service.dart';
+    13→import '../services/exam_pack_cache_service.dart';
+    14→import '../services/access_service.dart';
+    15→
+    16→/// Converts raw Firebase auth exceptions into user-friendly messages.
+    17→String _friendlyAuthError(Object e) {
+    18→  final s = e.toString();
+    19→  if (e is FirebaseAuthException) {
+    20→    switch (e.code) {
+    21→      case 'invalid-email':
+    22→        return 'The email address is not valid.';
+    23→      case 'user-disabled':
+    24→        return 'This account has been disabled. Contact support.';
+    25→      case 'user-not-found':
+    26→        return 'No account found with this email. Please sign up first.';
+    27→      case 'wrong-password':
+    28→      case 'invalid-credential':
+    29→        return 'Incorrect email or password. Please try again.';
+    30→      case 'email-already-in-use':
+    31→        return 'This email is already registered. Please sign in instead.';
+    32→      case 'weak-password':
+    33→        return 'Password is too weak. Use at least 6 characters.';
+    34→      case 'too-many-requests':
+    35→        return 'Too many attempts. Please wait a few minutes and try again.';
+    36→      case 'network-request-failed':
+    37→        return 'Network error. Check your internet connection and try again.';
+    38→      case 'operation-not-allowed':
+    39→        return 'This sign-in method is not enabled. Contact admin.';
+    40→      case 'invalid-verification-code':
+    41→        return 'Invalid OTP. Please check and enter the correct 6-digit code.';
+    42→      case 'invalid-phone-number':
+    43→        return 'Invalid phone number. Enter a valid 10-digit mobile number.';
+    44→      case 'session-expired':
+    45→        return 'OTP session expired. Please request a new OTP.';
+    46→      case 'quota-exceeded':
+    47→        return 'SMS quota exceeded. Please try again later.';
+    48→      case 'app-not-authorized':
+    49→        return 'App signature not registered in Firebase. Contact admin.';
+    50→      case 'captcha-check-failed':
+    51→        return 'Verification challenge failed. Check your network and retry.';
+    52→      default:
+    53→        return e.message ?? 'Authentication failed (${e.code}).';
+    54→    }
+    55→  }
+    56→  if (e is AppAuthException) {
+    57→    return e.message;
+    58→  }
+    59→  if (s.contains('network')) {
+    60→    return 'Network error. Check your internet connection.';
+    61→  }
+    62→  // Strip the "Exception:" prefix from generic Dart errors
+    63→  final cleaned = s.replaceFirst(RegExp(r'^Exception:\s*'), '');
+    64→  return cleaned.isEmpty ? 'Something went wrong. Please try again.' : cleaned;
+    65→}
+    66→
+    67→class AuthProvider extends ChangeNotifier {
+    68→  UserModel? _user;
+    69→  bool _isLoading = false;
+    70→  String? _errorMessage;
+    71→  int? _resendToken; // allows "Resend OTP" without burning quota
+    72→  // True once Firebase Auth has emitted its FIRST auth-state event. Before
+    73→  // this, we don't yet know whether a persisted session will be restored, so
+    74→  // the splash screen must NOT navigate the user to the login page (otherwise
+    75→  // a logged-in user gets kicked to login on every cold start because the
+    76→  // restore happens asynchronously and can take longer than a fixed delay).
+    77→  bool _authInitialized = false;
+    78→  // True after dispose() is called. Guards fire-and-forget async methods
+    79→  // (_syncPremiumFromBackend) from calling notifyListeners() after the
+    80→  // provider is no longer in the widget tree.
+    81→  bool _disposed = false;
+    82→  // Real-time subscription to the user's Firestore document. When the admin
+    83→  // grants/revokes entitlements (isPremium, purchasedCategoryIds,
+    84→  // purchasedTests) or edits profile fields server-side, this listener
+    85→  // updates the in-memory _user model + invalidates AccessService caches so
+    86→  // the change reflects in the UI WITHOUT requiring the user to re-login.
+    87→  StreamSubscription<DocumentSnapshot>? _userDocSub;
+    88→
+    89→  UserModel? get user => _user;
+    90→  bool get isLoading => _isLoading;
+    91→  String? get errorMessage => _errorMessage;
+    92→  bool get isAuthenticated => _user != null;
+    93→  /// True when the user is browsing WITHOUT an account (guest mode). The
+    94→  /// splash screen sends unauthenticated users straight into MainNavigation
+    95→  /// so they can browse and take FREE tests. Premium / paid content must
+    96→  /// check this and prompt the guest to sign in before purchase.
+    97→  bool get isGuest => _user == null && _authInitialized;
+    98→  bool get isPremium => _user?.isPremium ?? false;
+    99→  bool get isAdmin => _user?.isAdmin ?? false;
+   100→  /// True if the user can open this category — premium subscription OR exam-pack purchase.
+   101→  bool hasCategoryAccess(String categoryId) => _user?.hasCategoryAccess(categoryId) ?? false;
+   102→  int? get resendToken => _resendToken;
+   103→  bool get authInitialized => _authInitialized;
+   104→
+   105→  AuthProvider() {
+   106→    _initAuth();
+   107→  }
+   108→
+   109→  void _initAuth() {
+   110→    // Listen to the FIRST auth-state event to know when Firebase has finished
+   111→    // restoring any persisted session. We keep listening for subsequent
+   112→    // changes (sign-in / sign-out) afterwards.
+   113→    AuthService.authStateChanges.listen((firebaseUser) async {
+   114→      // Mark auth as initialized on the very first event (user OR null).
+   115→      if (!_authInitialized) {
+   116→        _authInitialized = true;
+   117→      }
+   118→      if (firebaseUser != null) {
+   119→        await loadUserData();
+   120→      } else {
+   121→        // Cancel the user-doc listener on sign-out so we don't get stray
+   122→        // updates for the previous user's document.
+   123→        _userDocSub?.cancel();
+   124→        _userDocSub = null;
+   125→        _user = null;
+   126→        notifyListeners();
+   127→      }
+   128→    });
+   129→  }
+   130→
+   131→  Future<void> loadUserData() async {
+   132→    _isLoading = true;
+   133→    notifyListeners();
+   134→
+   135→    try {
+   136→      _user = await AuthService.getCurrentUserData();
+   137→      // If user is authenticated in Firebase but their Firestore doc is missing
+   138→      // (can happen right after auto-retrieval sign-in or due to rules issues),
+   139→      // try to (re)create it with merge so we don't overwrite existing data.
+   140→      if (_user == null && AuthService.currentUser != null) {
+   141→        final fbUser = AuthService.currentUser!;
+   142→        final newUser = UserModel(
+   143→          id: fbUser.uid,
+   144→          name: fbUser.displayName ?? 'User',
+   145→          email: fbUser.email,
+   146→          phoneNumber: fbUser.phoneNumber,
+   147→          photoUrl: fbUser.photoURL,
+   148→          createdAt: DateTime.now(),
+   149→          updatedAt: DateTime.now(),
+   150→          lastActiveAt: DateTime.now(),
+   151→        );
+   152→        try {
+   153→          await FirebaseService.usersRef.doc(fbUser.uid).set(
+   154→            newUser.toFirestore(),
+   155→            SetOptions(merge: true),
+   156→          );
+   157→          _user = newUser;
+   158→        } catch (e) {
+   159→          // Firestore write failed (e.g. rules). Don't fail the login —
+   160→          // the user is still authenticated via Firebase Auth. Use the
+   161→          // locally-constructed UserModel so the app can proceed.
+   162→          _user = newUser;
+   163→        }
+   164→      } else if (_user != null && AuthService.currentUser != null) {
+   165→        // RECOVERY for users affected by the signup race-condition bug:
+   166→        // If the Firestore doc's name is exactly the fallback string 'User'
+   167→        // but Firebase Auth has a real displayName (set via updateDisplayName
+   168→        // during signup), the Firestore name is stale — recover it by using
+   169→        // and persisting the displayName. This fixes existing users who
+   170→        // signed up before the _createOrUpdateUser fix and see "User"
+   171→        // instead of their real name.
+   172→        final fsName = _user!.name;
+   173→        final fbUser = AuthService.currentUser!;
+   174→        final fbName = fbUser.displayName;
+   175→        if (fsName == 'User' &&
+   176→            fbName != null &&
+   177→            fbName.isNotEmpty &&
+   178→            fbName != 'User') {
+   179→          _user = _user!.copyWith(name: fbName, updatedAt: DateTime.now());
+   180→          // Persist the recovered name to Firestore so it sticks.
+   181→          try {
+   182→            await FirebaseService.usersRef.doc(fbUser.uid).set({
+   183→              'name': fbName,
+   184→              'updatedAt': DateTime.now().toIso8601String(),
+   185→            }, SetOptions(merge: true));
+   186→          } catch (e) {
+   187→            print('[AuthProvider] loadUserData: name recovery persist failed (non-fatal): $e');
+   188→            // Non-fatal — the in-memory _user already has the correct name
+   189→            // for this session.
+   190→          }
+   191→        }
+   192→      }
+   193→      // USER-SPECIFIC LOCAL CACHE: apply the persisted premium flag (if any)
+   194→      // to the in-memory _user model BEFORE the finally block notifies the
+   195→      // UI. This gives an instant premium state on app launch / login —
+   196→      // preventing the "Locked" flash that occurs while the real-time Neon
+   197→      // DB sync runs in the background. See _applyCachedPremium() for details.
+   198→      await _applyCachedPremium();
+   199→    } catch (e) {
+   200→      // Don't fail login if Firestore read fails — keep user authenticated.
+   201→      _errorMessage = null;
+   202→      if (AuthService.currentUser != null) {
+   203→        final fbUser = AuthService.currentUser!;
+   204→        _user = UserModel(
+   205→          id: fbUser.uid,
+   206→          name: fbUser.displayName ?? 'User',
+   207→          email: fbUser.email,
+   208→          phoneNumber: fbUser.phoneNumber,
+   209→          photoUrl: fbUser.photoURL,
+   210→          createdAt: DateTime.now(),
+   211→          updatedAt: DateTime.now(),
+   212→        );
+   213→      }
+   214→    } finally {
+   215→      _isLoading = false;
+   216→      notifyListeners();
+   217→    }
+   218→    // REAL-TIME SYNC: fetch the authoritative premium status from the Neon
+   219→    // PostgreSQL database (via the backend API) and overwrite both the
+   220→    // in-memory _user model and the SharedPreferences cache. This is
+   221→    // fire-and-forget so the UI is NOT blocked — the cached value applied
+   222→    // above bridges the gap until this completes. See _syncPremiumFromBackend.
+   223→    _syncPremiumFromBackend();
+   224→    // REAL-TIME USER-DOC LISTENER: subscribe to the user's Firestore document
+   225→    // so admin-granted entitlements (isPremium, purchasedCategoryIds,
+   226→    // purchasedTests) and profile edits propagate live without re-login.
+   227→    // See _startUserDocListener.
+   228→    _startUserDocListener();
+   229→  }
+   230→
+   231→  // ==================== REAL-TIME USER DOC SUBSCRIPTION ====================
+   232→  // Subscribes to the user's Firestore document. When the admin grants or
+   233→  // revokes entitlements server-side (e.g. manually adds a categoryId to
+   234→  // purchasedCategoryIds, or flips isPremium), this listener fires, updates
+   235→  // the in-memory _user model, invalidates the relevant AccessService cache
+   236→  // entries, and notifies the UI — all in real-time, WITHOUT requiring the
+   237→  // user to re-login or restart the app.
+   238→  //
+   239→  // FEEDBACK-LOOP SAFETY: when the app itself writes to the user doc (via
+   240→  // addPurchasedTest / addPurchasedCategory / markPremium), this listener
+   241→  // fires too — but the local _user is already updated optimistically, so
+   242→  // re-parsing from the snapshot is a harmless no-op (the data matches).
+   243→  void _startUserDocListener() {
+   244→    // Cancel any existing subscription (e.g. from a previous login session).
+   245→    _userDocSub?.cancel();
+   246→    _userDocSub = null;
+   247→    if (_user == null) return;
+   248→    final uid = _user!.id;
+   249→    _userDocSub = FirebaseService.usersRef.doc(uid).snapshots().listen(
+   250→      (doc) {
+   251→        if (_disposed || _user == null || _user!.id != uid) return;
+   252→        if (!doc.exists) return; // doc deleted — auth-state will handle sign-out
+   253→
+   254→        final newUser = UserModel.fromFirestore(doc);
+   255→        final oldUser = _user!;
+   256→
+   257→        // Detect entitlement changes that require AccessService cache
+   258→        // invalidation so stale ALLOWED/DENIED decisions don't bypass the
+   259→        // new entitlement state.
+   260→        final premiumChanged = newUser.isPremium != oldUser.isPremium;
+   261→        final categoriesChanged =
+   262→            !_sameStringList(newUser.purchasedCategoryIds, oldUser.purchasedCategoryIds);
+   263→        final testsChanged =
+   264→            !_sameStringList(newUser.purchasedTests, oldUser.purchasedTests);
+   265→
+   266→        // Always adopt the fresh snapshot (name, photo, stats, entitlements).
+   267→        _user = newUser;
+   268→
+   269→        if (premiumChanged) {
+   270→          // Premium affects ALL access decisions — clear everything so the
+   271→          // next check hits the server with the new premium state.
+   272→          AccessService.clearCache();
+   273→          // Keep the SharedPreferences premium cache in sync.
+   274→          if (newUser.isPremium) {
+   275→            PremiumCacheService.setPremium(userId: uid);
+   276→          } else {
+   277→            PremiumCacheService.clearPremium(uid);
+   278→          }
+   279→        } else {
+   280→          // Only invalidate caches for entitlements that actually changed.
+   281→          if (categoriesChanged) {
+   282→            // Clear stale exam-pack caches for removed categories.
+   283→            for (final id in oldUser.purchasedCategoryIds) {
+   284→              if (!newUser.purchasedCategoryIds.contains(id)) {
+   285→                AccessService.clearCacheForCategory(id);
+   286→              }
+   287→            }
+   288→          }
+   289→          if (testsChanged) {
+   290→            for (final id in oldUser.purchasedTests) {
+   291→              if (!newUser.purchasedTests.contains(id)) {
+   292→                AccessService.clearCacheForTest(id);
+   293→              }
+   294→            }
+   295→          }
+   296→        }
+   297→
+   298→        if (!_disposed) notifyListeners();
+   299→      },
+   300→      onError: (e) {
+   301→        // Firestore rules error / network issue — non-fatal. The app
+   302→        // continues with the existing in-memory _user; the next login /
+   303→        // app launch will re-subscribe.
+   304→        print('[AuthProvider] user doc stream error (non-fatal): $e');
+   305→      },
+   306→    );
+   307→  }
+   308→
+   309→  /// Order-insensitive equality check for two string lists.
+   310→  bool _sameStringList(List<String> a, List<String> b) {
+   311→    if (a.length != b.length) return false;
+   312→    for (final v in a) {
+   313→      if (!b.contains(v)) return false;
+   314→    }
+   315→    return true;
+   316→  }
+   317→
+   318→  // ==================== USER-SPECIFIC PREMIUM CACHE ====================
+   319→  // These two methods implement the "User-Specific Local Cache" strategy:
+   320→  //
+   321→  //   1. _applyCachedPremium()    — reads isPremium_${userId} from
+   322→  //                                 SharedPreferences and applies it to the
+   323→  //                                 in-memory _user (instant UI, no flash).
+   324→  //   2. _syncPremiumFromBackend() — fetches the REAL-TIME status from Neon
+   325→  //                                  DB via the backend API and OVERWRITES
+   326→  //                                  the cache (source of truth).
+   327→  //
+   328→  // SECURITY: the cache is NEVER the source of truth. On every launch / login
+   329→  // the backend overwrites it. If the backend says NOT premium, the cache is
+   330→  // CLEARED so a stale "true" can't give a lapsed/refunded user free access.
+   331→  //
+   332→  // ACCOUNT MIXING PREVENTION: all cache keys are scoped by userId
+   333→  // (isPremium_${userId}). A different user logging into the same device
+   334→  // checks their OWN key and never inherits the previous user's premium.
+   335→
+   336→  /// Reads the user-specific SharedPreferences cache and, if it says the user
+   337→  /// is premium, optimistically applies that to the in-memory _user model.
+   338→  /// This gives the UI an instant premium state on app launch / login —
+   339→  /// preventing the "Locked" flash that occurs while the backend sync runs.
+   340→  ///
+   341→  /// This is NOT the source of truth — it's a bridge. The real-time Neon DB
+   342→  /// fetch in [_syncPremiumFromBackend] will overwrite this shortly.
+   343→  Future<void> _applyCachedPremium() async {
+   344→    if (_user == null) return;
+   345→    // If the user is already marked premium from Firestore, no need to check
+   346→    // the cache — Firestore already has the truth for this session.
+   347→    if (_user!.isPremium) return;
+   348→    final cachedPremium = await PremiumCacheService.isPremiumCached(_user!.id);
+   349→    if (!cachedPremium) return;
+   350→    // Apply the cached premium status + expiry + planId to the local model.
+   351→    final cachedExpiry = await PremiumCacheService.getCachedExpiry(_user!.id);
+   352→    final cachedPlanId = await PremiumCacheService.getCachedPlanId(_user!.id);
+   353→    _user = _user!.copyWith(
+   354→      subscriptionStatus: SubscriptionStatus.premium,
+   355→      subscriptionExpiry: cachedExpiry,
+   356→      subscriptionPlanId: cachedPlanId,
+   357→      updatedAt: DateTime.now(),
+   358→    );
+   359→    // Don't notify here — the caller (loadUserData) will notify in finally.
+   360→  }
+   361→
+   362→  /// Fetches the REAL-TIME premium status from the Neon PostgreSQL database
+   363→  /// (via the backend API → AccessService.checkPremiumOnly) and overwrites
+   364→  /// both the in-memory _user model and the user-specific SharedPreferences
+   365→  /// cache. Called after [loadUserData] completes (fire-and-forget) so the UI
+   366→  /// isn't blocked.
+   367→  ///
+   368→  /// SECURITY: This is the source of truth. If the backend says the user is
+   369→  /// NOT premium (subscription expired / cancelled / refunded / never paid),
+   370→  /// we CLEAR the local cache so a stale "true" can't give free access.
+   371→  Future<void> _syncPremiumFromBackend() async {
+   372→    if (_user == null || _disposed) return;
+   373→    try {
+   374→      final decision = await AccessService.checkPremiumOnly();
+   375→      if (_user == null || _disposed) return;
+   376→      if (decision.allowed) {
+   377→        // Backend confirms premium — ensure the cache agrees (in case the
+   378→        // cache was cleared but the backend still has the subscription).
+   379→        final alreadyCached =
+   380→            await PremiumCacheService.isPremiumCached(_user!.id);
+   381→        if (!alreadyCached) {
+   382→          await PremiumCacheService.setPremium(userId: _user!.id);
+   383→        }
+   384→        // If the local model doesn't yet reflect premium, update it.
+   385→        if (!_user!.isPremium) {
+   386→          _user = _user!.copyWith(
+   387→            subscriptionStatus: SubscriptionStatus.premium,
+   388→            updatedAt: DateTime.now(),
+   389→          );
+   390→          if (!_disposed) notifyListeners();
+   391→        }
+   392→      } else {
+   393→        // Backend says NOT premium — clear the cache to prevent a stale
+   394→        // "true" from giving a lapsed/refunded user free access.
+   395→        await PremiumCacheService.clearPremium(_user!.id);
+   396→        if (_user!.isPremium) {
+   397→          _user = _user!.copyWith(
+   398→            subscriptionStatus: SubscriptionStatus.free,
+   399→            subscriptionExpiry: null,
+   400→            subscriptionPlanId: null,
+   401→            updatedAt: DateTime.now(),
+   402→          );
+   403→          if (!_disposed) notifyListeners();
+   404→        }
+   405→      }
+   406→    } catch (e) {
+   407→      // Backend unreachable — leave the cache as-is. The cached value is our
+   408→      // best guess until the next launch. This is acceptable because:
+   409→      //   1. If cached=true and the user is actually premium, no harm.
+   410→      //   2. If cached=true but the user is actually lapsed, they get temporary
+   411→      //      access until the next successful sync — a minor, bounded risk.
+   412→      //   3. If cached=false, the user sees the paywall as expected.
+   413→      print('[AuthProvider] _syncPremiumFromBackend: sync failed (non-fatal): $e');
+   414→    }
+   415→  }
+   416→
+   417→  // ==================== PHONE AUTH ====================
+   418→  /// SAFETY-NET TIMEOUT (added Jul 4, 2026): on some devices, Firebase's
+   419→  /// native phone-verification call can silently never invoke ANY callback
+   420→  /// (neither codeSent nor verificationFailed) — e.g. if the SafetyNet/Play
+   421→  /// Integrity/reCAPTCHA app-verification step hangs or its result gets lost
+   422→  /// natively. Without a timeout, the user is stuck staring at a dead button
+   423→  /// forever with zero feedback. We race the real call against a timer so
+   424→  /// the user ALWAYS sees a message within ~20s.
+   425→  bool _phoneAuthSettled = false;
+   426→
+   427→  Future<void> verifyPhoneNumber({
+   428→    required String phoneNumber,
+   429→    required void Function(String verificationId, int? resendToken) onCodeSent,
+   430→    required void Function(String error) onError,
+   431→  }) async {
+   432→    _isLoading = true;
+   433→    _errorMessage = null;
+   434→    _phoneAuthSettled = false;
+   435→    notifyListeners();
+   436→
+   437→    void settleOnce(void Function() action) {
+   438→      if (_phoneAuthSettled) return;
+   439→      _phoneAuthSettled = true;
+   440→      action();
+   441→    }
+   442→
+   443→    try {
+   444→      await Future.any<void>([
+   445→        AuthService.verifyPhoneNumber(
+   446→          phoneNumber: phoneNumber,
+   447→          forceResendingToken: _resendToken,
+   448→          onCodeSent: (verificationId, resendToken) {
+   449→            settleOnce(() {
+   450→              // Remember the resend token so "Resend OTP" can use it later.
+   451→              _resendToken = resendToken;
+   452→              onCodeSent(verificationId, resendToken);
+   453→            });
+   454→          },
+   455→          onVerificationFailed: (e) {
+   456→            settleOnce(() {
+   457→              _errorMessage = e.message;
+   458→              onError(e.message);
+   459→            });
+   460→          },
+   461→          onCodeAutoRetrievalTimeout: (_) {},
+   462→        ),
+   463→        Future.delayed(const Duration(seconds: 20), () {
+   464→          settleOnce(() {
+   465→            _errorMessage =
+   466→                'OTP request timed out. This usually means a temporary '
+   467→                'network/verification issue. Please try again, or use '
+   468→                'Email sign-in instead. (code: client-timeout)';
+   469→            onError(_errorMessage!);
+   470→          });
+   471→        }),
+   472→      ]);
+   473→    } catch (e) {
+   474→      settleOnce(() {
+   475→        _errorMessage = _friendlyAuthError(e);
+   476→        onError(_errorMessage!);
+   477→      });
+   478→    } finally {
+   479→      _isLoading = false;
+   480→      notifyListeners();
+   481→    }
+   482→  }
+   483→
+   484→  /// Clears the resend token (call when the user changes their phone number
+   485→  /// or successfully verifies, so the next "Send OTP" starts fresh).
+   486→  void resetOtpState() {
+   487→    _resendToken = null;
+   488→  }
+   489→
+   490→  Future<bool> verifyOtp({
+   491→    required String verificationId,
+   492→    required String smsCode,
+   493→  }) async {
+   494→    _isLoading = true;
+   495→    _errorMessage = null;
+   496→    notifyListeners();
+   497→
+   498→    try {
+   499→      await AuthService.verifyOtp(
+   500→        verificationId: verificationId,
+   501→        smsCode: smsCode,
+   502→      );
+   503→      await loadUserData();
+   504→      return true;
+   505→    } catch (e) {
+   506→      _errorMessage = _friendlyAuthError(e);
+   507→      return false;
+   508→    } finally {
+   509→      _isLoading = false;
+   510→      notifyListeners();
+   511→    }
+   512→  }
+   513→
+   514→  // ==================== EMAIL AUTH ====================
+   515→  Future<bool> signUpWithEmail({
+   516→    required String email,
+   517→    required String password,
+   518→    required String name,
+   519→  }) async {
+   520→    _isLoading = true;
+   521→    _errorMessage = null;
+   522→    notifyListeners();
+   523→
+   524→    try {
+   525→      await AuthService.signUpWithEmail(
+   526→        email: email,
+   527→        password: password,
+   528→        name: name,
+   529→      );
+   530→      await loadUserData();
+   531→      return true;
+   532→    } catch (e) {
+   533→      _errorMessage = _friendlyAuthError(e);
+   534→      return false;
+   535→    } finally {
+   536→      _isLoading = false;
+   537→      notifyListeners();
+   538→    }
+   539→  }
+   540→
+   541→  Future<bool> signInWithEmail({
+   542→    required String email,
+   543→    required String password,
+   544→  }) async {
+   545→    _isLoading = true;
+   546→    _errorMessage = null;
+   547→    notifyListeners();
+   548→
+   549→    try {
+   550→      await AuthService.signInWithEmail(email: email, password: password);
+   551→      await loadUserData();
+   552→      return true;
+   553→    } catch (e) {
+   554→      _errorMessage = _friendlyAuthError(e);
+   555→      return false;
+   556→    } finally {
+   557→      _isLoading = false;
+   558→      notifyListeners();
+   559→    }
+   560→  }
+   561→
+   562→  // ==================== ADMIN LOGIN ====================
+   563→  Future<bool> adminLogin({
+   564→    required String email,
+   565→    required String password,
+   566→  }) async {
+   567→    _isLoading = true;
+   568→    _errorMessage = null;
+   569→    notifyListeners();
+   570→
+   571→    try {
+   572→      final isAdmin = await AuthService.adminLogin(email: email, password: password);
+   573→      if (isAdmin) {
+   574→        await loadUserData();
+   575→        return true;
+   576→      } else {
+   577→        _errorMessage = 'Invalid admin credentials';
+   578→        return false;
+   579→      }
+   580→    } catch (e) {
+   581→      _errorMessage = e.toString();
+   582→      return false;
+   583→    } finally {
+   584→      _isLoading = false;
+   585→      notifyListeners();
+   586→    }
+   587→  }
+   588→
+   589→  // ==================== LOGOUT ====================
+   590→  Future<void> logout() async {
+   591→    // Stop listening to the user's Firestore doc so we don't get stray
+   592→    // updates after the user has signed out.
+   593→    _userDocSub?.cancel();
+   594→    _userDocSub = null;
+   595→    await AuthService.logout();
+   596→    _user = null;
+   597→    _resendToken = null;
+   598→    // NOTE: we intentionally do NOT clear the SharedPreferences premium cache
+   599→    // (isPremium_${userId}) on logout. The cache is USER-SPECIFIC — when a
+   600→    // DIFFERENT user logs into this device next, loadUserData() checks their
+   601→    // OWN key (isPremium_${newUserId}) and never reads the previous user's
+   602→    // key. This prevents account mixing. Clearing the old user's cache here
+   603→    // would be harmless but unnecessary — it'll be re-synced from the backend
+   604→    // if that user ever logs in again.
+   605→    notifyListeners();
+   606→  }
+   607→
+   608→  // ==================== OPTIMISTIC PURCHASE UPDATES ====================
+   609→  // After a server-verified successful payment, the backend grants the
+   610→  // entitlement in Prisma (TestPurchase / PremiumSubscription rows). But the
+   611→  // Flutter app's local UserModel (loaded from Firestore) won't reflect that
+   612→  // until the next loadUserData() round-trip — and even then, Firestore
+   613→  // doesn't store purchase info (only Prisma does). These methods optimistically
+   614→  // update the local user so the UI flips from "Buy" to "Start" instantly
+   615→  // without waiting for a refresh or a server access-check.
+   616→
+   617→  /// Optimistically mark a test as purchased locally AND persist to Firestore.
+   618→  /// Call this in the Razorpay onSuccess callback.
+   619→  ///
+   620→  /// PERSISTENCE (v1.36): We now write the purchased test ID to the user's
+   621→  /// Firestore document so it survives app restarts. Previously, the optimistic
+   622→  /// update was in-memory only — after the app restarted, loadUserData() loaded
+   623→  /// from Firestore (which didn't have the purchase), the local check failed,
+   624→  /// and the server-side access check also failed (because the backend
+   625→  /// entitlement wasn't granted yet). The user saw the test lock again —
+   626→  /// 'payment ta bhalo hoi na' (payment doesn't stick).
+   627→  ///
+   628→  /// By persisting to Firestore, the local check in TakeTestScreen passes
+   629→  /// immediately after app restart, giving the backend webhook time to grant
+   630→  /// the Prisma entitlement. Even if the webhook is misconfigured, the user
+   631→  /// always has access to what they paid for.
+   632→  void addPurchasedTest(String testId) async {
+   633→    if (_user == null) return;
+   634→    if (_user!.purchasedTests.contains(testId)) return;
+   635→    _user = _user!.copyWith(
+   636→      purchasedTests: [..._user!.purchasedTests, testId],
+   637→      updatedAt: DateTime.now(),
+   638→    );
+   639→    notifyListeners();
+   640→    // Persist to Firestore (fire-and-forget — the in-memory update above
+   641→    // already gives the user immediate access; this just makes it durable).
+   642→    try {
+   643→      await FirebaseService.usersRef.doc(_user!.id).set({
+   644→        'purchasedTests': _user!.purchasedTests,
+   645→        'updatedAt': DateTime.now().toIso8601String(),
+   646→      }, SetOptions(merge: true));
+   647→    } catch (e) {
+   648→      print('[AuthProvider] addPurchasedTest: Firestore persist failed: $e');
+   649→      // Non-fatal — the in-memory update is still valid for this session.
+   650→    }
+   651→  }
+   652→
+   653→  /// Optimistically add a purchased category (exam pack) to the user's local
+   654→  /// model and persist to Firestore. Call this in the Razorpay onSuccess
+   655→  /// callback for exam-pack purchases so home/categories screens unlock
+   656→  /// immediately without waiting for the backend verify round-trip.
+   657→  ///
+   658→  /// PERSISTENT LOCAL CACHE (v1.44.6):
+   659→  /// In addition to the in-memory + Firestore updates, we now write the
+   660→  /// categoryId to the user-specific SharedPreferences exam-pack cache
+   661→  /// (examPackCategories_${userId}). This survives app restarts and closes
+   662→  /// the "Buy" flash gap that occurs when the test list screen opens and
+   663→  /// _serverHasExamPackAccess is still false (waiting for the server
+   664→  /// access-check). The cache is user-specific — a different user logging in
+   665→  /// checks their own key. See ExamPackCacheService for details.
+   666→  void addPurchasedCategory(String categoryId) async {
+   667→    if (_user == null) return;
+   668→    if (_user!.purchasedCategoryIds.contains(categoryId)) return;
+   669→    _user = _user!.copyWith(
+   670→      purchasedCategoryIds: [..._user!.purchasedCategoryIds, categoryId],
+   671→      updatedAt: DateTime.now(),
+   672→    );
+   673→    notifyListeners();
+   674→    // Persist to the USER-SPECIFIC SharedPreferences cache (survives restart).
+   675→    // This is the key fix for the exam-pack "Buy" flash — the cache is read
+   676→    // instantly on the next screen open, before the server sync completes.
+   677→    ExamPackCacheService.addCategory(
+   678→      userId: _user!.id,
+   679→      categoryId: categoryId,
+   680→    );
+   681→    try {
+   682→      await FirebaseService.usersRef.doc(_user!.id).set({
+   683→        'purchasedCategoryIds': _user!.purchasedCategoryIds,
+   684→        'updatedAt': DateTime.now().toIso8601String(),
+   685→      }, SetOptions(merge: true));
+   686→    } catch (e) {
+   687→      print('[AuthProvider] addPurchasedCategory: Firestore persist failed: $e');
+   688→    }
+   689→  }
+   690→
+   691→  /// Optimistically mark the user as premium locally, persist to Firestore,
+   692→  /// AND write to the user-specific SharedPreferences cache.
+   693→  /// Call this in the Razorpay onSuccess callback for premium subscriptions.
+   694→  ///
+   695→  /// USER-SPECIFIC LOCAL CACHE (v1.44.5):
+   696→  /// In addition to the existing in-memory + Firestore updates, we now write
+   697→  /// `isPremium_${userId} = true` to SharedPreferences. This survives app
+   698→  /// restarts and closes the "Locked" flash gap that occurs while the backend
+   699→  /// webhook grants the entitlement in Neon PostgreSQL. The cache is
+   700→  /// user-specific — a different user logging in checks their own key and
+   701→  /// never inherits this premium. On the next app launch / login,
+   702→  /// loadUserData() fetches the real-time status from Neon DB and overwrites
+   703→  /// this cache (see _syncPremiumFromBackend).
+   704→  void markPremium({
+   705→    DateTime? expiry,
+   706→    String? planId,
+   707→  }) async {
+   708→    if (_user == null) return;
+   709→    _user = _user!.copyWith(
+   710→      subscriptionStatus: SubscriptionStatus.premium,
+   711→      subscriptionExpiry: expiry,
+   712→      subscriptionPlanId: planId,
+   713→      updatedAt: DateTime.now(),
+   714→    );
+   715→    notifyListeners();
+   716→    // Persist to the USER-SPECIFIC SharedPreferences cache (survives restart).
+   717→    // This is the key fix for the post-payment "Locked" flash — the cache is
+   718→    // read instantly on the next app launch / screen open, before the backend
+   719→    // sync completes.
+   720→    PremiumCacheService.setPremium(
+   721→      userId: _user!.id,
+   722→      expiry: expiry,
+   723→      planId: planId,
+   724→    );
+   725→    // Persist to Firestore (fire-and-forget).
+   726→    try {
+   727→      final data = <String, dynamic>{
+   728→        'isPremium': true,
+   729→        'subscriptionStatus': 'premium',
+   730→        'updatedAt': DateTime.now().toIso8601String(),
+   731→      };
+   732→      if (expiry != null) {
+   733→        data['subscriptionExpiry'] = expiry.toIso8601String();
+   734→      }
+   735→      if (planId != null) {
+   736→        data['subscriptionPlanId'] = planId;
+   737→      }
+   738→      await FirebaseService.usersRef.doc(_user!.id).set(
+   739→        data,
+   740→        SetOptions(merge: true),
+   741→      );
+   742→    } catch (e) {
+   743→      print('[AuthProvider] markPremium: Firestore persist failed: $e');
+   744→    }
+   745→  }
+   746→
+   747→  void clearError() {
+   748→    _errorMessage = null;
+   749→    notifyListeners();
+   750→  }
+   751→
+   752→  @override
+   753→  void dispose() {
+   754→    _disposed = true;
+   755→    _userDocSub?.cancel();
+   756→    _userDocSub = null;
+   757→    super.dispose();
+   758→  }
+   759→}
+   760→

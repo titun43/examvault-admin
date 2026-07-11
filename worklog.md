@@ -2835,3 +2835,83 @@ Update: Run #158 COMPLETED = SUCCESS
   - examvault-aab-1.51.0+77 (36.8 MB)
 - Run URL: https://github.com/titun43/examvault/actions/runs/29146472907
 - The two compile fixes (hide AuthProvider + singular ConnectivityResult) fully resolved the build failure.
+
+---
+Task ID: 2-admin
+Agent: study-materials-admin (main)
+Task: Add a "Study Materials" admin section to upload PDFs (Previous Papers, Study Notes, Syllabus) to Firestore `study_materials` collection; surface live material-count per subject.
+
+Work Log:
+- Read shared worklog (Task IDs 1, 2, 3, 4, push-1, ci-fix-158) and the template component `src/components/admin/previous-papers.tsx` for the established admin CRUD pattern (dark slate theme, shadcn/ui, onSnapshot live subscribe, bulk-delete via deleteItems).
+- Read `src/lib/admin-firestore.ts` to confirm `uploadImage(path, file)` works for any File (it just calls `uploadBytes` + `getDownloadURL`, the name is misleading) — used it for BOTH PDF and thumbnail uploads. Storage path passed as `study_materials/{materialId}` so the final object key is `study_materials/{materialId}/{timestamp}_{filename}` (matches the contract).
+- Created `src/components/admin/study-materials.tsx` (NEW, ~840 lines). Implements the full StudyMaterial data model contract (subjectId, categoryId denormalized, type, title, description, pdfUrl, thumbnailUrl, year [only for previousPaper], pages, isPremium, isPublished, order, downloadCount, createdAt, updatedAt). Key behaviours:
+  * Three onSnapshot subscriptions: study_materials (full collection), subjects, categories. Items sorted newest-first (createdAt desc) with order tiebreaker.
+  * Filter bar (Card) with three Select dropdowns: Subject (all / specific), Type (all / previousPaper / notes / syllabus), Access (all / free / premium). Client-side filtering via useMemo (avoids composite-index requirements). Clear-filters button + live "N of M" count.
+  * Table columns: checkbox, thumbnail/title (+ description + pages/downloads), subject/category, type badge (amber for previousPaper, emerald for notes, sky for syllabus — each with the matching lucide icon: ClipboardList / BookOpen / FileText), year badge (only meaningful for previousPaper), premium/free badge, published/draft status with Eye/EyeOff icon, actions (open-PDF, edit, delete).
+  * Add/Edit Dialog: Type select (Previous Paper / Study Notes / Syllabus), Subject select, Title input, Year input + Pages input (both shown only when type=previousPaper; Pages-only row shown otherwise), PDF file picker (`<input type="file" accept="application/pdf">` hidden behind a styled label — shows filename + remove-selection X button), Thumbnail file picker (image/*, same pattern, shows existing thumbnail preview when editing), Description textarea, Published + Premium Switch toggles.
+  * Upload-on-Save (not on-select). For ADD: addDoc first with placeholder pdfUrl='' to get the materialId, then upload PDF + optional thumbnail to `study_materials/{newId}/`, then updateDoc with the final URLs. For EDIT: only upload if a new file was picked, otherwise keep existing URL. Separate `uploadingPdf` / `uploadingThumb` state drives inline "Uploading PDF…" / "Uploading thumbnail…" spinners + disables the Save button. Save button label switches to "Uploading PDF…" / "Uploading thumbnail…" / "Add" / "Update" based on state.
+  * Bulk delete follows previous-papers.tsx pattern exactly: per-row checkbox + indeterminate header checkbox, "N selected" red bar with Delete-Selected button, AlertDialog confirmation that calls `deleteItems('study_materials', ids)` (chunks at 450 to stay under Firestore's 500-op batch limit).
+  * Single delete uses deleteDoc on the doc; PDF file in Storage is intentionally left in place (mirrors how previous-papers.tsx leaves child questions in place — Storage cleanup is a separate concern).
+  * Toast feedback for every action (sonner).
+- Modified `src/lib/store.ts`: added `'study-materials'` to the `AdminSection` union type, between `'previous-papers'` and `'questions'`.
+- Modified `src/components/admin/admin-shell.tsx`: added `Library` to the lucide-react import block, and added the nav item `{ id: 'study-materials', label: 'Study Materials', icon: Library }` in the "Content" group, AFTER `previous-papers` and BEFORE `questions` (exactly as specified).
+- Modified `src/app/page.tsx` (necessary for the section to actually render — was NOT in the explicit task list but the existing switch statement manually maps every section id to a component): added `const StudyMaterials = dynamic(() => import('@/components/admin/study-materials'), { ssr: false });` after PreviousPapers, and added `case 'study-materials': return <StudyMaterials />;` in the switch.
+- Modified `src/components/admin/subjects.tsx`: extended the `Subject` interface with optional `materialCount?: number`; added `materialCountMap` state alongside the existing `testCountMap`; added a 4th onSnapshot subscription (u4) on the `study_materials` collection that builds `{subjectId: count}`, calls setMaterialCountMap for instant display, then batch-writes stale `materialCount` values back to subject docs (idempotent — only writes when stored value differs from live count, same pattern as u3 for testCount). Added a new "Files" column header (after Tests) and a matching `<td>` rendering the count as an emerald outline Badge. Cleanup function updated to unsubscribe u4 too.
+- Ran `cd /home/z/my-project && bun run lint` — PASSED with 0 errors, 0 warnings. (Initial run reported 2 unused `eslint-disable` warnings for `@next/next/no-img-element` on `<img>` tags in study-materials.tsx; the rule wasn't actually firing so I removed the directives — re-run is clean.)
+- Verified TypeScript via `npx tsc --noEmit`: no new errors introduced by my changes (all reported errors are pre-existing in unrelated files: prisma/seed.ts, api/admin/announcements, api/admin/subjects, api/subjects, admin-firestore.ts line 84 — all caused by a stale Prisma client not regenerated after a schema change; my files `study-materials.tsx`, `subjects.tsx`, `admin-shell.tsx`, `store.ts`, `app/page.tsx` are clean).
+- Did NOT push to git (per task instructions — main agent will push after reviewing both sides).
+
+Stage Summary:
+- Files created/modified:
+  1. CREATED `src/components/admin/study-materials.tsx` — full admin CRUD for the `study_materials` Firestore collection. Renders PDF content-type cards data for the Flutter app's Subject Detail screen. Supports 3 material types (previousPaper / notes / syllabus), PDF + thumbnail upload to Firebase Storage at `study_materials/{materialId}/{timestamp}_{filename}`, premium + published toggles, year (conditional on previousPaper), pages, downloadCount tracking field, filter bar (subject/type/premium), bulk delete, type-coloured badges with icons.
+  2. MODIFIED `src/lib/store.ts` — added `'study-materials'` to AdminSection union.
+  3. MODIFIED `src/components/admin/admin-shell.tsx` — added `Library` icon import + nav item in Content group between previous-papers and questions.
+  4. MODIFIED `src/app/page.tsx` — wired up the new section in the AdminContent switch + dynamic import (otherwise the section would render nothing).
+  5. MODIFIED `src/components/admin/subjects.tsx` — added `materialCount` to Subject interface, `materialCountMap` state + u4 onSnapshot subscription with idempotent write-back to subject docs, and a new "Files" column with an emerald Badge showing the live count.
+- Data model contract matches the Flutter app exactly (field names: subjectId, categoryId, type, title, description, pdfUrl, thumbnailUrl, year, pages, isPremium, isPublished, order, downloadCount, createdAt, updatedAt — Firestore collection `study_materials`).
+- Storage path matches the contract: `study_materials/{materialId}/{timestamp}_{filename}`.
+- Lint: 0 errors, 0 warnings. TypeScript: no new errors in changed files.
+- Did NOT push to git (awaiting main agent review + bundled push with the Flutter side of the feature).
+- Verification note: visual confirmation requires admin login (no credentials in this sandbox); the section will appear under the "Content" nav group the moment an admin signs in and the admin-shell mounts.
+
+---
+Task ID: study-materials-feature
+Agent: main + subagent (2-admin)
+Task: Study Materials feature — real-time PDF content (Previous Papers, Study Notes, Syllabus) on Subject Detail screen, admin-managed, appears/disappears automatically based on Firestore real-time stream.
+
+Work Log:
+- Cloned examvault Flutter repo (sandbox was reset, /home/z/work/examvault was gone). Both projects now available: admin at /home/z/my-project, Flutter at /home/z/work/examvault.
+- Defined data model contract: study_materials Firestore collection with fields (subjectId, categoryId, type, title, description, pdfUrl, thumbnailUrl, year, pages, isPremium, isPublished, order, downloadCount, createdAt, updatedAt). Type enum: previousPaper/notes/syllabus.
+- Updated firestore.rules + storage.rules (examvault repo) to allow public read + admin write on study_materials collection and storage path.
+- Flutter side (main agent):
+  * Created lib/models/study_material_model.dart — model + StudyMaterialType enum with emoji/label/color helpers.
+  * Added flutter_pdfview ^1.3.2 to pubspec.yaml (native PDF viewer — NOT the old pdf/printing generation packages that caused AndroidX lStar conflict). Bumped version 1.51.0+77 → 1.52.0+78.
+  * Added studyMaterialsRef to firebase_service.dart.
+  * Added 4 methods to firestore_service.dart: getStudyMaterialsStream, getStudyMaterialsByTypeStream, getMaterialCounts, incrementMaterialDownloadCount. Single-field where('subjectId') to avoid composite index.
+  * Created lib/screens/study_materials/pdf_viewer_screen.dart — in-app PDF viewer with download progress, caching, retry, external-open fallback.
+  * Created lib/screens/study_materials/material_list_screen.dart — list by type, premium gating with paywall dialog, OfflineAwareStreamBuilder for loading/empty/offline/error states.
+  * Created lib/screens/home/subject_detail_screen.dart — content hub with hero header + real-time content-type grid. Tests card always shown; Papers/Notes/Syllabus cards shown ONLY if count > 0.
+  * Updated category_detail_screen.dart + test_series_screen.dart to navigate to SubjectDetailScreen instead of TestListScreen.
+- Admin side (subagent Task ID 2-admin):
+  * Created src/components/admin/study-materials.tsx (~840 lines) — full CRUD with PDF+thumbnail upload, type/subject/premium filters, bulk delete.
+  * Updated admin-shell.tsx, store.ts, page.tsx — nav item + section type + render switch.
+  * Updated subjects.tsx — live materialCount badge per subject row.
+  * Lint passed (0 errors).
+- Committed both: admin 8a7a62d, Flutter 729e6f7. Pushed both to GitHub.
+- Verified bracket balance on all 4 new Flutter files (all 0).
+
+Stage Summary:
+- Real-time behavior: admin adds a material → Firestore stream emits → content-type card appears on user's Subject Detail screen within 1-2 seconds. Admin deletes last material of a type → card disappears. No refresh needed.
+- Empty state = clean UI: if admin hasn't added any materials, only the Tests card appears on Subject Detail.
+- Premium gating: isPremium materials show crown badge; non-premium users see paywall dialog.
+- PDF viewer: in-app, native rendering, cached for offline, progress indicator.
+- Waiting for Flutter CI build to verify compilation (no Flutter SDK in sandbox).
+
+Update: Run #160 COMPLETED = SUCCESS (commit 395b9ba8)
+- All 21 steps passed: Build APK (#13), Build AAB (#14), signature verification (#15, #16), artifact upload (#18, #19).
+- Initial attempt (Run #159, commit 729e6f7) failed because flutter_pdfview had a Gradle compatibility issue ("Could not get unknown property 'android' for project ':flutter_pdfview'"). Fixed by removing flutter_pdfview and rewriting pdf_viewer_screen.dart to use url_launcher (already in pubspec) — opens PDFs in the system's native PDF viewer.
+- Artifacts produced (version 1.52.0+78):
+  - examvault-apk-1.52.0+78 (36.8 MB)
+  - examvault-aab-1.52.0+78 (36.8 MB)
+- Run URL: https://github.com/titun43/examvault/actions/runs/29152485485
+- Both admin (8a7a62d) and Flutter (395b9ba8) pushed and verified.

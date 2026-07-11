@@ -1,0 +1,1569 @@
+     1→'use client';
+     2→
+     3→import { useState } from 'react';
+     4→import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+     5→import { useAppStore } from '@/lib/store';
+     6→import {
+     7→  ArrowLeft, LayoutDashboard, FolderOpen, BookOpen, FileText, Calendar,
+     8→  Megaphone, Users, Plus, Pencil, Trash2, Save, X, Upload,
+     9→  ChevronRight, Loader2, Menu, GraduationCap, LogOut, Shield,
+    10→  Newspaper, CreditCard, Crown, CheckCircle, XCircle, Clock, IndianRupee,
+    11→  Zap
+    12→} from 'lucide-react';
+    13→import { Button } from '@/components/ui/button';
+    14→import { Input } from '@/components/ui/input';
+    15→import { Label } from '@/components/ui/label';
+    16→import { Textarea } from '@/components/ui/textarea';
+    17→import { Switch } from '@/components/ui/switch';
+    18→import { Badge } from '@/components/ui/badge';
+    19→import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+    20→import {
+    21→  Dialog,
+    22→  DialogContent,
+    23→  DialogHeader,
+    24→  DialogTitle,
+    25→} from '@/components/ui/dialog';
+    26→import {
+    27→  AlertDialog,
+    28→  AlertDialogAction,
+    29→  AlertDialogCancel,
+    30→  AlertDialogContent,
+    31→  AlertDialogDescription,
+    32→  AlertDialogFooter,
+    33→  AlertDialogHeader,
+    34→  AlertDialogTitle,
+    35→} from '@/components/ui/alert-dialog';
+    36→import {
+    37→  Select,
+    38→  SelectContent,
+    39→  SelectItem,
+    40→  SelectTrigger,
+    41→  SelectValue,
+    42→} from '@/components/ui/select';
+    43→import { Separator } from '@/components/ui/separator';
+    44→import { Skeleton } from '@/components/ui/skeleton';
+    45→import { toast } from 'sonner';
+    46→
+    47→const sidebarItems = [
+    48→  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
+    49→  { id: 'categories', label: 'Categories', icon: FolderOpen },
+    50→  { id: 'subjects', label: 'Subjects', icon: BookOpen },
+    51→  { id: 'tests', label: 'Tests', icon: FileText },
+    52→  { id: 'daily-quiz', label: 'Daily Quiz', icon: Zap },
+    53→  { id: 'questions', label: 'Questions', icon: FileText },
+    54→  { id: 'upcoming-exams', label: 'Upcoming Exams', icon: Calendar },
+    55→  { id: 'announcements', label: 'Announcements', icon: Megaphone },
+    56→  { id: 'current-affairs', label: 'Current Affairs', icon: Newspaper },
+    57→  { id: 'subscriptions', label: 'Subscriptions', icon: CreditCard },
+    58→  { id: 'users', label: 'Users', icon: Users },
+    59→];
+    60→
+    61→export default function AdminPanel() {
+    62→  const { setCurrentView, setIsAdminMode, adminView, setAdminView, user } = useAppStore();
+    63→  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+    64→
+    65→  const handleExitAdmin = () => {
+    66→    setIsAdminMode(false);
+    67→    setCurrentView('home');
+    68→  };
+    69→
+    70→  return (
+    71→    <div className="min-h-screen flex flex-col bg-gray-950">
+    72→      {/* Top Bar */}
+    73→      <header className="sticky top-0 z-50 h-14 border-b border-white/10 bg-gray-900/80 backdrop-blur-xl flex items-center justify-between px-4">
+    74→        <div className="flex items-center gap-3">
+    75→          {/* Mobile menu button */}
+    76→          <Button
+    77→            variant="ghost"
+    78→            size="icon"
+    79→            onClick={() => setMobileMenuOpen(true)}
+    80→            className="md:hidden text-white/60 hover:text-white hover:bg-white/10 rounded-xl h-9 w-9"
+    81→          >
+    82→            <Menu className="h-5 w-5" />
+    83→          </Button>
+    84→
+    85→          {/* Logo */}
+    86→          <div className="flex items-center gap-2">
+    87→            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 via-blue-500 to-sky-500 flex items-center justify-center shadow-md">
+    88→              <GraduationCap className="w-4 h-4 text-white" />
+    89→            </div>
+    90→            <span className="font-bold text-white hidden sm:inline">NEXTEXAM</span>
+    91→            <Badge variant="secondary" className="bg-blue-500/20 text-blue-400 border-blue-500/30 text-[10px] px-1.5 py-0">
+    92→              <Shield className="h-2.5 w-2.5 mr-0.5" /> ADMIN
+    93→            </Badge>
+    94→          </div>
+    95→        </div>
+    96→
+    97→        {/* Right side */}
+    98→        <div className="flex items-center gap-3">
+    99→          <span className="text-xs text-white/40 hidden sm:block">
+   100→            {user?.email || 'Admin'}
+   101→          </span>
+   102→          <Button
+   103→            variant="ghost"
+   104→            size="sm"
+   105→            onClick={handleExitAdmin}
+   106→            className="text-white/60 hover:text-white hover:bg-white/10 rounded-xl text-xs"
+   107→          >
+   108→            <LogOut className="h-4 w-4 mr-1" /> Exit Admin
+   109→          </Button>
+   110→        </div>
+   111→      </header>
+   112→
+   113→      <div className="flex flex-1">
+   114→        {/* Sidebar - Desktop */}
+   115→        <aside className="hidden md:flex flex-col w-64 border-r border-white/10 bg-gray-900/50 p-4">
+   116→          <div className="flex items-center gap-2 mb-6 px-2">
+   117→            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center text-sm font-bold text-white shadow-md">
+   118→              A
+   119→            </div>
+   120→            <div>
+   121→              <span className="font-bold text-white text-sm">Admin Panel</span>
+   122→              <p className="text-[10px] text-white/30">Management Console</p>
+   123→            </div>
+   124→          </div>
+   125→          <nav className="flex-1 space-y-1">
+   126→            {sidebarItems.map((item) => {
+   127→              const Icon = item.icon;
+   128→              const isActive = adminView === item.id;
+   129→              return (
+   130→                <button
+   131→                  key={item.id}
+   132→                  onClick={() => setAdminView(item.id)}
+   133→                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 ${
+   134→                    isActive
+   135→                      ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30 shadow-lg shadow-blue-500/10'
+   136→                      : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+   137→                  }`}
+   138→                >
+   139→                  <Icon className="h-4 w-4" />
+   140→                  {item.label}
+   141→                </button>
+   142→              );
+   143→            })}
+   144→          </nav>
+   145→          <div className="border-t border-white/10 pt-4 mt-4">
+   146→            <Button
+   147→              variant="ghost"
+   148→              size="sm"
+   149→              onClick={handleExitAdmin}
+   150→              className="w-full justify-start text-white/40 hover:text-white hover:bg-white/5 rounded-xl"
+   151→            >
+   152→              <ArrowLeft className="h-4 w-4 mr-2" /> Back to App
+   153→            </Button>
+   154→          </div>
+   155→        </aside>
+   156→
+   157→        {/* Mobile Sidebar Drawer */}
+   158→        {mobileMenuOpen && (
+   159→          <>
+   160→            <div
+   161→              className="md:hidden fixed inset-0 bg-black/60 backdrop-blur-sm z-[60]"
+   162→              onClick={() => setMobileMenuOpen(false)}
+   163→            />
+   164→            <aside className="md:hidden fixed left-0 top-0 bottom-0 z-[70] w-72 bg-gray-900 border-r border-white/10 p-4 flex flex-col">
+   165→              <div className="flex items-center justify-between mb-6">
+   166→                <div className="flex items-center gap-2">
+   167→                  <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-600 to-blue-500 flex items-center justify-center text-sm font-bold text-white">
+   168→                    A
+   169→                  </div>
+   170→                  <span className="font-bold text-white">Admin Panel</span>
+   171→                </div>
+   172→                <button
+   173→                  onClick={() => setMobileMenuOpen(false)}
+   174→                  className="w-8 h-8 rounded-lg bg-white/10 hover:bg-white/20 flex items-center justify-center text-white/60"
+   175→                >
+   176→                  <X className="h-4 w-4" />
+   177→                </button>
+   178→              </div>
+   179→              <nav className="flex-1 space-y-1">
+   180→                {sidebarItems.map((item) => {
+   181→                  const Icon = item.icon;
+   182→                  const isActive = adminView === item.id;
+   183→                  return (
+   184→                    <button
+   185→                      key={item.id}
+   186→                      onClick={() => {
+   187→                        setAdminView(item.id);
+   188→                        setMobileMenuOpen(false);
+   189→                      }}
+   190→                      className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all ${
+   191→                        isActive
+   192→                          ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+   193→                          : 'text-white/50 hover:text-white/80 hover:bg-white/5'
+   194→                      }`}
+   195→                    >
+   196→                      <Icon className="h-4 w-4" />
+   197→                      {item.label}
+   198→                    </button>
+   199→                  );
+   200→                })}
+   201→              </nav>
+   202→              <div className="border-t border-white/10 pt-4">
+   203→                <Button
+   204→                  variant="ghost"
+   205→                  size="sm"
+   206→                  onClick={handleExitAdmin}
+   207→                  className="w-full justify-start text-white/40 hover:text-white hover:bg-white/5 rounded-xl"
+   208→                >
+   209→                  <ArrowLeft className="h-4 w-4 mr-2" /> Back to App
+   210→                </Button>
+   211→              </div>
+   212→            </aside>
+   213→          </>
+   214→        )}
+   215→
+   216→        {/* Main Content */}
+   217→        <main className="flex-1 p-4 md:p-6 overflow-y-auto">
+   218→          {adminView === 'dashboard' && <DashboardSection />}
+   219→          {adminView === 'categories' && <CategoriesSection />}
+   220→          {adminView === 'subjects' && <SubjectsSection />}
+   221→          {adminView === 'tests' && <TestsSection />}
+   222→          {adminView === 'daily-quiz' && <DailyQuizSection />}
+   223→          {adminView === 'questions' && <QuestionsSection />}
+   224→          {adminView === 'upcoming-exams' && <UpcomingExamsSection />}
+   225→          {adminView === 'announcements' && <AnnouncementsSection />}
+   226→          {adminView === 'current-affairs' && <CurrentAffairsSection />}
+   227→          {adminView === 'subscriptions' && <SubscriptionsSection />}
+   228→          {adminView === 'users' && <UsersSection />}
+   229→        </main>
+   230→      </div>
+   231→    </div>
+   232→  );
+   233→}
+   234→
+   235→// ============ Dashboard Section ============
+   236→function DashboardSection() {
+   237→  const { data, isLoading } = useQuery({
+   238→    queryKey: ['admin-dashboard'],
+   239→    queryFn: () => fetch('/api/admin/dashboard').then((r) => r.json()),
+   240→  });
+   241→
+   242→  if (isLoading) return <div className="space-y-4"><Skeleton className="h-20" /><Skeleton className="h-40" /></div>;
+   243→
+   244→  const stats = [
+   245→    { label: 'Total Users', value: data?.stats?.totalUsers || 0, icon: Users, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+   246→    { label: 'Premium Users', value: data?.stats?.premiumUsers || 0, icon: Crown, color: 'text-amber-400', bg: 'bg-amber-500/10' },
+   247→    { label: 'Total Revenue', value: `₹${data?.stats?.totalRevenue || 0}`, icon: IndianRupee, color: 'text-emerald-400', bg: 'bg-emerald-500/10' },
+   248→    { label: 'Tests Created', value: data?.stats?.totalTests || 0, icon: FileText, color: 'text-sky-400', bg: 'bg-sky-500/10' },
+   249→    { label: 'Subjects', value: data?.stats?.totalSubjects || 0, icon: BookOpen, color: 'text-blue-400', bg: 'bg-blue-500/10' },
+   250→    { label: 'Questions Added', value: data?.stats?.totalQuestions || 0, icon: FileText, color: 'text-cyan-400', bg: 'bg-cyan-500/10' },
+   251→  ];
+   252→
+   253→  const recentActivity = data?.recentActivity || [];
+   254→
+   255→  return (
+   256→    <div>
+   257→      <h2 className="text-xl font-bold mb-4 text-white">Dashboard</h2>
+   258→      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-6">
+   259→        {stats.map((s) => (
+   260→          <Card key={s.label} className="bg-gray-900/50 border-white/10 hover:border-blue-500/30 transition-colors">
+   261→            <CardContent className="p-4 text-center">
+   262→              <div className={`w-10 h-10 rounded-xl ${s.bg} flex items-center justify-center mx-auto mb-2`}>
+   263→                <s.icon className={`h-5 w-5 ${s.color}`} />
+   264→              </div>
+   265→              <p className="text-xl font-bold text-white">{s.value}</p>
+   266→              <p className="text-[10px] text-white/40 mt-1">{s.label}</p>
+   267→            </CardContent>
+   268→          </Card>
+   269→        ))}
+   270→      </div>
+   271→
+   272→      {/* Recent Activity */}
+   273→      <Card className="bg-gray-900/50 border-white/10">
+   274→        <CardHeader className="pb-2">
+   275→          <CardTitle className="text-sm font-medium text-white/60">Recent Test Attempts</CardTitle>
+   276→        </CardHeader>
+   277→        <CardContent>
+   278→          {recentActivity.length === 0 ? (
+   279→            <p className="text-white/30 text-sm text-center py-4">No recent activity</p>
+   280→          ) : (
+   281→            <div className="space-y-2">
+   282→              {recentActivity.map((a: any) => (
+   283→                <div key={a.id} className="flex items-center justify-between py-2 border-b border-white/5 last:border-0">
+   284→                  <div>
+   285→                    <p className="text-sm text-white/80">{a.user?.name || a.user?.email}</p>
+   286→                    <p className="text-xs text-white/40">{a.test?.title} ({a.test?.subject?.name})</p>
+   287→                  </div>
+   288→                  <div className="text-right">
+   289→                    <p className="text-sm font-medium text-blue-400">{a.score}%</p>
+   290→                    <p className="text-[10px] text-white/30">{a.submittedAt ? new Date(a.submittedAt).toLocaleDateString() : ''}</p>
+   291→                  </div>
+   292→                </div>
+   293→              ))}
+   294→            </div>
+   295→          )}
+   296→        </CardContent>
+   297→      </Card>
+   298→    </div>
+   299→  );
+   300→}
+   301→
+   302→// ============ Generic CRUD Section ============
+   303→function CrudSection({
+   304→  title,
+   305→  queryKey,
+   306→  apiUrl,
+   307→  columns,
+   308→  renderForm,
+   309→  createBody,
+   310→  itemName,
+   311→  initialData,
+   312→  filterFn,
+   313→}: {
+   314→  title: string;
+   315→  queryKey: string;
+   316→  apiUrl: string;
+   317→  columns: { key: string; label: string; render?: (v: any, item: any) => React.ReactNode }[];
+   318→  renderForm: (item: any, setItem: (v: any) => void) => React.ReactNode;
+   319→  createBody: (item: any) => any;
+   320→  itemName: string;
+   321→  initialData?: any;
+   322→  filterFn?: (item: any) => boolean;
+   323→}) {
+   324→  const queryClient = useQueryClient();
+   325→  const [showDialog, setShowDialog] = useState(false);
+   326→  const [editItem, setEditItem] = useState<any>(null);
+   327→  const [formData, setFormData] = useState<any>({});
+   328→  const [deleteId, setDeleteId] = useState<string | null>(null);
+   329→
+   330→  const { data, isLoading } = useQuery({
+   331→    queryKey: [queryKey],
+   332→    queryFn: () => fetch(apiUrl).then((r) => r.json()).then((d) => {
+   333→      // Try the queryKey first, then common response keys, then the raw
+   334→      // response. This lets sections like DailyQuiz use a unique cache key
+   335→      // while still extracting the `tests` array from the API response.
+   336→      const extracted = d[queryKey] || d.tests || d.items || d.subjects || d.questions || d;
+   337→      return Array.isArray(extracted) ? extracted : (extracted ? [extracted] : []);
+   338→    }),
+   339→  });
+   340→
+   341→  const createMutation = useMutation({
+   342→    mutationFn: async (body: any) => {
+   343→      const res = await fetch(apiUrl, {
+   344→        method: 'POST',
+   345→        headers: { 'Content-Type': 'application/json' },
+   346→        body: JSON.stringify(body),
+   347→      });
+   348→      if (!res.ok) throw new Error('Failed to create');
+   349→      return res.json();
+   350→    },
+   351→    onSuccess: () => {
+   352→      queryClient.invalidateQueries({ queryKey: [queryKey] });
+   353→      setShowDialog(false);
+   354→      setFormData({});
+   355→      toast.success(`${itemName} created successfully`);
+   356→    },
+   357→    onError: () => toast.error(`Failed to create ${itemName}`),
+   358→  });
+   359→
+   360→  const updateMutation = useMutation({
+   361→    mutationFn: async ({ id, ...body }: any) => {
+   362→      const res = await fetch(`${apiUrl}/${id}`, {
+   363→        method: 'PUT',
+   364→        headers: { 'Content-Type': 'application/json' },
+   365→        body: JSON.stringify(body),
+   366→      });
+   367→      if (!res.ok) throw new Error('Failed to update');
+   368→      return res.json();
+   369→    },
+   370→    onSuccess: () => {
+   371→      queryClient.invalidateQueries({ queryKey: [queryKey] });
+   372→      setShowDialog(false);
+   373→      setEditItem(null);
+   374→      setFormData({});
+   375→      toast.success(`${itemName} updated successfully`);
+   376→    },
+   377→    onError: () => toast.error(`Failed to update ${itemName}`),
+   378→  });
+   379→
+   380→  const deleteMutation = useMutation({
+   381→    mutationFn: async (id: string) => {
+   382→      const res = await fetch(`${apiUrl}/${id}`, { method: 'DELETE' });
+   383→      if (!res.ok) throw new Error('Failed to delete');
+   384→      return res.json();
+   385→    },
+   386→    onSuccess: () => {
+   387→      queryClient.invalidateQueries({ queryKey: [queryKey] });
+   388→      setDeleteId(null);
+   389→      toast.success(`${itemName} deleted successfully`);
+   390→    },
+   391→    onError: () => toast.error(`Failed to delete ${itemName}`),
+   392→  });
+   393→
+   394→  const handleOpenCreate = () => {
+   395→    setEditItem(null);
+   396→    setFormData(initialData ? { ...initialData } : {});
+   397→    setShowDialog(true);
+   398→  };
+   399→
+   400→  const handleOpenEdit = (item: any) => {
+   401→    setEditItem(item);
+   402→    setFormData(item);
+   403→    setShowDialog(true);
+   404→  };
+   405→
+   406→  const handleSave = () => {
+   407→    const body = createBody(formData);
+   408→    if (editItem) {
+   409→      updateMutation.mutate({ id: editItem.id, ...body });
+   410→    } else {
+   411→      createMutation.mutate(body);
+   412→    }
+   413→  };
+   414→
+   415→  const isSaving = createMutation.isPending || updateMutation.isPending;
+   416→
+   417→  // Apply optional client-side filter (e.g. DailyQuiz only shows tests where
+   418→  // type === 'dailyQuiz').
+   419→  const filteredData = filterFn && Array.isArray(data) ? data.filter(filterFn) : data;
+   420→
+   421→  return (
+   422→    <div>
+   423→      <div className="flex items-center justify-between mb-4">
+   424→        <h2 className="text-xl font-bold text-white">{title}</h2>
+   425→        <Button size="sm" onClick={handleOpenCreate} className="bg-blue-600 hover:bg-blue-500 text-white">
+   426→          <Plus className="h-4 w-4 mr-1" /> Add {itemName}
+   427→        </Button>
+   428→      </div>
+   429→
+   430→      {isLoading ? (
+   431→        <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12" />)}</div>
+   432→      ) : (
+   433→        <div className="overflow-x-auto border border-white/10 rounded-lg">
+   434→          <table className="w-full text-sm">
+   435→            <thead className="bg-white/5">
+   436→              <tr>
+   437→                {columns.map((col) => (
+   438→                  <th key={col.key} className="text-left p-3 font-medium text-white/50">
+   439→                    {col.label}
+   440→                  </th>
+   441→                ))}
+   442→                <th className="text-right p-3 font-medium text-white/50">Actions</th>
+   443→              </tr>
+   444→            </thead>
+   445→            <tbody className="divide-y divide-white/5">
+   446→              {filteredData?.map((item: any) => (
+   447→                <tr key={item.id} className="hover:bg-white/5">
+   448→                  {columns.map((col) => (
+   449→                    <td key={col.key} className="p-3 text-white/80">
+   450→                      {col.render ? col.render(item[col.key], item) : String(item[col.key] || '-')}
+   451→                    </td>
+   452→                  ))}
+   453→                  <td className="p-3 text-right">
+   454→                    <div className="flex items-center justify-end gap-1">
+   455→                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-white/10 text-white/60" onClick={() => handleOpenEdit(item)}>
+   456→                        <Pencil className="h-3.5 w-3.5" />
+   457→                      </Button>
+   458→                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:bg-red-500/10" onClick={() => setDeleteId(item.id)}>
+   459→                        <Trash2 className="h-3.5 w-3.5" />
+   460→                      </Button>
+   461→                    </div>
+   462→                  </td>
+   463→                </tr>
+   464→              ))}
+   465→              {(!filteredData || filteredData.length === 0) && (
+   466→                <tr><td colSpan={columns.length + 1} className="p-6 text-center text-white/30">No data found</td></tr>
+   467→              )}
+   468→            </tbody>
+   469→          </table>
+   470→        </div>
+   471→      )}
+   472→
+   473→      {/* Create/Edit Dialog */}
+   474→      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+   475→        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto bg-gray-900 border-white/10">
+   476→          <DialogHeader>
+   477→            <DialogTitle className="text-white">{editItem ? `Edit ${itemName}` : `Add ${itemName}`}</DialogTitle>
+   478→          </DialogHeader>
+   479→          {renderForm(formData, setFormData)}
+   480→          <div className="flex justify-end gap-2 mt-4">
+   481→            <Button variant="outline" onClick={() => setShowDialog(false)} className="border-white/20 text-white/60">Cancel</Button>
+   482→            <Button onClick={handleSave} disabled={isSaving} className="bg-blue-600 hover:bg-blue-500 text-white">
+   483→              {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+   484→              <Save className="h-4 w-4 mr-1" /> Save
+   485→            </Button>
+   486→          </div>
+   487→        </DialogContent>
+   488→      </Dialog>
+   489→
+   490→      {/* Delete Confirmation */}
+   491→      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+   492→        <AlertDialogContent className="bg-gray-900 border-white/10">
+   493→          <AlertDialogHeader>
+   494→            <AlertDialogTitle className="text-white">Delete {itemName}?</AlertDialogTitle>
+   495→            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+   496→          </AlertDialogHeader>
+   497→          <AlertDialogFooter>
+   498→            <AlertDialogCancel className="border-white/20 text-white/60">Cancel</AlertDialogCancel>
+   499→            <AlertDialogAction
+   500→              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
+   501→              className="bg-red-600 hover:bg-red-500 text-white"
+   502→            >
+   503→              Delete
+   504→            </AlertDialogAction>
+   505→          </AlertDialogFooter>
+   506→        </AlertDialogContent>
+   507→      </AlertDialog>
+   508→    </div>
+   509→  );
+   510→}
+   511→
+   512→// ============ Categories Section ============
+   513→function CategoriesSection() {
+   514→  return (
+   515→    <CrudSection
+   516→      title="Categories"
+   517→      queryKey="categories"
+   518→      apiUrl="/api/admin/categories"
+   519→      itemName="Category"
+   520→      columns={[
+   521→        { key: 'name', label: 'Name' },
+   522→        { key: 'order', label: 'Order', render: (v) => v || 0 },
+   523→        { key: 'icon', label: 'Icon', render: (v) => v || '-' },
+   524→      ]}
+   525→      renderForm={(data, setData) => (
+   526→        <div className="space-y-4">
+   527→          <div><Label className="text-white/60">Name</Label><Input value={data.name || ''} onChange={(e) => setData({ ...data, name: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   528→          <div><Label className="text-white/60">Order</Label><Input type="number" value={data.order || 0} onChange={(e) => setData({ ...data, order: parseInt(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   529→          <div><Label className="text-white/60">Icon (emoji)</Label><Input value={data.icon || ''} onChange={(e) => setData({ ...data, icon: e.target.value })} placeholder="📋" className="bg-white/5 border-white/10 text-white" /></div>
+   530→          <div><Label className="text-white/60">Description</Label><Textarea value={data.description || ''} onChange={(e) => setData({ ...data, description: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   531→        </div>
+   532→      )}
+   533→      createBody={(data) => ({ name: data.name, slug: data.slug || data.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''), order: data.order, icon: data.icon, description: data.description })}
+   534→    />
+   535→  );
+   536→}
+   537→
+   538→// ============ Subjects Section ============
+   539→function SubjectsSection() {
+   540→  const { data: categories } = useQuery({
+   541→    queryKey: ['categories'],
+   542→    queryFn: () => fetch('/api/categories').then((r) => r.json()).then((d) => d.categories),
+   543→  });
+   544→
+   545→  return (
+   546→    <CrudSection
+   547→      title="Subjects"
+   548→      queryKey="subjects"
+   549→      apiUrl="/api/admin/subjects"
+   550→      itemName="Subject"
+   551→      columns={[
+   552→        { key: 'name', label: 'Name' },
+   553→        { key: 'categoryId', label: 'Category', render: (_, item) => item.category?.name || '-' },
+   554→        { key: 'tests', label: 'Test Count', render: (_, item) => item._count?.tests || 0 },
+   555→      ]}
+   556→      renderForm={(data, setData) => (
+   557→        <div className="space-y-4">
+   558→          <div>
+   559→            <Label className="text-white/60">Name</Label>
+   560→            <Input
+   561→              value={data.name || ''}
+   562→              onChange={(e) => {
+   563→                const name = e.target.value;
+   564→                setData({
+   565→                  ...data,
+   566→                  name,
+   567→                  slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+   568→                });
+   569→              }}
+   570→              className="bg-white/5 border-white/10 text-white"
+   571→            />
+   572→          </div>
+   573→          <div>
+   574→            <Label className="text-white/60">Slug (auto-generated)</Label>
+   575→            <Input
+   576→              value={data.slug || ''}
+   577→              onChange={(e) => setData({ ...data, slug: e.target.value })}
+   578→              className="bg-white/5 border-white/10 text-white"
+   579→              placeholder="auto-generated-from-name"
+   580→            />
+   581→          </div>
+   582→          <div>
+   583→            <Label className="text-white/60">Category</Label>
+   584→            <Select value={data.categoryId || ''} onValueChange={(v) => setData({ ...data, categoryId: v })}>
+   585→              <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue placeholder="Select category" /></SelectTrigger>
+   586→              <SelectContent>
+   587→                {categories?.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+   588→              </SelectContent>
+   589→            </Select>
+   590→          </div>
+   591→          <div><Label className="text-white/60">Icon (emoji)</Label><Input value={data.icon || ''} onChange={(e) => setData({ ...data, icon: e.target.value })} placeholder="📚" className="bg-white/5 border-white/10 text-white" /></div>
+   592→          <div><Label className="text-white/60">Description</Label><Textarea value={data.description || ''} onChange={(e) => setData({ ...data, description: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   593→          <div><Label className="text-white/60">Order</Label><Input type="number" value={data.order || 0} onChange={(e) => setData({ ...data, order: parseInt(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   594→        </div>
+   595→      )}
+   596→      createBody={(data) => ({
+   597→        name: data.name,
+   598→        slug: data.slug || data.name?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+   599→        categoryId: data.categoryId,
+   600→        icon: data.icon || null,
+   601→        description: data.description || null,
+   602→        order: data.order || 0,
+   603→      })}
+   604→    />
+   605→  );
+   606→}
+   607→
+   608→// ============ Tests Section ============
+   609→function TestsSection() {
+   610→  const { data: subjects } = useQuery({
+   611→    queryKey: ['subjects'],
+   612→    queryFn: () => fetch('/api/admin/subjects').then((r) => r.json()).then((d) => d.subjects || d),
+   613→  });
+   614→
+   615→  return (
+   616→    <CrudSection
+   617→      title="Tests"
+   618→      queryKey="tests"
+   619→      apiUrl="/api/admin/tests"
+   620→      itemName="Test"
+   621→      columns={[
+   622→        { key: 'title', label: 'Title' },
+   623→        { key: 'subjectId', label: 'Subject', render: (_, item) => item.subject?.name || '-' },
+   624→        { key: 'type', label: 'Type', render: (v) => (
+   625→          <Badge className={
+   626→            v === 'free' ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' :
+   627→            v === 'premium' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' :
+   628→            v === 'previous_year' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' :
+   629→            v === 'mock' ? 'bg-sky-500/20 text-sky-400 border-sky-500/30' :
+   630→            v === 'dailyQuiz' ? 'bg-yellow-500/20 text-yellow-400 border-yellow-500/30' :
+   631→            'bg-gray-500/20 text-gray-400 border-gray-500/30'
+   632→          } variant="secondary">
+   633→            {v === 'previous_year' ? 'Previous Year' : v === 'mock' ? 'Mock' : v === 'dailyQuiz' ? 'Daily Quiz' : v ? v.charAt(0).toUpperCase() + v.slice(1) : 'Free'}
+   634→          </Badge>
+   635→        )},
+   636→        { key: 'isPublished', label: 'Status', render: (v) => (
+   637→          <Badge className={v ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-gray-500/20 text-gray-400 border-gray-500/30'} variant="secondary">
+   638→            {v ? 'Published' : 'Draft'}
+   639→          </Badge>
+   640→        )},
+   641→      ]}
+   642→      renderForm={(data, setData) => (
+   643→        <div className="space-y-4">
+   644→          <div><Label className="text-white/60">Title</Label><Input value={data.title || ''} onChange={(e) => setData({ ...data, title: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   645→          <div>
+   646→            <Label className="text-white/60">Subject</Label>
+   647→            <Select value={data.subjectId || ''} onValueChange={(v) => setData({ ...data, subjectId: v })}>
+   648→              <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue placeholder="Select subject" /></SelectTrigger>
+   649→              <SelectContent>
+   650→                {subjects?.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.category?.name || 'No Category'})</SelectItem>)}
+   651→              </SelectContent>
+   652→            </Select>
+   653→          </div>
+   654→          <div>
+   655→            <Label className="text-white/60">Type</Label>
+   656→            <Select value={data.type || 'free'} onValueChange={(v) => setData({ ...data, type: v })}>
+   657→              <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue /></SelectTrigger>
+   658→              <SelectContent>
+   659→                <SelectItem value="free">Free</SelectItem>
+   660→                <SelectItem value="premium">Premium</SelectItem>
+   661→                <SelectItem value="previous_year">Previous Year</SelectItem>
+   662→                <SelectItem value="mock">Mock</SelectItem>
+   663→                <SelectItem value="dailyQuiz">⚡ Daily Quiz</SelectItem>
+   664→              </SelectContent>
+   665→            </Select>
+   666→          </div>
+   667→          <div className="grid grid-cols-2 gap-4">
+   668→            <div><Label className="text-white/60">Duration (min)</Label><Input type="number" value={data.duration || 30} onChange={(e) => setData({ ...data, duration: parseInt(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   669→            <div><Label className="text-white/60">Total Marks</Label><Input type="number" value={data.totalMarks || 100} onChange={(e) => setData({ ...data, totalMarks: parseInt(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   670→          </div>
+   671→          <div className="grid grid-cols-2 gap-4">
+   672→            <div><Label className="text-white/60">Year</Label><Input type="number" value={data.year || ''} onChange={(e) => setData({ ...data, year: parseInt(e.target.value) || undefined })} placeholder="e.g. 2024" className="bg-white/5 border-white/10 text-white" /></div>
+   673→            <div><Label className="text-white/60">Exam Session</Label><Input value={data.examSession || ''} onChange={(e) => setData({ ...data, examSession: e.target.value })} placeholder="e.g. Morning" className="bg-white/5 border-white/10 text-white" /></div>
+   674→          </div>
+   675→          <div className="grid grid-cols-2 gap-4">
+   676→            <div><Label className="text-white/60">Negative Marking</Label><Input type="number" step="0.25" value={data.negativeMarks || 0} onChange={(e) => setData({ ...data, negativeMarks: parseFloat(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   677→            <div><Label className="text-white/60">Difficulty</Label>
+   678→              <Select value={data.difficulty || 'medium'} onValueChange={(v) => setData({ ...data, difficulty: v })}>
+   679→                <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue /></SelectTrigger>
+   680→                <SelectContent>
+   681→                  <SelectItem value="easy">Easy</SelectItem>
+   682→                  <SelectItem value="medium">Medium</SelectItem>
+   683→                  <SelectItem value="hard">Hard</SelectItem>
+   684→                </SelectContent>
+   685→              </Select>
+   686→            </div>
+   687→          </div>
+   688→          <div className="flex items-center gap-4">
+   689→            <div className="flex items-center gap-2"><Switch checked={data.isPublished || false} onCheckedChange={(v) => setData({ ...data, isPublished: v })} /><Label className="text-white/60">Published</Label></div>
+   690→          </div>
+   691→          <div><Label className="text-white/60">Instructions</Label><Textarea value={data.instructions || ''} onChange={(e) => setData({ ...data, instructions: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   692→        </div>
+   693→      )}
+   694→      createBody={(data) => ({
+   695→        title: data.title, slug: data.slug || data.title?.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, ''),
+   696→        subjectId: data.subjectId, type: data.type || 'free', duration: data.duration,
+   697→        totalMarks: data.totalMarks, negativeMarks: data.negativeMarks,
+   698→        difficulty: data.difficulty, isPublished: data.isPublished,
+   699→        instructions: data.instructions, year: data.year || null, examSession: data.examSession || null,
+   700→      })}
+   701→    />
+   702→  );
+   703→}
+   704→
+   705→// ============ Daily Quiz Section ============
+   706→// Shows only tests with type='dailyQuiz'. The admin creates daily quizzes
+   707→// here (they appear in the user app's Daily Quiz screen). Pre-fills the
+   708→// type field so the admin doesn't have to remember to set it.
+   709→function DailyQuizSection() {
+   710→  const { data: subjects } = useQuery({
+   711→    queryKey: ['subjects'],
+   712→    queryFn: () => fetch('/api/admin/subjects').then((r) => r.json()).then((d) => d.subjects || d),
+   713→  });
+   714→
+   715→  return (
+   716→    <div className="space-y-4">
+   717→      {/* Info banner */}
+   718→      <div className="bg-yellow-500/10 border border-yellow-500/30 rounded-xl p-4 flex items-start gap-3">
+   719→        <Zap className="h-5 w-5 text-yellow-400 shrink-0 mt-0.5" />
+   720→        <div>
+   721→          <p className="text-yellow-200 font-bold text-sm">Daily Quiz Management</p>
+   722→          <p className="text-yellow-200/70 text-xs mt-1">
+   723→            Tests created here appear in the user app&apos;s <b>Daily Quiz</b> screen. Set the type to
+   724→            <span className="text-yellow-300 font-bold"> ⚡ Daily Quiz</span> and mark as <b>Published</b>.
+   725→            Add questions via the Questions tab after creating the test.
+   726→          </p>
+   727→        </div>
+   728→      </div>
+   729→      <CrudSection
+   730→        title="Daily Quizzes"
+   731→        queryKey="daily-quizzes"
+   732→        apiUrl="/api/admin/tests"
+   733→        itemName="Daily Quiz"
+   734→        initialData={{ type: 'dailyQuiz', duration: 10, totalMarks: 10, isPublished: true, difficulty: 'easy' }}
+   735→        filterFn={(item: any) => item.type === 'dailyQuiz'}
+   736→        columns={[
+   737→          { key: 'title', label: 'Title' },
+   738→          { key: 'subjectId', label: 'Subject', render: (_, item) => item.subject?.name || '-' },
+   739→          { key: 'duration', label: 'Duration', render: (v) => `${v} min` },
+   740→          { key: 'isPublished', label: 'Status', render: (v) => (
+   741→            <Badge className={v ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30' : 'bg-gray-500/20 text-gray-400 border-gray-500/30'} variant="secondary">
+   742→              {v ? 'Published' : 'Draft'}
+   743→            </Badge>
+   744→          )},
+   745→        ]}
+   746→        renderForm={(data, setData) => (
+   747→          <div className="space-y-4">
+   748→            <div><Label className="text-white/60">Title</Label><Input value={data.title || ''} onChange={(e) => setData({ ...data, title: e.target.value })} className="bg-white/5 border-white/10 text-white" placeholder="e.g. Daily Quiz — 30 June 2025" /></div>
+   749→            <div>
+   750→              <Label className="text-white/60">Subject</Label>
+   751→              <Select value={data.subjectId || ''} onValueChange={(v) => setData({ ...data, subjectId: v })}>
+   752→                <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue placeholder="Select subject" /></SelectTrigger>
+   753→                <SelectContent>
+   754→                  {subjects?.map((s: any) => <SelectItem key={s.id} value={s.id}>{s.name} ({s.category?.name || 'No Category'})</SelectItem>)}
+   755→                </SelectContent>
+   756→              </Select>
+   757→            </div>
+   758→            {/* Type is locked to dailyQuiz — hidden from the form */}
+   759→            <input type="hidden" value="dailyQuiz" readOnly />
+   760→            <div className="grid grid-cols-2 gap-4">
+   761→              <div><Label className="text-white/60">Duration (min)</Label><Input type="number" value={data.duration || 10} onChange={(e) => setData({ ...data, duration: parseInt(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   762→              <div><Label className="text-white/60">Total Marks</Label><Input type="number" value={data.totalMarks || 10} onChange={(e) => setData({ ...data, totalMarks: parseInt(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   763→            </div>
+   764→            <div className="flex items-center gap-4">
+   765→              <div className="flex items-center gap-2"><Switch checked={data.isPublished ?? true} onCheckedChange={(v) => setData({ ...data, isPublished: v })} /><Label className="text-white/60">Published</Label></div>
+   766→            </div>
+   767→            <div><Label className="text-white/60">Instructions (optional)</Label><Textarea value={data.instructions || ''} onChange={(e) => setData({ ...data, instructions: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   768→          </div>
+   769→        )}
+   770→        createBody={(data) => ({
+   771→          title: data.title, slug: (data.slug || data.title || 'daily-quiz').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') + '-' + Date.now().toString(36),
+   772→          subjectId: data.subjectId, type: 'dailyQuiz', duration: data.duration || 10,
+   773→          totalMarks: data.totalMarks || 10, negativeMarks: 0,
+   774→          difficulty: data.difficulty || 'easy', isPublished: data.isPublished ?? true,
+   775→          instructions: data.instructions, year: null, examSession: null,
+   776→        })}
+   777→      />
+   778→    </div>
+   779→  );
+   780→}
+   781→
+   782→// ============ Questions Section ============
+   783→function QuestionsSection() {
+   784→  const queryClient = useQueryClient();
+   785→  const [selectedTestId, setSelectedTestId] = useState('');
+   786→  const [showBulkDialog, setShowBulkDialog] = useState(false);
+   787→  const [bulkJson, setBulkJson] = useState('');
+   788→  const [showForm, setShowForm] = useState(false);
+   789→  const [formData, setFormData] = useState<any>({});
+   790→
+   791→  const { data: tests } = useQuery({
+   792→    queryKey: ['admin-tests'],
+   793→    queryFn: () => fetch('/api/admin/tests').then((r) => r.json()).then((d) => d.tests || d),
+   794→  });
+   795→
+   796→  const { data: questions, isLoading } = useQuery({
+   797→    queryKey: ['admin-questions', selectedTestId],
+   798→    queryFn: () => fetch(`/api/admin/questions?testId=${selectedTestId}`).then((r) => r.json()).then((d) => d.questions || d),
+   799→    enabled: !!selectedTestId,
+   800→  });
+   801→
+   802→  const bulkMutation = useMutation({
+   803→    mutationFn: async () => {
+   804→      const questions = JSON.parse(bulkJson);
+   805→      const res = await fetch('/api/admin/questions/bulk', {
+   806→        method: 'POST',
+   807→        headers: { 'Content-Type': 'application/json' },
+   808→        body: JSON.stringify({ questions, testId: selectedTestId }),
+   809→      });
+   810→      if (!res.ok) throw new Error('Failed to upload');
+   811→      return res.json();
+   812→    },
+   813→    onSuccess: () => {
+   814→      queryClient.invalidateQueries({ queryKey: ['admin-questions', selectedTestId] });
+   815→      setShowBulkDialog(false);
+   816→      setBulkJson('');
+   817→      toast.success('Questions uploaded successfully');
+   818→    },
+   819→    onError: () => toast.error('Failed to upload questions. Check JSON format.'),
+   820→  });
+   821→
+   822→  const createMutation = useMutation({
+   823→    mutationFn: async (body: any) => {
+   824→      const res = await fetch('/api/admin/questions', {
+   825→        method: 'POST',
+   826→        headers: { 'Content-Type': 'application/json' },
+   827→        body: JSON.stringify(body),
+   828→      });
+   829→      if (!res.ok) throw new Error('Failed');
+   830→      return res.json();
+   831→    },
+   832→    onSuccess: () => {
+   833→      queryClient.invalidateQueries({ queryKey: ['admin-questions', selectedTestId] });
+   834→      setShowForm(false);
+   835→      setFormData({});
+   836→      toast.success('Question created');
+   837→    },
+   838→    onError: () => toast.error('Failed to create question'),
+   839→  });
+   840→
+   841→  const deleteMutation = useMutation({
+   842→    mutationFn: async (id: string) => {
+   843→      const res = await fetch(`/api/admin/questions/${id}`, { method: 'DELETE' });
+   844→      if (!res.ok) throw new Error('Failed');
+   845→      return res.json();
+   846→    },
+   847→    onSuccess: () => {
+   848→      queryClient.invalidateQueries({ queryKey: ['admin-questions', selectedTestId] });
+   849→      toast.success('Question deleted');
+   850→    },
+   851→  });
+   852→
+   853→  return (
+   854→    <div>
+   855→      <div className="flex items-center justify-between mb-4">
+   856→        <h2 className="text-xl font-bold text-white">Questions</h2>
+   857→        <div className="flex gap-2">
+   858→          {selectedTestId && (
+   859→            <>
+   860→              <Button size="sm" variant="outline" onClick={() => setShowBulkDialog(true)} className="border-white/20 text-white/60">
+   861→                <Upload className="h-4 w-4 mr-1" /> Bulk Upload
+   862→              </Button>
+   863→              <Button size="sm" onClick={() => { setFormData({}); setShowForm(true); }} className="bg-blue-600 hover:bg-blue-500 text-white">
+   864→                <Plus className="h-4 w-4 mr-1" /> Add
+   865→              </Button>
+   866→            </>
+   867→          )}
+   868→        </div>
+   869→      </div>
+   870→
+   871→      {/* Test selector */}
+   872→      <div className="mb-4">
+   873→        <Select value={selectedTestId} onValueChange={setSelectedTestId}>
+   874→          <SelectTrigger className="w-full sm:w-72 bg-white/5 border-white/10 text-white">
+   875→            <SelectValue placeholder="Select a test to view questions" />
+   876→          </SelectTrigger>
+   877→          <SelectContent>
+   878→            {tests?.map((t: any) => (
+   879→              <SelectItem key={t.id} value={t.id}>{t.title}</SelectItem>
+   880→            ))}
+   881→          </SelectContent>
+   882→        </Select>
+   883→      </div>
+   884→
+   885→      {isLoading && <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12" />)}</div>}
+   886→
+   887→      {questions && (
+   888→        <div className="space-y-2">
+   889→          {questions.map((q: any, i: number) => (
+   890→            <Card key={q.id} className="bg-gray-900/50 border-white/10 shadow-none">
+   891→              <CardContent className="p-3 flex items-start gap-3">
+   892→                <Badge variant="secondary" className="text-xs flex-shrink-0 bg-blue-500/20 text-blue-400 border-blue-500/30">Q{i + 1}</Badge>
+   893→                <div className="flex-1 min-w-0">
+   894→                  <p className="text-sm text-white/80 line-clamp-2">{q.text}</p>
+   895→                  <div className="flex gap-2 mt-1">
+   896→                    <span className="text-[10px] text-white/40">Ans: {q.correctAnswer}</span>
+   897→                    <span className="text-[10px] text-white/40">Marks: {q.marks}</span>
+   898→                    {q.topic && <span className="text-[10px] text-white/40">Topic: {q.topic}</span>}
+   899→                    {q.imageUrl && <span className="text-[10px] text-blue-400">📷 Image</span>}
+   900→                  </div>
+   901→                </div>
+   902→                <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:bg-red-500/10 flex-shrink-0" onClick={() => deleteMutation.mutate(q.id)}>
+   903→                  <Trash2 className="h-3.5 w-3.5" />
+   904→                </Button>
+   905→              </CardContent>
+   906→            </Card>
+   907→          ))}
+   908→          {questions.length === 0 && <p className="text-center text-white/30 py-8">No questions found for this test</p>}
+   909→        </div>
+   910→      )}
+   911→
+   912→      {/* Create Question Dialog */}
+   913→      <Dialog open={showForm} onOpenChange={setShowForm}>
+   914→        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto bg-gray-900 border-white/10">
+   915→          <DialogHeader><DialogTitle className="text-white">Add Question</DialogTitle></DialogHeader>
+   916→          <div className="space-y-4">
+   917→            <div><Label className="text-white/60">Question Text</Label><Textarea value={formData.text || ''} onChange={(e) => setFormData({ ...formData, text: e.target.value })} rows={3} className="bg-white/5 border-white/10 text-white" /></div>
+   918→            <div><Label className="text-white/60">Image URL</Label><Input value={formData.imageUrl || ''} onChange={(e) => setFormData({ ...formData, imageUrl: e.target.value })} placeholder="https://..." className="bg-white/5 border-white/10 text-white" /></div>
+   919→            <div className="grid grid-cols-2 gap-3">
+   920→              <div><Label className="text-white/60">Option A</Label><Input value={formData.optionA || ''} onChange={(e) => setFormData({ ...formData, optionA: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   921→              <div><Label className="text-white/60">Option B</Label><Input value={formData.optionB || ''} onChange={(e) => setFormData({ ...formData, optionB: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   922→              <div><Label className="text-white/60">Option C</Label><Input value={formData.optionC || ''} onChange={(e) => setFormData({ ...formData, optionC: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   923→              <div><Label className="text-white/60">Option D</Label><Input value={formData.optionD || ''} onChange={(e) => setFormData({ ...formData, optionD: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+   924→            </div>
+   925→            <div className="grid grid-cols-2 gap-3">
+   926→              <div>
+   927→                <Label className="text-white/60">Correct Answer</Label>
+   928→                <Select value={formData.correctAnswer || ''} onValueChange={(v) => setFormData({ ...formData, correctAnswer: v })}>
+   929→                  <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue placeholder="Select" /></SelectTrigger>
+   930→                  <SelectContent>
+   931→                    <SelectItem value="A">A</SelectItem>
+   932→                    <SelectItem value="B">B</SelectItem>
+   933→                    <SelectItem value="C">C</SelectItem>
+   934→                    <SelectItem value="D">D</SelectItem>
+   935→                  </SelectContent>
+   936→                </Select>
+   937→              </div>
+   938→              <div><Label className="text-white/60">Marks</Label><Input type="number" value={formData.marks || 1} onChange={(e) => setFormData({ ...formData, marks: parseInt(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   939→            </div>
+   940→            <div className="grid grid-cols-2 gap-3">
+   941→              <div><Label className="text-white/60">Negative Marks</Label><Input type="number" step="0.25" value={formData.negativeMarks || 0} onChange={(e) => setFormData({ ...formData, negativeMarks: parseFloat(e.target.value) })} className="bg-white/5 border-white/10 text-white" /></div>
+   942→              <div><Label className="text-white/60">Topic</Label><Input value={formData.topic || ''} onChange={(e) => setFormData({ ...formData, topic: e.target.value })} placeholder="e.g. Algebra, History" className="bg-white/5 border-white/10 text-white" /></div>
+   943→            </div>
+   944→            <div><Label className="text-white/60">Explanation</Label><Textarea value={formData.explanation || ''} onChange={(e) => setFormData({ ...formData, explanation: e.target.value })} rows={2} className="bg-white/5 border-white/10 text-white" /></div>
+   945→          </div>
+   946→          <div className="flex justify-end gap-2 mt-4">
+   947→            <Button variant="outline" onClick={() => setShowForm(false)} className="border-white/20 text-white/60">Cancel</Button>
+   948→            <Button onClick={() => createMutation.mutate({ ...formData, testId: selectedTestId })} disabled={createMutation.isPending} className="bg-blue-600 hover:bg-blue-500 text-white">
+   949→              {createMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+   950→              <Save className="h-4 w-4 mr-1" /> Save
+   951→            </Button>
+   952→          </div>
+   953→        </DialogContent>
+   954→      </Dialog>
+   955→
+   956→      {/* Bulk Upload Dialog */}
+   957→      <Dialog open={showBulkDialog} onOpenChange={setShowBulkDialog}>
+   958→        <DialogContent className="sm:max-w-lg bg-gray-900 border-white/10">
+   959→          <DialogHeader><DialogTitle className="text-white">Bulk Upload Questions</DialogTitle></DialogHeader>
+   960→          <p className="text-xs text-white/40 mb-2">
+   961→            Paste JSON array of questions. Each question should have: text, optionA, optionB, optionC, optionD, correctAnswer, marks, negativeMarks, topic, explanation, imageUrl
+   962→          </p>
+   963→          <Textarea
+   964→            value={bulkJson}
+   965→            onChange={(e) => setBulkJson(e.target.value)}
+   966→            rows={10}
+   967→            placeholder='[{"text":"Q1?","optionA":"A","optionB":"B","optionC":"C","optionD":"D","correctAnswer":"A","marks":1,"negativeMarks":0.25}]'
+   968→            className="font-mono text-xs bg-white/5 border-white/10 text-white"
+   969→          />
+   970→          <div className="flex justify-end gap-2">
+   971→            <Button variant="outline" onClick={() => setShowBulkDialog(false)} className="border-white/20 text-white/60">Cancel</Button>
+   972→            <Button onClick={() => bulkMutation.mutate()} disabled={bulkMutation.isPending} className="bg-blue-600 hover:bg-blue-500 text-white">
+   973→              {bulkMutation.isPending && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+   974→              <Upload className="h-4 w-4 mr-1" /> Upload
+   975→            </Button>
+   976→          </div>
+   977→        </DialogContent>
+   978→      </Dialog>
+   979→    </div>
+   980→  );
+   981→}
+   982→
+   983→// ============ Upcoming Exams Section ============
+   984→function UpcomingExamsSection() {
+   985→  const { data: categories } = useQuery({
+   986→    queryKey: ['categories'],
+   987→    queryFn: () => fetch('/api/categories').then((r) => r.json()).then((d) => d.categories),
+   988→  });
+   989→
+   990→  return (
+   991→    <CrudSection
+   992→      title="Upcoming Exams"
+   993→      queryKey="upcomingExams"
+   994→      apiUrl="/api/admin/upcoming-exams"
+   995→      itemName="Upcoming Exam"
+   996→      columns={[
+   997→        { key: 'name', label: 'Name' },
+   998→        { key: 'examDate', label: 'Date', render: (v) => v ? new Date(v).toLocaleDateString() : '-' },
+   999→        { key: 'isActive', label: 'Active', render: (v) => v ? '✅' : '❌' },
+  1000→      ]}
+  1001→      renderForm={(data, setData) => (
+  1002→        <div className="space-y-4">
+  1003→          <div><Label className="text-white/60">Name</Label><Input value={data.name || ''} onChange={(e) => setData({ ...data, name: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+  1004→          <div>
+  1005→            <Label className="text-white/60">Category</Label>
+  1006→            <Select value={data.categoryId || ''} onValueChange={(v) => setData({ ...data, categoryId: v })}>
+  1007→              <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue placeholder="Select category" /></SelectTrigger>
+  1008→              <SelectContent>
+  1009→                {categories?.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+  1010→              </SelectContent>
+  1011→            </Select>
+  1012→          </div>
+  1013→          <div><Label className="text-white/60">Exam Date</Label><Input type="date" value={data.examDate ? data.examDate.split('T')[0] : ''} onChange={(e) => setData({ ...data, examDate: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+  1014→          <div><Label className="text-white/60">Description</Label><Textarea value={data.description || ''} onChange={(e) => setData({ ...data, description: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+  1015→          <div><Label className="text-white/60">Notification Link</Label><Input value={data.notificationLink || ''} onChange={(e) => setData({ ...data, notificationLink: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+  1016→          <div className="flex items-center gap-2"><Switch checked={data.isActive !== false} onCheckedChange={(v) => setData({ ...data, isActive: v })} /><Label className="text-white/60">Active</Label></div>
+  1017→        </div>
+  1018→      )}
+  1019→      createBody={(data) => ({
+  1020→        name: data.name, categoryId: data.categoryId, examDate: data.examDate,
+  1021→        description: data.description, notificationLink: data.notificationLink, isActive: data.isActive,
+  1022→      })}
+  1023→    />
+  1024→  );
+  1025→}
+  1026→
+  1027→// ============ Announcements Section ============
+  1028→function AnnouncementsSection() {
+  1029→  return (
+  1030→    <CrudSection
+  1031→      title="Announcements"
+  1032→      queryKey="announcements"
+  1033→      apiUrl="/api/admin/announcements"
+  1034→      itemName="Announcement"
+  1035→      columns={[
+  1036→        { key: 'title', label: 'Title' },
+  1037→        { key: 'type', label: 'Type', render: (v) => (
+  1038→          <Badge className={v === 'ticker' ? 'bg-blue-500/20 text-blue-400 border-blue-500/30' : v === 'banner' ? 'bg-sky-500/20 text-sky-400 border-sky-500/30' : 'bg-gray-500/20 text-gray-400 border-gray-500/30'} variant="secondary">
+  1039→            {v || 'info'}
+  1040→          </Badge>
+  1041→        )},
+  1042→        { key: 'priority', label: 'Priority', render: (v) => (
+  1043→          <Badge className={v === 'urgent' ? 'bg-red-500/20 text-red-400 border-red-500/30' : v === 'important' ? 'bg-amber-500/20 text-amber-400 border-amber-500/30' : 'bg-gray-500/20 text-gray-400 border-gray-500/30'} variant="secondary">
+  1044→            {v || 'info'}
+  1045→          </Badge>
+  1046→        )},
+  1047→        { key: 'isPublished', label: 'Published', render: (v) => v ? '✅' : '❌' },
+  1048→      ]}
+  1049→      renderForm={(data, setData) => (
+  1050→        <div className="space-y-4">
+  1051→          <div className="grid grid-cols-2 gap-4">
+  1052→            <div><Label className="text-white/60">Title</Label><Input placeholder="e.g. IBPS PO Notification Released!" value={data.title || ''} onChange={(e) => setData({ ...data, title: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+  1053→            <div>
+  1054→              <Label className="text-white/60">Type</Label>
+  1055→              <Select value={data.type || 'info'} onValueChange={(v) => setData({ ...data, type: v })}>
+  1056→                <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue /></SelectTrigger>
+  1057→                <SelectContent>
+  1058→                  <SelectItem value="info">Info</SelectItem>
+  1059→                  <SelectItem value="ticker">Ticker</SelectItem>
+  1060→                  <SelectItem value="banner">Banner</SelectItem>
+  1061→                </SelectContent>
+  1062→              </Select>
+  1063→            </div>
+  1064→          </div>
+  1065→          <div><Label className="text-white/60">Message</Label><Textarea placeholder="Detailed description..." value={data.message || ''} onChange={(e) => setData({ ...data, message: e.target.value })} rows={3} className="bg-white/5 border-white/10 text-white" /></div>
+  1066→
+  1067→          {/* Banner-specific fields */}
+  1068→          {(data.type === 'banner' || data.type === 'ticker') && (
+  1069→            <div className="space-y-4 p-4 bg-blue-950/20 rounded-xl border border-blue-500/20">
+  1070→              <p className="text-xs font-bold text-blue-400 uppercase tracking-wider">Display Settings</p>
+  1071→              <div className="grid grid-cols-2 gap-4">
+  1072→                <div>
+  1073→                  <Label className="text-white/60">Emoji / Icon</Label>
+  1074→                  <Input placeholder="🔥" value={data.emoji || ''} onChange={(e) => setData({ ...data, emoji: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+  1075→                </div>
+  1076→                <div>
+  1077→                  <Label className="text-white/60">Gradient Color</Label>
+  1078→                  <Select value={data.gradient || ''} onValueChange={(v) => setData({ ...data, gradient: v })}>
+  1079→                    <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue placeholder="Select gradient" /></SelectTrigger>
+  1080→                    <SelectContent>
+  1081→                      <SelectItem value="from-blue-600 via-blue-500 to-sky-500">Blue-Sky</SelectItem>
+  1082→                      <SelectItem value="from-amber-500 via-orange-500 to-red-500">Orange-Red</SelectItem>
+  1083→                      <SelectItem value="from-cyan-500 via-teal-500 to-emerald-500">Teal-Emerald</SelectItem>
+  1084→                      <SelectItem value="from-sky-500 via-blue-500 to-indigo-500">Sky-Indigo</SelectItem>
+  1085→                      <SelectItem value="from-blue-700 via-blue-600 to-indigo-600">Blue-Indigo</SelectItem>
+  1086→                      <SelectItem value="from-yellow-500 via-amber-500 to-orange-500">Yellow-Orange</SelectItem>
+  1087→                      <SelectItem value="from-emerald-500 via-green-500 to-teal-500">Emerald-Green</SelectItem>
+  1088→                      <SelectItem value="from-red-500 via-rose-500 to-pink-500">Red-Rose</SelectItem>
+  1089→                    </SelectContent>
+  1090→                  </Select>
+  1091→                </div>
+  1092→              </div>
+  1093→              <div className="grid grid-cols-2 gap-4">
+  1094→                <div>
+  1095→                  <Label className="text-white/60">Button Text</Label>
+  1096→                  <Input placeholder="e.g. Start Practicing" value={data.buttonText || ''} onChange={(e) => setData({ ...data, buttonText: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+  1097→                </div>
+  1098→                <div>
+  1099→                  <Label className="text-white/60">Badge Text</Label>
+  1100→                  <Input placeholder="e.g. Trending" value={data.badgeText || ''} onChange={(e) => setData({ ...data, badgeText: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+  1101→                </div>
+  1102→              </div>
+  1103→              <div>
+  1104→                <Label className="text-white/60">Click Link</Label>
+  1105→                <Input placeholder="e.g. exams, daily-quiz" value={data.link || ''} onChange={(e) => setData({ ...data, link: e.target.value })} className="bg-white/5 border-white/10 text-white" />
+  1106→              </div>
+  1107→              <div>
+  1108→                <Label className="text-white/60">Display Order</Label>
+  1109→                <Input type="number" placeholder="0" value={data.order || 0} onChange={(e) => setData({ ...data, order: parseInt(e.target.value) || 0 })} className="bg-white/5 border-white/10 text-white" />
+  1110→              </div>
+  1111→            </div>
+  1112→          )}
+  1113→
+  1114→          <div className="grid grid-cols-2 gap-4">
+  1115→            <div>
+  1116→              <Label className="text-white/60">Priority</Label>
+  1117→              <Select value={data.priority || 'info'} onValueChange={(v) => setData({ ...data, priority: v })}>
+  1118→                <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue /></SelectTrigger>
+  1119→                <SelectContent>
+  1120→                  <SelectItem value="info">Info</SelectItem>
+  1121→                  <SelectItem value="important">Important</SelectItem>
+  1122→                  <SelectItem value="urgent">Urgent</SelectItem>
+  1123→                </SelectContent>
+  1124→              </Select>
+  1125→            </div>
+  1126→            <div>
+  1127→              <Label className="text-white/60">Target Audience</Label>
+  1128→              <Select value={data.target || 'all'} onValueChange={(v) => setData({ ...data, target: v })}>
+  1129→                <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue /></SelectTrigger>
+  1130→                <SelectContent>
+  1131→                  <SelectItem value="all">All Users</SelectItem>
+  1132→                  <SelectItem value="guest">Guest Only</SelectItem>
+  1133→                  <SelectItem value="student">Students Only</SelectItem>
+  1134→                </SelectContent>
+  1135→              </Select>
+  1136→            </div>
+  1137→          </div>
+  1138→          <div className="flex items-center gap-2"><Switch checked={data.isPublished !== undefined ? data.isPublished : true} onCheckedChange={(v) => setData({ ...data, isPublished: v })} /><Label className="text-white/60">Published</Label></div>
+  1139→        </div>
+  1140→      )}
+  1141→      createBody={(data) => ({
+  1142→        title: data.title, message: data.message, priority: data.priority, isPublished: data.isPublished,
+  1143→        type: data.type || 'info', gradient: data.gradient || null, emoji: data.emoji || null,
+  1144→        link: data.link || null, buttonText: data.buttonText || null, badgeText: data.badgeText || null,
+  1145→        image: data.image || null, target: data.target || 'all', order: data.order || 0,
+  1146→      })}
+  1147→    />
+  1148→  );
+  1149→}
+  1150→
+  1151→// ============ Current Affairs Section ============
+  1152→function CurrentAffairsSection() {
+  1153→  const queryClient = useQueryClient();
+  1154→  const { data: categories } = useQuery({
+  1155→    queryKey: ['categories'],
+  1156→    queryFn: () => fetch('/api/categories').then((r) => r.json()).then((d) => d.categories),
+  1157→  });
+  1158→
+  1159→  const { data, isLoading } = useQuery({
+  1160→    queryKey: ['admin-current-affairs'],
+  1161→    queryFn: () => fetch('/api/admin/current-affairs').then((r) => r.json()).then((d) => d.currentAffairs || d),
+  1162→  });
+  1163→
+  1164→  const [showDialog, setShowDialog] = useState(false);
+  1165→  const [editItem, setEditItem] = useState<any>(null);
+  1166→  const [formData, setFormData] = useState<any>({});
+  1167→  const [deleteId, setDeleteId] = useState<string | null>(null);
+  1168→
+  1169→  const createMutation = useMutation({
+  1170→    mutationFn: async (body: any) => {
+  1171→      const res = await fetch('/api/admin/current-affairs', {
+  1172→        method: 'POST',
+  1173→        headers: { 'Content-Type': 'application/json' },
+  1174→        body: JSON.stringify(body),
+  1175→      });
+  1176→      if (!res.ok) throw new Error('Failed to create');
+  1177→      return res.json();
+  1178→    },
+  1179→    onSuccess: () => {
+  1180→      queryClient.invalidateQueries({ queryKey: ['admin-current-affairs'] });
+  1181→      setShowDialog(false);
+  1182→      setFormData({});
+  1183→      toast.success('Current affair created');
+  1184→    },
+  1185→    onError: () => toast.error('Failed to create current affair'),
+  1186→  });
+  1187→
+  1188→  const updateMutation = useMutation({
+  1189→    mutationFn: async ({ id, ...body }: any) => {
+  1190→      const res = await fetch(`/api/admin/current-affairs/${id}`, {
+  1191→        method: 'PUT',
+  1192→        headers: { 'Content-Type': 'application/json' },
+  1193→        body: JSON.stringify(body),
+  1194→      });
+  1195→      if (!res.ok) throw new Error('Failed to update');
+  1196→      return res.json();
+  1197→    },
+  1198→    onSuccess: () => {
+  1199→      queryClient.invalidateQueries({ queryKey: ['admin-current-affairs'] });
+  1200→      setShowDialog(false);
+  1201→      setEditItem(null);
+  1202→      setFormData({});
+  1203→      toast.success('Current affair updated');
+  1204→    },
+  1205→    onError: () => toast.error('Failed to update current affair'),
+  1206→  });
+  1207→
+  1208→  const deleteMutation = useMutation({
+  1209→    mutationFn: async (id: string) => {
+  1210→      const res = await fetch(`/api/admin/current-affairs/${id}`, { method: 'DELETE' });
+  1211→      if (!res.ok) throw new Error('Failed to delete');
+  1212→      return res.json();
+  1213→    },
+  1214→    onSuccess: () => {
+  1215→      queryClient.invalidateQueries({ queryKey: ['admin-current-affairs'] });
+  1216→      setDeleteId(null);
+  1217→      toast.success('Current affair deleted');
+  1218→    },
+  1219→  });
+  1220→
+  1221→  const handleOpenCreate = () => {
+  1222→    setEditItem(null);
+  1223→    setFormData({ isImportant: false });
+  1224→    setShowDialog(true);
+  1225→  };
+  1226→
+  1227→  const handleOpenEdit = (item: any) => {
+  1228→    setEditItem(item);
+  1229→    setFormData({
+  1230→      ...item,
+  1231→      date: item.date ? item.date.split('T')[0] : '',
+  1232→    });
+  1233→    setShowDialog(true);
+  1234→  };
+  1235→
+  1236→  const handleSave = () => {
+  1237→    const body = {
+  1238→      date: formData.date,
+  1239→      title: formData.title,
+  1240→      content: formData.content,
+  1241→      summary: formData.summary || null,
+  1242→      pdfUrl: formData.pdfUrl || null,
+  1243→      category: formData.category || null,
+  1244→      categoryId: formData.categoryId || null,
+  1245→      isImportant: formData.isImportant || false,
+  1246→      tags: formData.tags || null,
+  1247→    };
+  1248→    if (editItem) {
+  1249→      updateMutation.mutate({ id: editItem.id, ...body });
+  1250→    } else {
+  1251→      createMutation.mutate(body);
+  1252→    }
+  1253→  };
+  1254→
+  1255→  const isSaving = createMutation.isPending || updateMutation.isPending;
+  1256→
+  1257→  return (
+  1258→    <div>
+  1259→      <div className="flex items-center justify-between mb-4">
+  1260→        <h2 className="text-xl font-bold text-white">Current Affairs</h2>
+  1261→        <Button size="sm" onClick={handleOpenCreate} className="bg-blue-600 hover:bg-blue-500 text-white">
+  1262→          <Plus className="h-4 w-4 mr-1" /> Add Current Affair
+  1263→        </Button>
+  1264→      </div>
+  1265→
+  1266→      {isLoading ? (
+  1267→        <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12" />)}</div>
+  1268→      ) : (
+  1269→        <div className="overflow-x-auto border border-white/10 rounded-lg">
+  1270→          <table className="w-full text-sm">
+  1271→            <thead className="bg-white/5">
+  1272→              <tr>
+  1273→                <th className="text-left p-3 font-medium text-white/50">Date</th>
+  1274→                <th className="text-left p-3 font-medium text-white/50">Title</th>
+  1275→                <th className="text-left p-3 font-medium text-white/50">Category</th>
+  1276→                <th className="text-left p-3 font-medium text-white/50">Important</th>
+  1277→                <th className="text-right p-3 font-medium text-white/50">Actions</th>
+  1278→              </tr>
+  1279→            </thead>
+  1280→            <tbody className="divide-y divide-white/5">
+  1281→              {data?.map((item: any) => (
+  1282→                <tr key={item.id} className="hover:bg-white/5">
+  1283→                  <td className="p-3 text-white/80">{item.date ? new Date(item.date).toLocaleDateString() : '-'}</td>
+  1284→                  <td className="p-3 text-white/80 max-w-xs truncate">{item.title}</td>
+  1285→                  <td className="p-3 text-white/60">{item.categoryRef?.name || item.category || '-'}</td>
+  1286→                  <td className="p-3">{item.isImportant ? <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30" variant="secondary">Important</Badge> : <span className="text-white/30">-</span>}</td>
+  1287→                  <td className="p-3 text-right">
+  1288→                    <div className="flex items-center justify-end gap-1">
+  1289→                      <Button variant="ghost" size="icon" className="h-7 w-7 hover:bg-white/10 text-white/60" onClick={() => handleOpenEdit(item)}>
+  1290→                        <Pencil className="h-3.5 w-3.5" />
+  1291→                      </Button>
+  1292→                      <Button variant="ghost" size="icon" className="h-7 w-7 text-red-400 hover:bg-red-500/10" onClick={() => setDeleteId(item.id)}>
+  1293→                        <Trash2 className="h-3.5 w-3.5" />
+  1294→                      </Button>
+  1295→                    </div>
+  1296→                  </td>
+  1297→                </tr>
+  1298→              ))}
+  1299→              {(!data || data.length === 0) && (
+  1300→                <tr><td colSpan={5} className="p-6 text-center text-white/30">No current affairs found</td></tr>
+  1301→              )}
+  1302→            </tbody>
+  1303→          </table>
+  1304→        </div>
+  1305→      )}
+  1306→
+  1307→      {/* Create/Edit Dialog */}
+  1308→      <Dialog open={showDialog} onOpenChange={setShowDialog}>
+  1309→        <DialogContent className="sm:max-w-lg max-h-[80vh] overflow-y-auto bg-gray-900 border-white/10">
+  1310→          <DialogHeader>
+  1311→            <DialogTitle className="text-white">{editItem ? 'Edit Current Affair' : 'Add Current Affair'}</DialogTitle>
+  1312→          </DialogHeader>
+  1313→          <div className="space-y-4">
+  1314→            <div><Label className="text-white/60">Date</Label><Input type="date" value={formData.date || ''} onChange={(e) => setFormData({ ...formData, date: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+  1315→            <div><Label className="text-white/60">Title</Label><Input value={formData.title || ''} onChange={(e) => setFormData({ ...formData, title: e.target.value })} className="bg-white/5 border-white/10 text-white" /></div>
+  1316→            <div><Label className="text-white/60">Content</Label><Textarea value={formData.content || ''} onChange={(e) => setFormData({ ...formData, content: e.target.value })} rows={5} className="bg-white/5 border-white/10 text-white" /></div>
+  1317→            <div><Label className="text-white/60">Summary</Label><Textarea value={formData.summary || ''} onChange={(e) => setFormData({ ...formData, summary: e.target.value })} rows={2} className="bg-white/5 border-white/10 text-white" /></div>
+  1318→            <div><Label className="text-white/60">PDF URL</Label><Input value={formData.pdfUrl || ''} onChange={(e) => setFormData({ ...formData, pdfUrl: e.target.value })} placeholder="https://..." className="bg-white/5 border-white/10 text-white" /></div>
+  1319→            <div>
+  1320→              <Label className="text-white/60">Category (text)</Label>
+  1321→              <Select value={formData.category || ''} onValueChange={(v) => setFormData({ ...formData, category: v })}>
+  1322→                <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue placeholder="Select category" /></SelectTrigger>
+  1323→                <SelectContent>
+  1324→                  <SelectItem value="National">National</SelectItem>
+  1325→                  <SelectItem value="International">International</SelectItem>
+  1326→                  <SelectItem value="Economy">Economy</SelectItem>
+  1327→                  <SelectItem value="Sports">Sports</SelectItem>
+  1328→                  <SelectItem value="Science">Science</SelectItem>
+  1329→                  <SelectItem value="Technology">Technology</SelectItem>
+  1330→                  <SelectItem value="Environment">Environment</SelectItem>
+  1331→                </SelectContent>
+  1332→              </Select>
+  1333→            </div>
+  1334→            <div>
+  1335→              <Label className="text-white/60">Category (link)</Label>
+  1336→              <Select value={formData.categoryId || ''} onValueChange={(v) => setFormData({ ...formData, categoryId: v })}>
+  1337→                <SelectTrigger className="bg-white/5 border-white/10 text-white"><SelectValue placeholder="Link to category" /></SelectTrigger>
+  1338→                <SelectContent>
+  1339→                  {categories?.map((c: any) => <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>)}
+  1340→                </SelectContent>
+  1341→              </Select>
+  1342→            </div>
+  1343→            <div className="flex items-center gap-2">
+  1344→              <Switch checked={formData.isImportant || false} onCheckedChange={(v) => setFormData({ ...formData, isImportant: v })} />
+  1345→              <Label className="text-white/60">Mark as Important</Label>
+  1346→            </div>
+  1347→            <div><Label className="text-white/60">Tags (comma-separated)</Label><Input value={formData.tags || ''} onChange={(e) => setFormData({ ...formData, tags: e.target.value })} placeholder="e.g. RBI, Economy, Banking" className="bg-white/5 border-white/10 text-white" /></div>
+  1348→          </div>
+  1349→          <div className="flex justify-end gap-2 mt-4">
+  1350→            <Button variant="outline" onClick={() => setShowDialog(false)} className="border-white/20 text-white/60">Cancel</Button>
+  1351→            <Button onClick={handleSave} disabled={isSaving} className="bg-blue-600 hover:bg-blue-500 text-white">
+  1352→              {isSaving && <Loader2 className="h-4 w-4 mr-1 animate-spin" />}
+  1353→              <Save className="h-4 w-4 mr-1" /> Save
+  1354→            </Button>
+  1355→          </div>
+  1356→        </DialogContent>
+  1357→      </Dialog>
+  1358→
+  1359→      {/* Delete Confirmation */}
+  1360→      <AlertDialog open={!!deleteId} onOpenChange={() => setDeleteId(null)}>
+  1361→        <AlertDialogContent className="bg-gray-900 border-white/10">
+  1362→          <AlertDialogHeader>
+  1363→            <AlertDialogTitle className="text-white">Delete Current Affair?</AlertDialogTitle>
+  1364→            <AlertDialogDescription>This action cannot be undone.</AlertDialogDescription>
+  1365→          </AlertDialogHeader>
+  1366→          <AlertDialogFooter>
+  1367→            <AlertDialogCancel className="border-white/20 text-white/60">Cancel</AlertDialogCancel>
+  1368→            <AlertDialogAction
+  1369→              onClick={() => deleteId && deleteMutation.mutate(deleteId)}
+  1370→              className="bg-red-600 hover:bg-red-500 text-white"
+  1371→            >
+  1372→              Delete
+  1373→            </AlertDialogAction>
+  1374→          </AlertDialogFooter>
+  1375→        </AlertDialogContent>
+  1376→      </AlertDialog>
+  1377→    </div>
+  1378→  );
+  1379→}
+  1380→
+  1381→// ============ Subscriptions Section ============
+  1382→function SubscriptionsSection() {
+  1383→  const queryClient = useQueryClient();
+  1384→  const { data, isLoading } = useQuery({
+  1385→    queryKey: ['admin-subscriptions'],
+  1386→    queryFn: () => fetch('/api/admin/subscriptions').then((r) => r.json()).then((d) => d.subscriptions || d),
+  1387→  });
+  1388→
+  1389→  const updateMutation = useMutation({
+  1390→    mutationFn: async ({ id, action }: { id: string; action: string }) => {
+  1391→      const res = await fetch('/api/admin/subscriptions', {
+  1392→        method: 'PUT',
+  1393→        headers: { 'Content-Type': 'application/json' },
+  1394→        body: JSON.stringify({ id, action }),
+  1395→      });
+  1396→      if (!res.ok) throw new Error('Failed to update');
+  1397→      return res.json();
+  1398→    },
+  1399→    onSuccess: () => {
+  1400→      queryClient.invalidateQueries({ queryKey: ['admin-subscriptions'] });
+  1401→      toast.success('Subscription updated');
+  1402→    },
+  1403→    onError: () => toast.error('Failed to update subscription'),
+  1404→  });
+  1405→
+  1406→  return (
+  1407→    <div>
+  1408→      <h2 className="text-xl font-bold mb-4 text-white">Subscriptions</h2>
+  1409→      {isLoading ? (
+  1410→        <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12" />)}</div>
+  1411→      ) : (
+  1412→        <div className="overflow-x-auto border border-white/10 rounded-lg">
+  1413→          <table className="w-full text-sm">
+  1414→            <thead className="bg-white/5">
+  1415→              <tr>
+  1416→                <th className="text-left p-3 font-medium text-white/50">User</th>
+  1417→                <th className="text-left p-3 font-medium text-white/50">Plan</th>
+  1418→                <th className="text-left p-3 font-medium text-white/50">Price</th>
+  1419→                <th className="text-left p-3 font-medium text-white/50">Status</th>
+  1420→                <th className="text-left p-3 font-medium text-white/50">Start Date</th>
+  1421→                <th className="text-left p-3 font-medium text-white/50">Expiry Date</th>
+  1422→                <th className="text-right p-3 font-medium text-white/50">Actions</th>
+  1423→              </tr>
+  1424→            </thead>
+  1425→            <tbody className="divide-y divide-white/5">
+  1426→              {data?.map((sub: any) => (
+  1427→                <tr key={sub.id} className="hover:bg-white/5">
+  1428→                  <td className="p-3 text-white/80">
+  1429→                    <div>
+  1430→                      <p className="font-medium">{sub.user?.name || 'Unknown'}</p>
+  1431→                      <p className="text-xs text-white/40">{sub.user?.email}</p>
+  1432→                    </div>
+  1433→                  </td>
+  1434→                  <td className="p-3">
+  1435→                    <Badge className="bg-blue-500/20 text-blue-400 border-blue-500/30" variant="secondary">
+  1436→                      {sub.plan}
+  1437→                    </Badge>
+  1438→                  </td>
+  1439→                  <td className="p-3 text-white/80">₹{sub.price}</td>
+  1440→                  <td className="p-3">
+  1441→                    {sub.isActive ? (
+  1442→                      <Badge className="bg-emerald-500/20 text-emerald-400 border-emerald-500/30" variant="secondary">
+  1443→                        <CheckCircle className="h-3 w-3 mr-1" /> Active
+  1444→                      </Badge>
+  1445→                    ) : (
+  1446→                      <Badge className="bg-red-500/20 text-red-400 border-red-500/30" variant="secondary">
+  1447→                        <XCircle className="h-3 w-3 mr-1" /> Expired
+  1448→                      </Badge>
+  1449→                    )}
+  1450→                  </td>
+  1451→                  <td className="p-3 text-white/60 text-xs">{sub.startedAt ? new Date(sub.startedAt).toLocaleDateString() : '-'}</td>
+  1452→                  <td className="p-3 text-white/60 text-xs">{sub.expiresAt ? new Date(sub.expiresAt).toLocaleDateString() : '-'}</td>
+  1453→                  <td className="p-3 text-right">
+  1454→                    <div className="flex items-center justify-end gap-1">
+  1455→                      {!sub.isActive && (
+  1456→                        <Button
+  1457→                          variant="ghost"
+  1458→                          size="sm"
+  1459→                          className="h-7 text-emerald-400 hover:bg-emerald-500/10 text-xs"
+  1460→                          onClick={() => updateMutation.mutate({ id: sub.id, action: 'activate' })}
+  1461→                          disabled={updateMutation.isPending}
+  1462→                        >
+  1463→                          <CheckCircle className="h-3 w-3 mr-1" /> Activate
+  1464→                        </Button>
+  1465→                      )}
+  1466→                      {sub.isActive && (
+  1467→                        <Button
+  1468→                          variant="ghost"
+  1469→                          size="sm"
+  1470→                          className="h-7 text-red-400 hover:bg-red-500/10 text-xs"
+  1471→                          onClick={() => updateMutation.mutate({ id: sub.id, action: 'deactivate' })}
+  1472→                          disabled={updateMutation.isPending}
+  1473→                        >
+  1474→                          <XCircle className="h-3 w-3 mr-1" /> Deactivate
+  1475→                        </Button>
+  1476→                      )}
+  1477→                      <Button
+  1478→                        variant="ghost"
+  1479→                        size="sm"
+  1480→                        className="h-7 text-blue-400 hover:bg-blue-500/10 text-xs"
+  1481→                        onClick={() => updateMutation.mutate({ id: sub.id, action: 'extend' })}
+  1482→                        disabled={updateMutation.isPending}
+  1483→                      >
+  1484→                        <Clock className="h-3 w-3 mr-1" /> Extend
+  1485→                      </Button>
+  1486→                    </div>
+  1487→                  </td>
+  1488→                </tr>
+  1489→              ))}
+  1490→              {(!data || data.length === 0) && (
+  1491→                <tr><td colSpan={7} className="p-6 text-center text-white/30">No subscriptions found</td></tr>
+  1492→              )}
+  1493→            </tbody>
+  1494→          </table>
+  1495→        </div>
+  1496→      )}
+  1497→    </div>
+  1498→  );
+  1499→}
+  1500→
+  1501→// ============ Users Section ============
+  1502→function UsersSection() {
+  1503→  const { data, isLoading } = useQuery({
+  1504→    queryKey: ['admin-users'],
+  1505→    queryFn: () => fetch('/api/admin/users').then((r) => r.json()),
+  1506→  });
+  1507→
+  1508→  const users = data?.users || data || [];
+  1509→
+  1510→  return (
+  1511→    <div>
+  1512→      <h2 className="text-xl font-bold mb-4 text-white">Users</h2>
+  1513→      {isLoading ? (
+  1514→        <div className="space-y-2">{[1, 2, 3].map((i) => <Skeleton key={i} className="h-12" />)}</div>
+  1515→      ) : (
+  1516→        <div className="overflow-x-auto border border-white/10 rounded-lg">
+  1517→          <table className="w-full text-sm">
+  1518→            <thead className="bg-white/5">
+  1519→              <tr>
+  1520→                <th className="text-left p-3 font-medium text-white/50">Name</th>
+  1521→                <th className="text-left p-3 font-medium text-white/50">Email</th>
+  1522→                <th className="text-left p-3 font-medium text-white/50">Role</th>
+  1523→                <th className="text-left p-3 font-medium text-white/50">Subscription</th>
+  1524→                <th className="text-left p-3 font-medium text-white/50">XP</th>
+  1525→              </tr>
+  1526→            </thead>
+  1527→            <tbody className="divide-y divide-white/5">
+  1528→              {users.map((u: any) => (
+  1529→                <tr key={u.id} className="hover:bg-white/5">
+  1530→                  <td className="p-3 font-medium text-white/80">
+  1531→                    <div className="flex items-center gap-2">
+  1532→                      {u.name || 'Unknown'}
+  1533→                      {u.subscription?.isActive && (
+  1534→                        <Crown className="h-3.5 w-3.5 text-amber-400" />
+  1535→                      )}
+  1536→                    </div>
+  1537→                  </td>
+  1538→                  <td className="p-3 text-white/60">{u.email}</td>
+  1539→                  <td className="p-3">
+  1540→                    <Badge variant={u.role === 'admin' ? 'default' : 'secondary'} className={`text-[10px] ${u.role === 'admin' ? 'bg-blue-600 text-white' : 'bg-white/10 text-white/60'}`}>
+  1541→                      {u.role}
+  1542→                    </Badge>
+  1543→                  </td>
+  1544→                  <td className="p-3">
+  1545→                    {u.subscription?.isActive ? (
+  1546→                      <Badge className="bg-amber-500/20 text-amber-400 border-amber-500/30" variant="secondary">
+  1547→                        <Crown className="h-3 w-3 mr-1" /> {u.subscription.plan}
+  1548→                      </Badge>
+  1549→                    ) : u.subscription ? (
+  1550→                      <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30" variant="secondary">
+  1551→                        Expired
+  1552→                      </Badge>
+  1553→                    ) : (
+  1554→                      <Badge className="bg-gray-500/20 text-gray-400 border-gray-500/30" variant="secondary">
+  1555→                        Free
+  1556→                      </Badge>
+  1557→                    )}
+  1558→                  </td>
+  1559→                  <td className="p-3 text-white/80">{u.xp || 0}</td>
+  1560→                </tr>
+  1561→              ))}
+  1562→            </tbody>
+  1563→          </table>
+  1564→        </div>
+  1565→      )}
+  1566→    </div>
+  1567→  );
+  1568→}
+  1569→

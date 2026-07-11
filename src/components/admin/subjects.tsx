@@ -41,6 +41,7 @@ interface Subject {
   description?: string;
   order?: number;
   testCount?: number;
+  materialCount?: number;
   premiumPrice?: number;
 }
 
@@ -72,6 +73,11 @@ export default function Subjects() {
   // number is always accurate, and stale `testCount` values are written back
   // to subject docs to keep Firestore consistent.
   const [testCountMap, setTestCountMap] = useState<Record<string, number>>({});
+  // Live study-material count per subject (Previous Papers / Notes / Syllabus
+  // in the `study_materials` collection). Same pattern as testCountMap: kept
+  // in state for instant display and written back to subject docs' stored
+  // `materialCount` field so the Flutter user app sees the correct number.
+  const [materialCountMap, setMaterialCountMap] = useState<Record<string, number>>({});
   const itemsRef = useRef<Subject[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
@@ -266,7 +272,30 @@ export default function Subjects() {
       if (needsCommit) batch.commit().catch(() => {});
     });
 
-    return () => { u1(); u2(); u3(); };
+    // Live study_materials counts → { subjectId: count }. Same pattern as
+    // u3 (tests): build a count map for instant display and write stale
+    // `materialCount` values back to subject docs so the Flutter app's
+    // SubjectDetail screen can read the correct number directly.
+    const u4 = onSnapshot(collection(db, 'study_materials'), (snap) => {
+      const map: Record<string, number> = {};
+      snap.docs.forEach((d) => {
+        const subjId = (d.data() as any)?.subjectId;
+        if (subjId) map[subjId] = (map[subjId] || 0) + 1;
+      });
+      setMaterialCountMap(map);
+      const batch = writeBatch(db);
+      let needsCommit = false;
+      itemsRef.current.forEach((s) => {
+        const correct = map[s.id] || 0;
+        if ((s.materialCount || 0) !== correct) {
+          batch.update(doc(db, 'subjects', s.id), { materialCount: correct, updatedAt: serverTimestamp() });
+          needsCommit = true;
+        }
+      });
+      if (needsCommit) batch.commit().catch(() => {});
+    });
+
+    return () => { u1(); u2(); u3(); u4(); };
   }, []);
 
   const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
@@ -448,6 +477,7 @@ export default function Subjects() {
                     <th className="text-left p-4 font-medium">Category</th>
                     <th className="text-left p-4 font-medium">Slug</th>
                     <th className="text-center p-4 font-medium">Tests</th>
+                    <th className="text-center p-4 font-medium">Files</th>
                     <th className="text-center p-4 font-medium">Order</th>
                     <th className="text-right p-4 font-medium">Actions</th>
                   </tr>
@@ -474,6 +504,11 @@ export default function Subjects() {
                       <td className="p-4"><Badge variant="outline" className="border-slate-700 text-slate-300">{categoryName(item.categoryId)}</Badge></td>
                       <td className="p-4 text-slate-500 text-xs">/{item.slug}</td>
                       <td className="p-4 text-center text-slate-400">{testCountMap[item.id] || 0}</td>
+                      <td className="p-4 text-center">
+                        <Badge variant="outline" className="border-emerald-700/60 text-emerald-400 bg-emerald-950/40">
+                          {materialCountMap[item.id] || 0}
+                        </Badge>
+                      </td>
                       <td className="p-4 text-center text-slate-400">{item.order || 0}</td>
                       <td className="p-4">
                         <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">

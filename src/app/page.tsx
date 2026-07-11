@@ -15,6 +15,7 @@ const Subjects = dynamic(() => import('@/components/admin/subjects'), { ssr: fal
 const Tests = dynamic(() => import('@/components/admin/tests'), { ssr: false });
 const DailyQuiz = dynamic(() => import('@/components/admin/daily-quiz'), { ssr: false });
 const PreviousPapers = dynamic(() => import('@/components/admin/previous-papers'), { ssr: false });
+const StudyMaterials = dynamic(() => import('@/components/admin/study-materials'), { ssr: false });
 const Questions = dynamic(() => import('@/components/admin/questions'), { ssr: false });
 const Announcements = dynamic(() => import('@/components/admin/announcements'), { ssr: false });
 const UpcomingExams = dynamic(() => import('@/components/admin/upcoming-exams'), { ssr: false });
@@ -40,6 +41,7 @@ function AdminContent() {
     case 'tests': return <Tests />;
     case 'daily-quiz': return <DailyQuiz />;
     case 'previous-papers': return <PreviousPapers />;
+    case 'study-materials': return <StudyMaterials />;
     case 'questions': return <Questions />;
     case 'announcements': return <Announcements />;
     case 'upcoming-exams': return <UpcomingExams />;

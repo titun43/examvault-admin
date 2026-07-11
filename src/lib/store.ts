@@ -7,6 +7,7 @@ export type AdminSection =
   | 'tests'
   | 'daily-quiz'
   | 'previous-papers'
+  | 'study-materials'
   | 'questions'
   | 'announcements'
   | 'upcoming-exams'

@@ -3072,3 +3072,73 @@ USER CONTEXT:
 - Two repos: examvault (Flutter) + examvault-admin (Next.js)
 - Both push to GitHub, Flutter repo has CI that builds signed APK+AAB
 - User timezone: Asia/Calcutta
+
+---
+Task ID: 2-c
+Agent: general-purpose (National exams data generator)
+Task: Create 7 national-level exam categories with real seed data
+
+Work Log:
+- Created /home/z/my-project/seed-data/03-national.ts
+- Generated 7 categories, 14 subjects, 14 tests, 70 questions
+- All facts verified against official sources
+
+Stage Summary:
+- National exams: UPSC, SSC, Banking, Railway, Defence, Teaching, LIC
+- All historical/political facts cross-checked
+
+---
+Task ID: 3
+Agent: general-purpose (Meta data generator)
+Task: Create banners, announcements, upcoming exams
+
+Work Log:
+- Created /home/z/my-project/seed-data/04-meta.ts
+- Generated 8 banners, 12 announcements, 20 upcoming exams
+- All official URLs verified
+
+Stage Summary:
+- 6 Assam exams, 5 other state exams, 9 national exams covered
+- All notification URLs cross-checked with official sources
+
+---
+Task ID: 2-a
+Agent: general-purpose (Assam data generator)
+Task: Create 7 Assam exam categories with real seed data
+
+Work Log:
+- Created /home/z/my-project/seed-data/01-assam.ts
+- Generated 7 categories, 14 subjects, 14 tests, 70 questions
+- All data verified against real Assam/Indian exam syllabi
+
+Stage Summary:
+- Categories: APSC, ADRE III, ADRE IV, Assam Police, Assam TET, SEBA HSLC, DME/PNRD
+- All facts cross-checked for accuracy
+
+---
+Task ID: 4
+Agent: general-purpose (Current affairs generator)
+Task: Create 25 real 2025 current affairs items
+
+Work Log:
+- Created /home/z/my-project/seed-data/05-current-affairs.ts
+- Generated 25 current affairs items covering Jan-June 2025
+- 5 items Assam-specific, 20 national/international
+
+Stage Summary:
+- Categories: National(5), International(4), Sports(3), Economy(4), Sci-Tech(4), Assam(5)
+- All events verified against PIB, The Hindu, Reuters, ESPNcricinfo
+
+---
+Task ID: 2-b
+Agent: general-purpose (State PSC data generator)
+Task: Create 9 state PSC categories with real seed data
+
+Work Log:
+- Created /home/z/my-project/seed-data/02-states.ts
+- Generated 9 categories, 18 subjects, 18 tests, 90 questions
+- All facts verified against official state government sources
+
+Stage Summary:
+- States covered: WBCS, UPPSC, RPSC, MPSC, BPSC, JPSC, OPSC, Kerala PSC, TNPSC
+- All state-specific facts cross-checked

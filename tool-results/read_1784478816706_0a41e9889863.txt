@@ -1,0 +1,1050 @@
+     1→'use client';
+     2→
+     3→import { useEffect, useState, useRef } from 'react';
+     4→import {
+     5→  collection,
+     6→  onSnapshot,
+     7→  addDoc,
+     8→  updateDoc,
+     9→  deleteDoc,
+    10→  doc,
+    11→  serverTimestamp,
+    12→  writeBatch,
+    13→  getDocs,
+    14→  query,
+    15→  where,
+    16→} from 'firebase/firestore';
+    17→import { db } from '@/lib/firebase';
+    18→import { deleteItems } from '@/lib/admin-firestore';
+    19→import { useAppStore } from '@/lib/store';
+    20→import { Checkbox } from '@/components/ui/checkbox';
+    21→import { Button } from '@/components/ui/button';
+    22→import { Input } from '@/components/ui/input';
+    23→import { Label } from '@/components/ui/label';
+    24→import { Textarea } from '@/components/ui/textarea';
+    25→import { BulkTextarea } from './bulk-textarea';
+    26→import { resolveSubjectIdByName, resolveCategoryIdByName } from '@/lib/bulk-resolve';
+    27→import { Card, CardContent } from '@/components/ui/card';
+    28→import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '@/components/ui/dialog';
+    29→import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
+    30→import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+    31→import { Switch } from '@/components/ui/switch';
+    32→import { Badge } from '@/components/ui/badge';
+    33→import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet, IndianRupee, Unlock } from 'lucide-react';
+    34→import { toast } from 'sonner';
+    35→import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
+    36→
+    37→interface Test {
+    38→  id: string;
+    39→  subjectId: string;
+    40→  title: string;
+    41→  slug: string;
+    42→  type: string;
+    43→  duration: number;
+    44→  totalMarks: number;
+    45→  passingMarks: number;
+    46→  isPublished: boolean;
+    47→  difficulty: string;
+    48→  negativeMarking: boolean;
+    49→  negativeMarks: number;
+    50→  instructions?: string;
+    51→  year?: number;
+    52→  examSession?: string;
+    53→  isPremium: boolean;
+    54→  price: number;
+    55→  questionCount?: number;
+    56→  attemptCount?: number;
+    57→}
+    58→
+    59→interface Subject { id: string; name: string; categoryId: string; }
+    60→interface Category { id: string; name: string; isPremium?: boolean; }
+    61→
+    62→const TYPE_COLORS: Record<string, string> = {
+    63→  mock: 'border-emerald-700 text-emerald-400 bg-emerald-950/40',
+    64→  previousYear: 'border-amber-700 text-amber-400 bg-amber-950/40',
+    65→  dailyQuiz: 'border-purple-700 text-purple-400 bg-purple-950/40',
+    66→  practice: 'border-cyan-700 text-cyan-400 bg-cyan-950/40',
+    67→  subjectwise: 'border-pink-700 text-pink-400 bg-pink-950/40',
+    68→};
+    69→const TYPE_LABELS: Record<string, string> = {
+    70→  mock: 'Mock Test', previousYear: 'Previous Year', dailyQuiz: 'Daily Quiz', practice: 'Practice', subjectwise: 'Subject-wise',
+    71→};
+    72→
+    73→const emptyForm = {
+    74→  subjectId: '', title: '', slug: '', type: 'mock', duration: 60, totalMarks: 100, passingMarks: 40,
+    75→  isPublished: true, difficulty: 'medium', negativeMarking: false, negativeMarks: 0.25,
+    76→  instructions: '', year: new Date().getFullYear(), examSession: '', isPremium: false, price: 0,
+    77→};
+    78→
+    79→interface TestsProps {
+    80→  /** When set, locks the list to this test type and pre-fills the Add form
+    81→   *  with it. Used by the dedicated "Daily Quiz" nav section so admins can
+    82→   *  manage daily quizzes without touching other test types. */
+    83→  fixedType?: string;
+    84→}
+    85→
+    86→export default function Tests({ fixedType }: TestsProps = {}) {
+    87→  const { setCurrentSection, setSelectedTest } = useAppStore();
+    88→  const [items, setItems] = useState<Test[]>([]);
+    89→  const [subjects, setSubjects] = useState<Subject[]>([]);
+    90→  const [categories, setCategories] = useState<Category[]>([]);
+    91→  const [loading, setLoading] = useState(true);
+    92→  const [dialogOpen, setDialogOpen] = useState(false);
+    93→  const [editingId, setEditingId] = useState<string | null>(null);
+    94→  const [form, setForm] = useState(emptyForm);
+    95→  const [saving, setSaving] = useState(false);
+    96→  const [deleteId, setDeleteId] = useState<string | null>(null);
+    97→  const [bulkOpen, setBulkOpen] = useState(false);
+    98→  const [bulkText, setBulkText] = useState('');
+    99→  const [bulkSaving, setBulkSaving] = useState(false);
+   100→  // Bulk delete state
+   101→  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+   102→  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
+   103→  const [bulkDeleting, setBulkDeleting] = useState(false);
+   104→  // Bulk "make free" state — resets isPremium=false, price=0.
+   105→  const [bulkFreeOpen, setBulkFreeOpen] = useState(false);
+   106→  const [bulkFreeAllOpen, setBulkFreeAllOpen] = useState(false);
+   107→  const [bulkFreeing, setBulkFreeing] = useState(false);
+   108→
+   109→  // Live question count per test. Computed from the questions collection so
+   110→  // the number is always accurate (manual add, bulk import, seed, deletes
+   111→  // via other tabs — all count). The stored `questionCount` field on the
+   112→  // Test doc is only updated by the questions.tsx single-add/delete path;
+   113→  // bulk-import does NOT update it, so without this live map the "Qs"
+   114→  // column would show 0 right after a bulk question import.
+   115→  //
+   116→  // We ALSO write the correct count back to each test doc whose stored
+   117→  // `questionCount` has drifted, so the Flutter user app (which reads
+   118→  // `test.questionCount`) stays in sync without a manual re-save.
+   119→  const [questionCountMap, setQuestionCountMap] = useState<Record<string, number>>({});
+   120→  const itemsRef = useRef<Test[]>([]);
+   121→  useEffect(() => { itemsRef.current = items; }, [items]);
+   122→
+   123→  // When fixedType is set, derive a filtered view + friendly labels.
+   124→  const fixedLabel = fixedType ? (TYPE_LABELS[fixedType] || fixedType) : null;
+   125→  const visibleItems = fixedType ? items.filter((t) => t.type === fixedType) : items;
+   126→
+   127→  const BULK_SAMPLE = '[{"title":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0,"price":0},{"title":"SSC Mock 2","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25,"price":29}]';
+   128→
+   129→  const CSV_HEADERS = ['title', 'description', 'duration', 'totalMarks', 'passingMarks', 'difficulty', 'type', 'subjectName', 'categoryName', 'isPremium', 'isPublished'];
+   130→  const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
+   131→    ['SSC Mock 1', 'Full mock test', 60, 100, 40, 'medium', 'mock', 'Quantitative Aptitude', 'SSC', false, true],
+   132→    ['SSC Mock 2', 'Hard mock test', 90, 150, 60, 'hard', 'mock', 'Quantitative Aptitude', 'SSC', true, true],
+   133→  ];
+   134→
+   135→  const handleBulkImport = async () => {
+   136→    let parsed: any;
+   137→    const text = bulkText.trim();
+   138→    if (!text) {
+   139→      toast.error('Please paste JSON or CSV data first');
+   140→      return;
+   141→    }
+   142→    let isCsv = false;
+   143→    try {
+   144→      parsed = JSON.parse(text);
+   145→    } catch {
+   146→      try {
+   147→        const rows = parseCsv(text);
+   148→        if (rows.length < 2) {
+   149→          toast.error('CSV must have a header row and at least 1 data row');
+   150→          return;
+   151→        }
+   152→        const headers = rows[0].map((h) => h.trim());
+   153→        parsed = rows
+   154→          .slice(1)
+   155→          .filter((r) => r.some((c) => c.trim() !== ''))
+   156→          .map((r) => {
+   157→            const obj: any = {};
+   158→            headers.forEach((h, idx) => { obj[h] = r[idx] ?? ''; });
+   159→            if ('duration' in obj) obj.duration = Number(obj.duration) || 0;
+   160→            if ('totalMarks' in obj) obj.totalMarks = Number(obj.totalMarks) || 0;
+   161→            if ('passingMarks' in obj) obj.passingMarks = Number(obj.passingMarks) || 0;
+   162→            if ('isPremium' in obj) obj.isPremium = String(obj.isPremium).toLowerCase() === 'true';
+   163→            if ('isPublished' in obj) obj.isPublished = String(obj.isPublished).toLowerCase() === 'true';
+   164→            return obj;
+   165→          });
+   166→        isCsv = true;
+   167→      } catch (e: any) {
+   168→        toast.error('Invalid JSON or CSV: ' + (e?.message || 'parse error'));
+   169→        return;
+   170→      }
+   171→    }
+   172→    if (!Array.isArray(parsed)) {
+   173→      toast.error('Input must be a JSON array or a CSV with a header row');
+   174→      return;
+   175→    }
+   176→    setBulkSaving(true);
+   177→    try {
+   178→      // ---- Name-based parent resolution ----
+   179→      // Each row can use EITHER `subjectId` (explicit Firestore doc id —
+   180→      // backward compatible) OR `subjectName` (resolved to id via Firestore
+   181→      // lookup, optionally disambiguated by `categoryName`). If both are
+   182→      // present, subjectId wins. If neither is present, the row is skipped.
+   183→      //
+   184→      // We ALSO resolve categoryName -> categoryId here so the row keeps a
+   185→      // denormalized categoryId (the Test model stores subjectId only, but
+   186→      // some downstream queries expect categoryId to be present too).
+   187→      // -----------------------------------------------------------------
+   188→      const skipList: { row: number; reason: string }[] = [];
+   189→      const resolved: any[] = [];
+   190→      // Per-import caches so we hit Firestore once per unique name.
+   191→      const subjIdCache = new Map<string, string | null>();
+   192→      const catIdCache = new Map<string, string | null>();
+   193→
+   194→      for (let i = 0; i < parsed.length; i++) {
+   195→        const item = parsed[i];
+   196→        const rowNo = i + 1;
+   197→        let subjectId = (item.subjectId ?? '').toString().trim();
+   198→        const subjName = (item.subjectName ?? '').toString().trim();
+   199→        const catName = (item.categoryName ?? '').toString().trim();
+   200→
+   201→        // Cache key for subject: name + '||' + categoryName (disambiguator).
+   202→        const subjKey = `${subjName.toLowerCase()}||${catName.toLowerCase()}`;
+   203→
+   204→        if (!subjectId && subjName) {
+   205→          if (subjIdCache.has(subjKey)) {
+   206→            subjectId = subjIdCache.get(subjKey) ?? '';
+   207→          } else {
+   208→            const r = await resolveSubjectIdByName(subjName, catName || undefined);
+   209→            subjIdCache.set(subjKey, r.id);
+   210→            subjectId = r.id ?? '';
+   211→          }
+   212→          if (!subjectId) {
+   213→            skipList.push({
+   214→              row: rowNo,
+   215→              reason: `subject "${subjName}"${catName ? ` (in ${catName})` : ''} not found`,
+   216→            });
+   217→            continue;
+   218→          }
+   219→        }
+   220→        if (!subjectId) {
+   221→          skipList.push({ row: rowNo, reason: 'no subjectId or subjectName provided' });
+   222→          continue;
+   223→        }
+   224→
+   225→        const payload = { ...item };
+   226→        payload.subjectId = subjectId;
+   227→        delete payload.subjectName;
+   228→        // Optionally denormalize categoryId if the admin gave categoryName.
+   229→        // (Skip if the row already had categoryId — explicit wins.)
+   230→        if (catName && !payload.categoryId) {
+   231→          if (catIdCache.has(catName.toLowerCase())) {
+   232→            const cid = catIdCache.get(catName.toLowerCase());
+   233→            if (cid) payload.categoryId = cid;
+   234→          } else {
+   235→            const c = await resolveCategoryIdByName(catName);
+   236→            catIdCache.set(catName.toLowerCase(), c.id);
+   237→            if (c.id) payload.categoryId = c.id;
+   238→          }
+   239→        }
+   240→        if (!payload.createdAt) payload.createdAt = serverTimestamp();
+   241→        if (!payload.updatedAt) payload.updatedAt = serverTimestamp();
+   242→        resolved.push(payload);
+   243→      }
+   244→
+   245→      if (resolved.length === 0) {
+   246→        const sample = skipList.slice(0, 3).map((s) => `Row ${s.row}: ${s.reason}`).join('; ');
+   247→        toast.error(`No rows to import. ${sample}${skipList.length > 3 ? ` (+${skipList.length - 3} more)` : ''}`);
+   248→        return;
+   249→      }
+   250→
+   251→      // Build a subjectId -> category.isPremium lookup so imported tests
+   252→      // inherit premium status from their parent category. A test inside a
+   253→      // premium category MUST be premium, otherwise the Flutter fast-path
+   254→      // (`if (!test.isPaid) grant`) lets users take it for free.
+   255→      const subjectPremiumMap = new Map<string, boolean>();
+   256→      for (const s of subjects) {
+   257→        const cat = categories.find((c) => c.id === s.categoryId);
+   258→        subjectPremiumMap.set(s.id, !!cat?.isPremium);
+   259→      }
+   260→      let autoPremiumCount = 0;
+   261→
+   262→      const batch = writeBatch(db);
+   263→      const colRef = collection(db, 'tests');
+   264→      resolved.forEach((payload) => {
+   265→        // Inherit premium from parent category. If the admin explicitly set
+   266→        // isPremium=false on a row whose category is premium, force it true.
+   267→        const sid = payload.subjectId;
+   268→        if (typeof sid === 'string' && subjectPremiumMap.get(sid)) {
+   269→          if (!payload.isPremium) autoPremiumCount++;
+   270→          payload.isPremium = true;
+   271→        }
+   272→        const ref = doc(colRef);
+   273→        batch.set(ref, payload);
+   274→      });
+   275→      await batch.commit();
+   276→
+   277→      // ---- Sync testCount on every affected subject doc ----
+   278→      // The Subject model stores a denormalized `testCount` field that the
+   279→      // Flutter user app reads directly. The single-add / single-delete
+   280→      // paths update this field, but bulk-import didn't — so the count
+   281→      // stayed stale until someone opened the Subjects admin page (whose
+   282→      // own onSnapshot writeback would eventually fix it). We now write the
+   283→      // ABSOLUTE count via a fresh getDocs query per affected subject, so
+   284→      // the Flutter app sees the right number immediately.
+   285→      const affectedSubjectIds = Array.from(
+   286→        new Set(resolved.map((r) => r.subjectId).filter(Boolean)),
+   287→      );
+   288→      await Promise.all(
+   289→        affectedSubjectIds.map(async (subjectId) => {
+   290→          try {
+   291→            const snap = await getDocs(
+   292→              query(collection(db, 'tests'), where('subjectId', '==', subjectId)),
+   293→            );
+   294→            await updateDoc(doc(db, 'subjects', subjectId), {
+   295→              testCount: snap.size,
+   296→              updatedAt: serverTimestamp(),
+   297→            });
+   298→          } catch (e) {
+   299→            console.warn('[tests bulk] count sync failed for', subjectId, e);
+   300→          }
+   301→        }),
+   302→      );
+   303→
+   304→      const skippedNote = skipList.length > 0 ? `, ${skipList.length} skipped` : '';
+   305→      const autoNote = autoPremiumCount > 0
+   306→        ? ` (${autoPremiumCount} auto-marked premium — parent category is premium)`
+   307→        : '';
+   308→      toast.success(`Imported ${resolved.length} test${resolved.length === 1 ? '' : 's'}${skippedNote}` + (isCsv ? ' (from CSV)' : '') + autoNote);
+   309→      if (skipList.length > 0) {
+   310→        console.warn('[tests bulk] skipped rows:', skipList);
+   311→      }
+   312→      setBulkOpen(false);
+   313→      setBulkText('');
+   314→    } catch (err: any) {
+   315→      toast.error(err?.message || 'Bulk import failed');
+   316→    } finally {
+   317→      setBulkSaving(false);
+   318→    }
+   319→  };
+   320→
+   321→  useEffect(() => {
+   322→    const u1 = onSnapshot(collection(db, 'tests'), (snap) => {
+   323→      setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Test));
+   324→      setLoading(false);
+   325→    }, () => setLoading(false));
+   326→    const u2 = onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Subject)));
+   327→    const u3 = onSnapshot(collection(db, 'categories'), (snap) => setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Category)));
+   328→
+   329→    // Live question counts → { testId: count }. Kept in state for instant
+   330→    // display in the "Qs" column, AND stale `questionCount` values are
+   331→    // written back to the test docs so the Flutter user app (which reads
+   332→    // `test.questionCount`) shows the right number too.
+   333→    const u4 = onSnapshot(collection(db, 'questions'), (snap) => {
+   334→      const map: Record<string, number> = {};
+   335→      snap.docs.forEach((d) => {
+   336→        const tId = (d.data() as any)?.testId;
+   337→        if (tId) map[tId] = (map[tId] || 0) + 1;
+   338→      });
+   339→      setQuestionCountMap(map);
+   340→      const batch = writeBatch(db);
+   341→      let needsCommit = false;
+   342→      itemsRef.current.forEach((t) => {
+   343→        const correct = map[t.id] || 0;
+   344→        if ((t.questionCount || 0) !== correct) {
+   345→          batch.update(doc(db, 'tests', t.id), { questionCount: correct, updatedAt: serverTimestamp() });
+   346→          needsCommit = true;
+   347→        }
+   348→      });
+   349→      if (needsCommit) batch.commit().catch(() => {});
+   350→    });
+   351→
+   352→    return () => { u1(); u2(); u3(); u4(); };
+   353→  }, []);
+   354→
+   355→  const slugify = (s: string) => s.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '');
+   356→  const subjectName = (id: string) => subjects.find((s) => s.id === id)?.name || '—';
+   357→  const categoryName = (sid: string) => {
+   358→    const sub = subjects.find((s) => s.id === sid);
+   359→    if (!sub) return '—';
+   360→    return categories.find((c) => c.id === sub.categoryId)?.name || '—';
+   361→  };
+   362→
+   363→  const openAdd = () => {
+   364→    setForm({ ...emptyForm, type: fixedType || 'mock' });
+   365→    setEditingId(null);
+   366→    setDialogOpen(true);
+   367→  };
+   368→  const openEdit = (item: Test) => {
+   369→    setForm({
+   370→      subjectId: item.subjectId, title: item.title, slug: item.slug, type: item.type || 'mock',
+   371→      duration: item.duration, totalMarks: item.totalMarks, passingMarks: item.passingMarks,
+   372→      isPublished: item.isPublished, difficulty: item.difficulty || 'medium',
+   373→      negativeMarking: item.negativeMarking, negativeMarks: item.negativeMarks || 0.25,
+   374→      instructions: item.instructions || '', year: item.year || new Date().getFullYear(),
+   375→      examSession: item.examSession || '', isPremium: item.isPremium, price: item.price ?? 0,
+   376→    });
+   377→    setEditingId(item.id);
+   378→    setDialogOpen(true);
+   379→  };
+   380→
+   381→  const handleSave = async () => {
+   382→    if (!form.title.trim()) { toast.error('Title is required'); return; }
+   383→    if (!form.subjectId) { toast.error('Please select a subject'); return; }
+   384→    setSaving(true);
+   385→    try {
+   386→      // ---- Inherit premium status from the parent category ----
+   387→      // CRITICAL: a test inside a PREMIUM category must itself be premium,
+   388→      // otherwise the Flutter `take_test_screen` fast-path
+   389→      // (`if (!test.isPaid) grant`) lets users take it for free — bypassing
+   390→      // the category paywall. If the admin left "Premium test" OFF but the
+   391→      // test's subject's category is premium, force it ON and warn the admin.
+   392→      let effectiveIsPremium = form.isPremium;
+   393→      const subj = subjects.find((s) => s.id === form.subjectId);
+   394→      const cat = subj ? categories.find((c) => c.id === subj.categoryId) : undefined;
+   395→      if (cat?.isPremium && !form.isPremium) {
+   396→        effectiveIsPremium = true;
+   397→        toast.warning(
+   398→          `This test's category "${cat.name}" is premium — the test has been marked premium automatically so it isn't accessible for free.`,
+   399→        );
+   400→      }
+   401→
+   402→      const data: any = {
+   403→        subjectId: form.subjectId,
+   404→        title: form.title.trim(),
+   405→        slug: form.slug ? slugify(form.slug) : slugify(form.title),
+   406→        // Force the fixed type when in fixedType mode (Daily Quiz section)
+   407→        type: fixedType || form.type,
+   408→        duration: Number(form.duration) || 60,
+   409→        totalMarks: Number(form.totalMarks) || 100,
+   410→        passingMarks: Number(form.passingMarks) || 40,
+   411→        isPublished: form.isPublished,
+   412→        difficulty: form.difficulty,
+   413→        negativeMarking: form.negativeMarking,
+   414→        negativeMarks: Number(form.negativeMarks) || 0,
+   415→        instructions: form.instructions || null,
+   416→        isPremium: effectiveIsPremium,
+   417→        price: Number(form.price) || 0,
+   418→      };
+   419→      if ((fixedType || form.type) === 'previousYear') {
+   420→        data.year = Number(form.year) || null;
+   421→        data.examSession = form.examSession || null;
+   422→      }
+   423→      if (editingId) {
+   424→        await updateDoc(doc(db, 'tests', editingId), { ...data, updatedAt: serverTimestamp() });
+   425→        toast.success('Test updated');
+   426→      } else {
+   427→        await addDoc(collection(db, 'tests'), { ...data, questionCount: 0, attemptCount: 0, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+   428→        toast.success('Test added');
+   429→      }
+   430→      setDialogOpen(false);
+   431→    } catch (err: any) {
+   432→      toast.error(err?.message || 'Save failed');
+   433→    } finally {
+   434→      setSaving(false);
+   435→    }
+   436→  };
+   437→
+   438→  const handleDelete = async () => {
+   439→    if (!deleteId) return;
+   440→    try {
+   441→      await deleteDoc(doc(db, 'tests', deleteId));
+   442→      toast.success('Test deleted');
+   443→      setDeleteId(null);
+   444→    } catch (err: any) { toast.error(err?.message || 'Delete failed'); }
+   445→  };
+   446→
+   447→  // ---- Bulk selection helpers ----
+   448→  const filteredIds = visibleItems.map((t) => t.id);
+   449→  const allFilteredSelected = filteredIds.length > 0 && filteredIds.every((id) => selectedIds.has(id));
+   450→  const someFilteredSelected = filteredIds.some((id) => selectedIds.has(id)) && !allFilteredSelected;
+   451→
+   452→  const toggleSelectAll = () => {
+   453→    setSelectedIds((prev) => {
+   454→      const next = new Set(prev);
+   455→      if (allFilteredSelected) {
+   456→        filteredIds.forEach((id) => next.delete(id));
+   457→      } else {
+   458→        filteredIds.forEach((id) => next.add(id));
+   459→      }
+   460→      return next;
+   461→    });
+   462→  };
+   463→
+   464→  const toggleSelectOne = (id: string) => {
+   465→    setSelectedIds((prev) => {
+   466→      const next = new Set(prev);
+   467→      if (next.has(id)) next.delete(id);
+   468→      else next.add(id);
+   469→      return next;
+   470→    });
+   471→  };
+   472→
+   473→  const clearSelection = () => setSelectedIds(new Set());
+   474→
+   475→  const handleBulkDelete = async () => {
+   476→    if (selectedIds.size === 0) return;
+   477→    setBulkDeleting(true);
+   478→    try {
+   479→      const ids = Array.from(selectedIds);
+   480→      await deleteItems('tests', ids);
+   481→      toast.success(`${ids.length} test${ids.length === 1 ? '' : 's'} deleted`);
+   482→      setBulkDeleteOpen(false);
+   483→      clearSelection();
+   484→    } catch (err: any) {
+   485→      toast.error(err?.message || 'Bulk delete failed');
+   486→    } finally {
+   487→      setBulkDeleting(false);
+   488→    }
+   489→  };
+   490→
+   491→  // Reset tests to free (isPremium=false, price=0) in a single Firestore batch.
+   492→  // all=true -> every test; all=false -> only selected tests.
+   493→  const handleBulkMakeFree = async (all: boolean) => {
+   494→    const ids = all ? items.map((t) => t.id) : Array.from(selectedIds);
+   495→    if (ids.length === 0) {
+   496→      toast.error('No tests to update');
+   497→      return;
+   498→    }
+   499→    setBulkFreeing(true);
+   500→    try {
+   501→      const batch = writeBatch(db);
+   502→      for (const id of ids) {
+   503→        const ref = doc(db, 'tests', id);
+   504→        batch.update(ref, { isPremium: false, price: 0 });
+   505→      }
+   506→      await batch.commit();
+   507→      toast.success(`${ids.length} test${ids.length === 1 ? '' : 's'} reset to free`);
+   508→      setBulkFreeOpen(false);
+   509→      setBulkFreeAllOpen(false);
+   510→      if (!all) clearSelection();
+   511→    } catch (err: any) {
+   512→      toast.error(err?.message || 'Failed to reset tests');
+   513→    } finally {
+   514→      setBulkFreeing(false);
+   515→    }
+   516→  };
+   517→
+   518→  const manageQuestions = (test: Test) => {
+   519→    setSelectedTest(test.id, test.title);
+   520→    setCurrentSection('questions');
+   521→  };
+   522→
+   523→  return (
+   524→    <div className="space-y-4">
+   525→      <div className="flex items-center justify-between gap-3">
+   526→        <div>
+   527→          <h3 className="text-white font-semibold text-lg flex items-center gap-2">
+   528→            <FileText className="w-5 h-5 text-emerald-400" /> {fixedLabel || 'Tests'}
+   529→          </h3>
+   530→          <p className="text-slate-500 text-sm">
+   531→            {fixedType
+   532→              ? `Manage ${fixedLabel} tests — published ones appear in the user app's ${fixedLabel} screen.`
+   533→              : 'Mock tests, daily quizzes, practice sets'}
+   534→          </p>
+   535→        </div>
+   536→        <div className="flex items-center gap-2">
+   537→          <Button onClick={openAdd} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   538→            <Plus className="w-4 h-4 mr-1" /> {fixedType ? `Add ${fixedLabel}` : 'Add Test'}
+   539→          </Button>
+   540→          {!fixedType && (
+   541→            <Button
+   542→              variant="outline"
+   543→              onClick={() => setBulkOpen(true)}
+   544→              className="border-slate-700 text-slate-200 hover:bg-slate-800"
+   545→            >
+   546→              <Layers className="w-4 h-4 mr-1" /> Bulk Add
+   547→            </Button>
+   548→          )}
+   549→        </div>
+   550→      </div>
+   551→
+   552→      {loading ? (
+   553→        <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-emerald-500 animate-spin" /></div>
+   554→      ) : visibleItems.length === 0 ? (
+   555→        <Card className="bg-slate-900 border-slate-800 border-dashed">
+   556→          <CardContent className="py-16 text-center">
+   557→            <FileText className="w-12 h-12 text-slate-700 mx-auto mb-3" />
+   558→            <p className="text-slate-500">
+   559→              {fixedType
+   560→                ? `No ${fixedLabel} tests yet. Add your first one!`
+   561→                : 'No tests yet. Add your first one!'}
+   562→            </p>
+   563→          </CardContent>
+   564→        </Card>
+   565→      ) : (
+   566→        <>
+   567→        {selectedIds.size > 0 && (
+   568→          <div className="flex items-center gap-2 rounded-md border border-red-900/50 bg-red-950/30 px-3 py-1.5 flex-wrap">
+   569→            <Badge variant="outline" className="bg-red-950/60 text-red-300 border-red-800/50">
+   570→              {selectedIds.size} selected
+   571→            </Badge>
+   572→            <Button
+   573→              size="sm"
+   574→              variant="destructive"
+   575→              className="h-8 bg-red-600 hover:bg-red-700"
+   576→              onClick={() => setBulkDeleteOpen(true)}
+   577→            >
+   578→              <Trash2 className="w-3.5 h-3.5 mr-1" /> Delete Selected
+   579→            </Button>
+   580→            <Button
+   581→              size="sm"
+   582→              variant="outline"
+   583→              className="h-8 border-emerald-700 text-emerald-300 hover:bg-emerald-950/40"
+   584→              onClick={() => setBulkFreeOpen(true)}
+   585→              title="Reset selected tests to free (isPremium=false, price=0)"
+   586→            >
+   587→              <Unlock className="w-3.5 h-3.5 mr-1" /> Make Selected Free
+   588→            </Button>
+   589→            <Button
+   590→              size="sm"
+   591→              variant="ghost"
+   592→              className="h-8 text-slate-400 hover:bg-slate-800"
+   593→              onClick={clearSelection}
+   594→              title="Clear selection"
+   595→            >
+   596→              <X className="w-3.5 h-3.5" />
+   597→            </Button>
+   598→          </div>
+   599→        )}
+   600→        {/* Always-available "Make ALL tests free" banner */}
+   601→        {items.length > 0 && (
+   602→          <div className="flex items-center gap-2 rounded-md border border-amber-900/50 bg-amber-950/20 px-3 py-1.5 flex-wrap">
+   603→            <Info className="w-3.5 h-3.5 text-amber-400" />
+   604→            <span className="text-xs text-amber-200/80">
+   605→              {items.filter((t) => t.isPremium || t.price > 0).length} of {items.length} tests are currently paid/premium.
+   606→            </span>
+   607→            <Button
+   608→              size="sm"
+   609→              variant="outline"
+   610→              className="h-8 border-amber-700 text-amber-300 hover:bg-amber-950/40"
+   611→              onClick={() => setBulkFreeAllOpen(true)}
+   612→              title="Reset ALL tests to free (isPremium=false, price=0)"
+   613→            >
+   614→              <Unlock className="w-3.5 h-3.5 mr-1" /> Make ALL Tests Free
+   615→            </Button>
+   616→          </div>
+   617→        )}
+   618→        <Card className="bg-slate-900 border-slate-800">
+   619→          <CardContent className="p-0">
+   620→            <div className="overflow-x-auto">
+   621→              <table className="w-full text-sm">
+   622→                <thead>
+   623→                  <tr className="border-b border-slate-800 text-slate-500 text-xs uppercase">
+   624→                    <th className="text-left p-4 font-medium w-[44px]">
+   625→                      <Checkbox
+   626→                        checked={allFilteredSelected ? true : someFilteredSelected ? 'indeterminate' : false}
+   627→                        onCheckedChange={toggleSelectAll}
+   628→                        aria-label="Select all tests"
+   629→                      />
+   630→                    </th>
+   631→                    <th className="text-left p-4 font-medium">Title</th>
+   632→                    <th className="text-left p-4 font-medium">Subject / Category</th>
+   633→                    {!fixedType && <th className="text-left p-4 font-medium">Type</th>}
+   634→                    <th className="text-center p-4 font-medium">Duration</th>
+   635→                    <th className="text-center p-4 font-medium">Qs</th>
+   636→                    <th className="text-center p-4 font-medium">Price</th>
+   637→                    <th className="text-center p-4 font-medium">Status</th>
+   638→                    <th className="text-right p-4 font-medium">Actions</th>
+   639→                  </tr>
+   640→                </thead>
+   641→                <tbody>
+   642→                  {visibleItems.map((item) => {
+   643→                    const isSelected = selectedIds.has(item.id);
+   644→                    return (
+   645→                    <tr key={item.id} className={`border-b border-slate-800/50 hover:bg-slate-800/30 group ${isSelected ? 'bg-red-950/20' : ''}`}>
+   646→                      <td className="p-4">
+   647→                        <Checkbox
+   648→                          checked={isSelected}
+   649→                          onCheckedChange={() => toggleSelectOne(item.id)}
+   650→                          aria-label={`Select ${item.title}`}
+   651→                        />
+   652→                      </td>
+   653→                      <td className="p-4">
+   654→                        <p className="text-white font-medium">{item.title}</p>
+   655→                        {item.year && <p className="text-slate-500 text-xs">{item.year}{item.examSession ? ` · ${item.examSession}` : ''}</p>}
+   656→                      </td>
+   657→                      <td className="p-4">
+   658→                        <p className="text-slate-300">{subjectName(item.subjectId)}</p>
+   659→                        <p className="text-slate-600 text-xs">{categoryName(item.subjectId)}</p>
+   660→                      </td>
+   661→                      {!fixedType && (
+   662→                        <td className="p-4">
+   663→                          <Badge variant="outline" className={TYPE_COLORS[item.type] || TYPE_COLORS.mock}>{TYPE_LABELS[item.type] || item.type}</Badge>
+   664→                        </td>
+   665→                      )}
+   666→                      <td className="p-4 text-center text-slate-400">{item.duration}m</td>
+   667→                      <td className="p-4 text-center text-slate-400">
+   668→                        {/* Live count from the questions collection — always
+   669→                            accurate, even right after a bulk question import
+   670→                            that didn't update test.questionCount. Falls back
+   671→                            to the stored field if the map hasn't loaded yet. */}
+   672→                        {questionCountMap[item.id] ?? item.questionCount ?? 0}
+   673→                      </td>
+   674→                      <td className="p-4 text-center">
+   675→                        {item.price && item.price > 0 ? (
+   676→                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold text-emerald-300 bg-emerald-950/60 border border-emerald-800">₹{item.price}</span>
+   677→                        ) : (
+   678→                          <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium text-slate-500 bg-slate-800/60 border border-slate-700">FREE</span>
+   679→                        )}
+   680→                      </td>
+   681→                      <td className="p-4">
+   682→                        <div className="flex items-center justify-center gap-1.5">
+   683→                          {item.isPublished ? <Eye className="w-3.5 h-3.5 text-emerald-400" /> : <EyeOff className="w-3.5 h-3.5 text-slate-600" />}
+   684→                          {item.isPremium && <Crown className="w-3.5 h-3.5 text-amber-400" />}
+   685→                        </div>
+   686→                      </td>
+   687→                      <td className="p-4">
+   688→                        <div className="flex gap-1 justify-end opacity-0 group-hover:opacity-100 transition-opacity">
+   689→                          <Button size="sm" variant="outline" className="h-8 border-slate-700 text-emerald-400 hover:bg-slate-800" onClick={() => manageQuestions(item)}>
+   690→                            <FileQuestion className="w-3.5 h-3.5 mr-1" /> Qs
+   691→                          </Button>
+   692→                          <Button size="icon" variant="ghost" className="h-8 w-8 text-slate-400 hover:text-white hover:bg-slate-800" onClick={() => openEdit(item)}>
+   693→                            <Pencil className="w-3.5 h-3.5" />
+   694→                          </Button>
+   695→                          <Button size="icon" variant="ghost" className="h-8 w-8 text-red-400 hover:bg-red-950/40" onClick={() => setDeleteId(item.id)}>
+   696→                            <Trash2 className="w-3.5 h-3.5" />
+   697→                          </Button>
+   698→                        </div>
+   699→                      </td>
+   700→                    </tr>
+   701→                    );
+   702→                  })}
+   703→                </tbody>
+   704→              </table>
+   705→            </div>
+   706→          </CardContent>
+   707→        </Card>
+   708→        </>
+   709→      )}
+   710→
+   711→      <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+   712→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
+   713→          <DialogHeader>
+   714→            <DialogTitle>
+   715→              {editingId ? 'Edit Test' : fixedType ? `Add ${fixedLabel}` : 'Add Test'}
+   716→            </DialogTitle>
+   717→          </DialogHeader>
+   718→          <div className="space-y-4">
+   719→            <div className="space-y-2">
+   720→              <Label>Title *</Label>
+   721→              <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value, slug: form.slug || slugify(e.target.value) })} placeholder="e.g. RRB NTPC Mock Test 1" className="bg-slate-800 border-slate-700" />
+   722→            </div>
+   723→            <div className={`grid gap-3 ${fixedType ? 'grid-cols-1' : 'grid-cols-2'}`}>
+   724→              <div className="space-y-2">
+   725→                <Label>Subject *</Label>
+   726→                <Select value={form.subjectId} onValueChange={(v) => setForm({ ...form, subjectId: v })}>
+   727→                  <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue placeholder="Select subject" /></SelectTrigger>
+   728→                  <SelectContent className="bg-slate-800 border-slate-700">
+   729→                    {subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+   730→                  </SelectContent>
+   731→                </Select>
+   732→              </div>
+   733→              {!fixedType && (
+   734→                <div className="space-y-2">
+   735→                  <Label>Type</Label>
+   736→                  <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+   737→                    <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
+   738→                    <SelectContent className="bg-slate-800 border-slate-700">
+   739→                      <SelectItem value="mock">Mock Test</SelectItem>
+   740→                      <SelectItem value="previousYear">Previous Year</SelectItem>
+   741→                      <SelectItem value="dailyQuiz">Daily Quiz</SelectItem>
+   742→                      <SelectItem value="practice">Practice</SelectItem>
+   743→                      <SelectItem value="subjectwise">Subject-wise</SelectItem>
+   744→                    </SelectContent>
+   745→                  </Select>
+   746→                </div>
+   747→              )}
+   748→              {fixedType && (
+   749→                <div className="space-y-2">
+   750→                  <Label>Type</Label>
+   751→                  <Input
+   752→                    value={fixedLabel || fixedType}
+   753→                    disabled
+   754→                    className="bg-slate-800 border-slate-700 text-slate-400 disabled:opacity-60 disabled:cursor-not-allowed"
+   755→                  />
+   756→                  <p className="text-xs text-amber-400/80 flex items-center gap-1">
+   757→                    <Info className="w-3 h-3" /> Type is fixed for this section and cannot be changed.
+   758→                  </p>
+   759→                </div>
+   760→              )}
+   761→            </div>
+   762→            <div className="grid grid-cols-3 gap-3">
+   763→              <div className="space-y-2"><Label>Duration (min)</Label><Input type="number" value={form.duration} onChange={(e) => setForm({ ...form, duration: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
+   764→              <div className="space-y-2"><Label>Total Marks</Label><Input type="number" value={form.totalMarks} onChange={(e) => setForm({ ...form, totalMarks: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
+   765→              <div className="space-y-2"><Label>Passing Marks</Label><Input type="number" value={form.passingMarks} onChange={(e) => setForm({ ...form, passingMarks: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
+   766→            </div>
+   767→            <div className="grid grid-cols-2 gap-3">
+   768→              <div className="space-y-2">
+   769→                <Label>Difficulty</Label>
+   770→                <Select value={form.difficulty} onValueChange={(v) => setForm({ ...form, difficulty: v })}>
+   771→                  <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
+   772→                  <SelectContent className="bg-slate-800 border-slate-700">
+   773→                    <SelectItem value="easy">Easy</SelectItem>
+   774→                    <SelectItem value="medium">Medium</SelectItem>
+   775→                    <SelectItem value="hard">Hard</SelectItem>
+   776→                  </SelectContent>
+   777→                </Select>
+   778→              </div>
+   779→              <div className="space-y-2">
+   780→                <Label>Negative Marks (per wrong)</Label>
+   781→                <Input type="number" step="0.25" value={form.negativeMarks} onChange={(e) => setForm({ ...form, negativeMarks: Number(e.target.value) })} disabled={!form.negativeMarking} className="bg-slate-800 border-slate-700 disabled:opacity-60 disabled:cursor-not-allowed" />
+   782→                {!form.negativeMarking && (
+   783→                  <p className="text-xs text-amber-400/80 flex items-center gap-1">
+   784→                    <Info className="w-3 h-3" /> Turn on "Negative Marking" below to set the deduction value.
+   785→                  </p>
+   786→                )}
+   787→              </div>
+   788→            </div>
+   789→            {form.type === 'previousYear' && (
+   790→              <div className="grid grid-cols-2 gap-3">
+   791→                <div className="space-y-2"><Label>Year</Label><Input type="number" value={form.year} onChange={(e) => setForm({ ...form, year: Number(e.target.value) })} className="bg-slate-800 border-slate-700" /></div>
+   792→                <div className="space-y-2"><Label>Exam Session</Label><Input value={form.examSession} onChange={(e) => setForm({ ...form, examSession: e.target.value })} placeholder="e.g. CBT-1 Shift-2" className="bg-slate-800 border-slate-700" /></div>
+   793→              </div>
+   794→            )}
+   795→            <div className="space-y-2">
+   796→              <Label>Instructions</Label>
+   797→              <Textarea value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} rows={2} placeholder="Test instructions for students" className="bg-slate-800 border-slate-700" />
+   798→            </div>
+   799→            <div className="flex items-center gap-6 flex-wrap">
+   800→              <div className="flex items-center gap-2">
+   801→                <Switch checked={form.isPublished} onCheckedChange={(v) => setForm({ ...form, isPublished: v })} />
+   802→                <Label className="cursor-pointer">Published</Label>
+   803→              </div>
+   804→              <div className="flex items-center gap-2">
+   805→                <Switch checked={form.negativeMarking} onCheckedChange={(v) => setForm({ ...form, negativeMarking: v })} />
+   806→                <Label className="cursor-pointer">Negative Marking</Label>
+   807→              </div>
+   808→            </div>
+   809→            {/* Premium + Price box — mirrors the category premium layout.
+   810→                When Premium is ON, a Price input appears below the toggle so
+   811→                the admin always sets an amount for premium tests. This fixes
+   812→                the "Buy for ₹0" bug in the user app (premium test with no
+   813→                price showed a broken buy button). */}
+   814→            <div className="rounded-lg border border-slate-700 bg-slate-800/50 p-3 space-y-3">
+   815→              <div className="flex items-center justify-between gap-2">
+   816→                <div className="flex items-center gap-2">
+   817→                  <Crown className="w-4 h-4 text-amber-400" />
+   818→                  <Label className="cursor-pointer font-semibold text-white">Premium Test</Label>
+   819→                </div>
+   820→                <Switch
+   821→                  checked={form.isPremium}
+   822→                  onCheckedChange={(v) => setForm({ ...form, isPremium: v })}
+   823→                />
+   824→              </div>
+   825→              <p className="text-xs text-slate-500">
+   826→                Premium tests require a subscription OR a one-time per-test payment. Set a price below so non-premium users can buy it individually.
+   827→              </p>
+   828→              {(form.isPremium || form.price > 0) && (
+   829→                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-700">
+   830→                  <div className="space-y-2">
+   831→                    <Label className="flex items-center gap-1"><IndianRupee className="w-3 h-3" /> Price (₹)</Label>
+   832→                    <Input
+   833→                      type="number"
+   834→                      min={0}
+   835→                      step={1}
+   836→                      value={form.price}
+   837→                      onChange={(e) => setForm({ ...form, price: Number(e.target.value) })}
+   838→                      placeholder="29"
+   839→                      className="bg-slate-800 border-slate-700"
+   840→                    />
+   841→                  </div>
+   842→                  <div className="space-y-2 flex flex-col justify-end">
+   843→                    <p className="text-xs text-amber-400/80 flex items-center gap-1">
+   844→                      <Info className="w-3 h-3" /> {form.isPremium ? '0 = premium-only (users must subscribe). Non-zero = buy individually OR subscribe.' : 'Non-zero enables pay-per-test purchase without premium.'}
+   845→                    </p>
+   846→                  </div>
+   847→                </div>
+   848→              )}
+   849→            </div>
+   850→          </div>
+   851→          <DialogFooter>
+   852→            <Button variant="outline" onClick={() => setDialogOpen(false)} className="border-slate-700 text-slate-300">Cancel</Button>
+   853→            <Button onClick={handleSave} disabled={saving} className="bg-emerald-600 hover:bg-emerald-700 text-white">
+   854→              {saving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   855→              {editingId ? 'Update' : 'Add'}
+   856→            </Button>
+   857→          </DialogFooter>
+   858→        </DialogContent>
+   859→      </Dialog>
+   860→
+   861→      {/* Bulk Add Dialog */}
+   862→      <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
+   863→        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
+   864→          <DialogHeader>
+   865→            <DialogTitle>Bulk Add Tests</DialogTitle>
+   866→          </DialogHeader>
+   867→          <div className="space-y-3">
+   868→            <div className="flex items-center justify-between gap-2">
+   869→              <p className="text-xs text-slate-500">
+   870→                Paste a JSON array of test objects below, or paste CSV rows (first row = column headers).
+   871→              </p>
+   872→              <div className="flex items-center gap-2">
+   873→                <Button
+   874→                  type="button"
+   875→                  variant="outline"
+   876→                  size="sm"
+   877→                  onClick={() => downloadJson('tests-template', JSON.parse(BULK_SAMPLE))}
+   878→                  className="border-slate-700 text-slate-300 h-8"
+   879→                >
+   880→                  <Download className="w-3.5 h-3.5 mr-1" /> Download Template
+   881→                </Button>
+   882→                <Button
+   883→                  type="button"
+   884→                  variant="outline"
+   885→                  size="sm"
+   886→                  onClick={() => downloadCsv('tests-template', CSV_HEADERS, CSV_SAMPLE_ROWS)}
+   887→                  className="border-slate-700 text-slate-300 h-8"
+   888→                >
+   889→                  <FileSpreadsheet className="w-3.5 h-3.5 mr-1" /> Download CSV
+   890→                </Button>
+   891→                <Button
+   892→                  type="button"
+   893→                  variant="outline"
+   894→                  size="sm"
+   895→                  onClick={() => setBulkText(BULK_SAMPLE)}
+   896→                  className="border-slate-700 text-slate-300 h-8"
+   897→                >
+   898→                  Load Sample
+   899→                </Button>
+   900→              </div>
+   901→            </div>
+   902→            <BulkTextarea
+   903→              value={bulkText}
+   904→              onChange={setBulkText}
+   905→              placeholder='[{"title":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":60,"totalMarks":100}]'
+   906→            />
+   907→            <p className="text-xs text-slate-500">
+   908→              Fields: <span className="text-slate-400">title</span>,{' '}
+   909→              <span className="text-slate-400 text-emerald-300">subjectName</span> (parent subject — recommended) or{' '}
+   910→              <span className="text-slate-400">subjectId</span> (existing id),{' '}
+   911→              <span className="text-slate-400 text-emerald-300">categoryName</span> (optional, disambiguates same-name subjects),{' '}
+   912→              <span className="text-slate-400">type</span> (mock | previousYear | dailyQuiz | practice | subjectwise),{' '}
+   913→              <span className="text-slate-400">duration</span> (min),{' '}
+   914→              <span className="text-slate-400">totalMarks</span>,{' '}
+   915→              <span className="text-slate-400">passingMarks</span>,{' '}
+   916→              <span className="text-slate-400">difficulty</span> (easy | medium | hard),{' '}
+   917→              <span className="text-slate-400">isPublished</span> (boolean),{' '}
+   918→              <span className="text-slate-400">isPremium</span> (boolean),{' '}
+   919→              <span className="text-slate-400">negativeMarking</span> (boolean),{' '}
+   920→              <span className="text-slate-400">negativeMarks</span> (number),{' '}
+   921→              <span className="text-slate-400">price</span> (number, INR; 0 = free),{' '}
+   922→              <span className="text-slate-400">instructions</span> (string),{' '}
+   923→              <span className="text-slate-400">imageUrl</span> (URL string)
+   924→            </p>
+   925→            <p className="text-xs text-slate-500">
+   926→              Tip: add subjects first, then bulk-add tests by{' '}
+   927→              <code className="text-emerald-300">subjectName</code>{' '}
+   928→              (+ optional <code className="text-emerald-300">categoryName</code>{' '}
+   929→              if the same subject name exists in multiple categories). Tests
+   930→              inside a premium category are auto-marked premium.
+   931→            </p>
+   932→          </div>
+   933→          <DialogFooter>
+   934→            <Button
+   935→              variant="outline"
+   936→              onClick={() => setBulkOpen(false)}
+   937→              className="border-slate-700 text-slate-300"
+   938→            >
+   939→              Cancel
+   940→            </Button>
+   941→            <Button
+   942→              onClick={handleBulkImport}
+   943→              disabled={bulkSaving || !bulkText.trim()}
+   944→              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+   945→            >
+   946→              {bulkSaving && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   947→              Validate & Import
+   948→            </Button>
+   949→          </DialogFooter>
+   950→        </DialogContent>
+   951→      </Dialog>
+   952→
+   953→      <AlertDialog open={!!deleteId} onOpenChange={(o) => !o && setDeleteId(null)}>
+   954→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
+   955→          <AlertDialogHeader>
+   956→            <AlertDialogTitle>Delete this test?</AlertDialogTitle>
+   957→            <AlertDialogDescription className="text-slate-400">Questions under this test will remain in Firestore but lose their test link.</AlertDialogDescription>
+   958→          </AlertDialogHeader>
+   959→          <AlertDialogFooter>
+   960→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   961→            <AlertDialogAction onClick={handleDelete} className="bg-red-600 hover:bg-red-700">Delete</AlertDialogAction>
+   962→          </AlertDialogFooter>
+   963→        </AlertDialogContent>
+   964→      </AlertDialog>
+   965→
+   966→      {/* Bulk Delete Confirmation */}
+   967→      <AlertDialog open={bulkDeleteOpen} onOpenChange={setBulkDeleteOpen}>
+   968→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+   969→          <AlertDialogHeader>
+   970→            <AlertDialogTitle className="flex items-center gap-2">
+   971→              <Trash2 className="w-5 h-5 text-red-400" /> Delete {selectedIds.size} test{selectedIds.size === 1 ? '' : 's'}?
+   972→            </AlertDialogTitle>
+   973→            <AlertDialogDescription className="text-slate-400">
+   974→              This will permanently delete {selectedIds.size} test{selectedIds.size === 1 ? '' : 's'} from Firestore.
+   975→              Questions under these tests will remain in Firestore but lose their test link.
+   976→              <span className="block mt-2 text-red-300 font-medium">This action cannot be undone.</span>
+   977→            </AlertDialogDescription>
+   978→          </AlertDialogHeader>
+   979→          <AlertDialogFooter>
+   980→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+   981→            <AlertDialogAction
+   982→              onClick={handleBulkDelete}
+   983→              disabled={bulkDeleting}
+   984→              className="bg-red-600 hover:bg-red-700 text-white"
+   985→            >
+   986→              {bulkDeleting && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+   987→              Delete {selectedIds.size} test{selectedIds.size === 1 ? '' : 's'}
+   988→            </AlertDialogAction>
+   989→          </AlertDialogFooter>
+   990→        </AlertDialogContent>
+   991→      </AlertDialog>
+   992→
+   993→      {/* Bulk "Make Selected Free" confirmation */}
+   994→      <AlertDialog open={bulkFreeOpen} onOpenChange={setBulkFreeOpen}>
+   995→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+   996→          <AlertDialogHeader>
+   997→            <AlertDialogTitle className="flex items-center gap-2">
+   998→              <Unlock className="w-5 h-5 text-emerald-400" /> Reset {selectedIds.size} test{selectedIds.size === 1 ? '' : 's'} to free?
+   999→            </AlertDialogTitle>
+  1000→            <AlertDialogDescription className="text-slate-400">
+  1001→              This sets <b>isPremium = false</b> and <b>price = 0</b> on the selected test{selectedIds.size === 1 ? '' : 's'} in Firestore.
+  1002→              Users will be able to attempt them without paying or subscribing.
+  1003→              <span className="block mt-2 text-emerald-300 font-medium">You can re-enable premium/pricing later by editing each test.</span>
+  1004→            </AlertDialogDescription>
+  1005→          </AlertDialogHeader>
+  1006→          <AlertDialogFooter>
+  1007→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+  1008→            <AlertDialogAction
+  1009→              onClick={() => handleBulkMakeFree(false)}
+  1010→              disabled={bulkFreeing}
+  1011→              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+  1012→            >
+  1013→              {bulkFreeing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+  1014→              Make {selectedIds.size} test{selectedIds.size === 1 ? '' : 's'} free
+  1015→            </AlertDialogAction>
+  1016→          </AlertDialogFooter>
+  1017→        </AlertDialogContent>
+  1018→      </AlertDialog>
+  1019→
+  1020→      {/* "Make ALL tests free" confirmation */}
+  1021→      <AlertDialog open={bulkFreeAllOpen} onOpenChange={setBulkFreeAllOpen}>
+  1022→        <AlertDialogContent className="bg-slate-900 border-slate-700 text-white max-w-md">
+  1023→          <AlertDialogHeader>
+  1024→            <AlertDialogTitle className="flex items-center gap-2">
+  1025→              <Unlock className="w-5 h-5 text-amber-400" /> Make ALL {items.length} tests free?
+  1026→            </AlertDialogTitle>
+  1027→            <AlertDialogDescription className="text-slate-400">
+  1028→              This will reset <b>isPremium = false</b> and <b>price = 0</b> on <b>every test</b> in Firestore
+  1029→              ({items.length} total, {items.filter((t) => t.isPremium || t.price > 0).length} currently paid/premium).
+  1030→              All users will be able to attempt every test without paying.
+  1031→              <span className="block mt-2 text-amber-300 font-medium">Use this if tests are incorrectly showing "Go Premium" in the user app.</span>
+  1032→            </AlertDialogDescription>
+  1033→          </AlertDialogHeader>
+  1034→          <AlertDialogFooter>
+  1035→            <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>
+  1036→            <AlertDialogAction
+  1037→              onClick={() => handleBulkMakeFree(true)}
+  1038→              disabled={bulkFreeing}
+  1039→              className="bg-amber-600 hover:bg-amber-700 text-white"
+  1040→            >
+  1041→              {bulkFreeing && <Loader2 className="w-4 h-4 mr-1 animate-spin" />}
+  1042→              Make all {items.length} tests free
+  1043→            </AlertDialogAction>
+  1044→          </AlertDialogFooter>
+  1045→        </AlertDialogContent>
+  1046→      </AlertDialog>
+  1047→    </div>
+  1048→  );
+  1049→}
+  1050→

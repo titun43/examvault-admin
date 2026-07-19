@@ -1,0 +1,927 @@
+     1→'use client';
+     2→
+     3→// =============================================================================
+     4→// ExamVault - Data Seed Manager
+     5→// =============================================================================
+     6→// Two buttons:
+     7→//   1. "Seed Real Indian Exam Data" — adds 7 categories, 14 subjects,
+     8→//      14 tests, 70 questions, 5 banners, 8 announcements, 10 upcoming exams
+     9→//      to Firestore. Idempotent — checks for existing slug/name before
+    10→//      adding. Safe to run multiple times.
+    11→//   2. "Delete All Seeded Data" — removes ONLY documents from the collections
+    12→//      listed below. CANNOT delete user-generated content (users, results,
+    13→//      bookmarks, subscriptions). Requires double confirmation.
+    14→//
+    15→// Both operations use the client-side Firebase SDK (same auth context as the
+    16→// rest of the admin panel). No server-side firebase-admin needed.
+    17→// =============================================================================
+    18→
+    19→import { useState, useEffect } from 'react';
+    20→import {
+    21→  collection,
+    22→  onSnapshot,
+    23→  addDoc,
+    24→  updateDoc,
+    25→  deleteDoc,
+    26→  doc,
+    27→  getDocs,
+    28→  query,
+    29→  where,
+    30→  writeBatch,
+    31→  serverTimestamp,
+    32→} from 'firebase/firestore';
+    33→import { db } from '@/lib/firebase';
+    34→import { Button } from '@/components/ui/button';
+    35→import { Card, CardContent } from '@/components/ui/card';
+    36→import {
+    37→  AlertDialog,
+    38→  AlertDialogAction,
+    39→  AlertDialogCancel,
+    40→  AlertDialogContent,
+    41→  AlertDialogDescription,
+    42→  AlertDialogFooter,
+    43→  AlertDialogHeader,
+    44→  AlertDialogTitle,
+    45→} from '@/components/ui/alert-dialog';
+    46→import { Loader2, Database, Trash2, CheckCircle2, AlertTriangle, Sparkles, Activity, RefreshCw } from 'lucide-react';
+    47→import { toast } from 'sonner';
+    48→import {
+    49→  SEED_CATEGORIES,
+    50→  SEED_BANNERS,
+    51→  SEED_ANNOUNCEMENTS,
+    52→  SEED_UPCOMING_EXAMS,
+    53→  SEED_CURRENT_AFFAIRS,
+    54→} from '@/lib/seed-data';
+    55→
+    56→interface LogEntry {
+    57→  step: string;
+    58→  status: 'pending' | 'done' | 'error';
+    59→  detail?: string;
+    60→}
+    61→
+    62→// Expected counts after a successful seed. Used by the status panel to tell
+    63→// the user at a glance whether data is present, partial, or missing.
+    64→const EXPECTED: Record<string, { label: string; min: number }> = {
+    65→  categories:       { label: 'Categories',       min: 8 },  // 7 seeded + Indian Railways
+    66→  subjects:         { label: 'Subjects',         min: 26 },
+    67→  tests:            { label: 'Tests',            min: 26 },
+    68→  questions:        { label: 'Questions',         min: 130 },
+    69→  banners:          { label: 'Banners',          min: 5 },
+    70→  announcements:    { label: 'Announcements',    min: 8 },
+    71→  upcoming_exams:   { label: 'Upcoming Exams',   min: 10 },
+    72→  current_affairs:  { label: 'Current Affairs',  min: 15 },
+    73→};
+    74→
+    75→export default function DataSeed() {
+    76→  const [seeding, setSeeding] = useState(false);
+    77→  const [deleting, setDeleting] = useState(false);
+    78→  const [syncing, setSyncing] = useState(false);
+    79→  const [log, setLog] = useState<LogEntry[]>([]);
+    80→  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+    81→  const [deleteConfirm2, setDeleteConfirm2] = useState(false);
+    82→  // Live counts for each content collection. Updated in real-time via
+    83→  // onSnapshot so the admin can see exactly what's in Firestore right now —
+    84→  // no more guessing whether the seed ran.
+    85→  const [counts, setCounts] = useState<Record<string, number>>({
+    86→    categories: 0, subjects: 0, tests: 0, questions: 0,
+    87→    banners: 0, announcements: 0, upcoming_exams: 0, current_affairs: 0,
+    88→  });
+    89→
+    90→  useEffect(() => {
+    91→    const cols = Object.keys(EXPECTED);
+    92→    const unsubs = cols.map((name) =>
+    93→      onSnapshot(
+    94→        collection(db, name),
+    95→        (snap) => setCounts((prev) => ({ ...prev, [name]: snap.size })),
+    96→        () => {},
+    97→      ),
+    98→    );
+    99→    return () => unsubs.forEach((u) => u());
+   100→  }, []);
+   101→
+   102→  const updateLog = (step: string, status: LogEntry['status'], detail?: string) => {
+   103→    setLog((prev) => {
+   104→      const idx = prev.findIndex((l) => l.step === step);
+   105→      if (idx >= 0) {
+   106→        const copy = [...prev];
+   107→        copy[idx] = { step, status, detail };
+   108→        return copy;
+   109→      }
+   110→      return [...prev, { step, status, detail }];
+   111→    });
+   112→  };
+   113→
+   114→  // ===========================================================================
+   115→  // SYNC COUNTS OPERATION (standalone — recomputes subjectCount & testCount)
+   116→  // ===========================================================================
+   117→  // The Flutter user app reads `category.subjectCount` and `subject.testCount`
+   118→  // directly from Firestore. If these fields are missing or stale (which can
+   119→  // happen when data is added via seed, bulk-import, or manual edit and the
+   120→  // auto-sync on the Categories/Subjects page silently failed — its
+   121→  // batch.commit().catch(() => {}) swallows errors), the user app shows
+   122→  // "0 Subjects" on category cards even though the subjects actually exist.
+   123→  //
+   124→  // This button is a reliable one-click fix: it fetches ALL categories,
+   125→  // subjects, and tests fresh, computes the real counts, and writes them
+   126→  // back in batches with proper error handling. Safe to run anytime.
+   127→  // ===========================================================================
+   128→  const handleSyncCounts = async () => {
+   129→    setSyncing(true);
+   130→    try {
+   131→      toast.info('Syncing counts…');
+   132→      const [allCatsSnap, allSubjectsSnap, allTestsSnap, allQuestionsSnap] = await Promise.all([
+   133→        getDocs(collection(db, 'categories')),
+   134→        getDocs(collection(db, 'subjects')),
+   135→        getDocs(collection(db, 'tests')),
+   136→        getDocs(collection(db, 'questions')),
+   137→      ]);
+   138→
+   139→      // Count subjects per category (by categoryId field on each subject doc)
+   140→      const subjCountByCat: Record<string, number> = {};
+   141→      allSubjectsSnap.forEach((d) => {
+   142→        const catId = (d.data() as any)?.categoryId;
+   143→        if (catId) subjCountByCat[catId] = (subjCountByCat[catId] || 0) + 1;
+   144→      });
+   145→
+   146→      // Count tests per subject (by subjectId field on each test doc)
+   147→      const testCountBySubj: Record<string, number> = {};
+   148→      allTestsSnap.forEach((d) => {
+   149→        const sId = (d.data() as any)?.subjectId;
+   150→        if (sId) testCountBySubj[sId] = (testCountBySubj[sId] || 0) + 1;
+   151→      });
+   152→
+   153→      // Count questions per test (by testId field on each question doc)
+   154→      const qCountByTest: Record<string, number> = {};
+   155→      allQuestionsSnap.forEach((d) => {
+   156→        const tId = (d.data() as any)?.testId;
+   157→        if (tId) qCountByTest[tId] = (qCountByTest[tId] || 0) + 1;
+   158→      });
+   159→
+   160→      // Write back category.subjectCount
+   161→      let catsFixed = 0;
+   162→      const catBatch = writeBatch(db);
+   163→      allCatsSnap.forEach((d) => {
+   164→        const correct = subjCountByCat[d.id] || 0;
+   165→        const stored = (d.data() as any)?.subjectCount ?? -1;
+   166→        if (stored !== correct) {
+   167→          catBatch.update(d.ref, { subjectCount: correct, updatedAt: serverTimestamp() });
+   168→          catsFixed++;
+   169→        }
+   170→      });
+   171→      if (catsFixed > 0) await catBatch.commit();
+   172→
+   173→      // Write back subject.testCount
+   174→      let subjsFixed = 0;
+   175→      const subjBatch = writeBatch(db);
+   176→      allSubjectsSnap.forEach((d) => {
+   177→        const correct = testCountBySubj[d.id] || 0;
+   178→        const stored = (d.data() as any)?.testCount ?? -1;
+   179→        if (stored !== correct) {
+   180→          subjBatch.update(d.ref, { testCount: correct, updatedAt: serverTimestamp() });
+   181→          subjsFixed++;
+   182→        }
+   183→      });
+   184→      if (subjsFixed > 0) await subjBatch.commit();
+   185→
+   186→      // Write back test.questionCount — the Flutter app shows "N Questions"
+   187→      // on every test card. Without this, seeded tests show "0 Questions".
+   188→      let testsFixed = 0;
+   189→      const testBatch = writeBatch(db);
+   190→      allTestsSnap.forEach((d) => {
+   191→        const correct = qCountByTest[d.id] || 0;
+   192→        const stored = (d.data() as any)?.questionCount ?? -1;
+   193→        if (stored !== correct) {
+   194→          testBatch.update(d.ref, { questionCount: correct, updatedAt: serverTimestamp() });
+   195→          testsFixed++;
+   196→        }
+   197→      });
+   198→      if (testsFixed > 0) await testBatch.commit();
+   199→
+   200→      toast.success(
+   201→        `Synced ✓ ${catsFixed} categor${catsFixed === 1 ? 'y' : 'ies'} + ${subjsFixed} subject${subjsFixed === 1 ? '' : 's'} + ${testsFixed} test${testsFixed === 1 ? '' : 's'} updated. Pull-to-refresh in the user app to see the counts.`,
+   202→      );
+   203→    } catch (e) {
+   204→      console.error('[syncCounts]', e);
+   205→      const msg = e instanceof Error ? e.message : 'Unknown error';
+   206→      toast.error(`Sync failed: ${msg}`);
+   207→    } finally {
+   208→      setSyncing(false);
+   209→    }
+   210→  };
+   211→
+   212→  // ===========================================================================
+   213→  // SEED OPERATION
+   214→  // ===========================================================================
+   215→  const handleSeed = async () => {
+   216→    setSeeding(true);
+   217→    setLog([]);
+   218→
+   219→    let categoriesAdded = 0;
+   220→    let subjectsAdded = 0;
+   221→    let testsAdded = 0;
+   222→    let questionsAdded = 0;
+   223→    let bannersAdded = 0;
+   224→    let announcementsAdded = 0;
+   225→    let upcomingExamsAdded = 0;
+   226→    let currentAffairsAdded = 0;
+   227→
+   228→    try {
+   229→      // -------------------------------------------------------------------
+   230→      // Step 1: Categories, Subjects, Tests, Questions
+   231→      // -------------------------------------------------------------------
+   232→      for (const cat of SEED_CATEGORIES) {
+   233→        updateLog(`Category: ${cat.name}`, 'pending');
+   234→
+   235→        // Check if category with same slug exists
+   236→        const existingCat = await getDocs(
+   237→          query(collection(db, 'categories'), where('slug', '==', cat.slug)),
+   238→        );
+   239→
+   240→        let categoryId: string;
+   241→        if (!existingCat.empty) {
+   242→          categoryId = existingCat.docs[0].id;
+   243→          updateLog(`Category: ${cat.name}`, 'done', `Already exists (id: ${categoryId.slice(0, 8)}...)`);
+   244→        } else {
+   245→          const catRef = await addDoc(collection(db, 'categories'), {
+   246→            name: cat.name,
+   247→            slug: cat.slug,
+   248→            icon: cat.icon,
+   249→            description: cat.description,
+   250→            image: cat.image,
+   251→            color: cat.color,
+   252→            order: cat.order,
+   253→            isPremium: cat.isPremium,
+   254→            premiumPrice: cat.premiumPrice,
+   255→            premiumDurationMonths: cat.premiumDurationMonths,
+   256→            // Defensive: ensure the field exists immediately so the Flutter
+   257→            // app never reads a missing subjectCount (defaults to 0). Step 6
+   258→            // below will overwrite with the real count.
+   259→            subjectCount: 0,
+   260→            createdAt: serverTimestamp(),
+   261→            updatedAt: serverTimestamp(),
+   262→          });
+   263→          categoryId = catRef.id;
+   264→          categoriesAdded++;
+   265→          updateLog(`Category: ${cat.name}`, 'done', `Added (id: ${categoryId.slice(0, 8)}...)`);
+   266→        }
+   267→
+   268→        // Subjects
+   269→        for (const subj of cat.subjects) {
+   270→          const existingSubj = await getDocs(
+   271→            query(collection(db, 'subjects'), where('slug', '==', subj.slug)),
+   272→          );
+   273→
+   274→          let subjectId: string;
+   275→          if (!existingSubj.empty) {
+   276→            subjectId = existingSubj.docs[0].id;
+   277→          } else {
+   278→            const subjRef = await addDoc(collection(db, 'subjects'), {
+   279→              categoryId,
+   280→              name: subj.name,
+   281→              slug: subj.slug,
+   282→              icon: subj.icon,
+   283→              description: subj.description,
+   284→              order: subj.order,
+   285→              // Defensive: ensure the field exists immediately.
+   286→              testCount: 0,
+   287→              createdAt: serverTimestamp(),
+   288→              updatedAt: serverTimestamp(),
+   289→            });
+   290→            subjectId = subjRef.id;
+   291→            subjectsAdded++;
+   292→          }
+   293→
+   294→          // Tests
+   295→          for (const test of subj.tests) {
+   296→            const existingTest = await getDocs(
+   297→              query(collection(db, 'tests'), where('slug', '==', test.slug)),
+   298→            );
+   299→
+   300→            let testId: string;
+   301→            if (!existingTest.empty) {
+   302→              testId = existingTest.docs[0].id;
+   303→            } else {
+   304→              const testRef = await addDoc(collection(db, 'tests'), {
+   305→                subjectId,
+   306→                title: test.title,
+   307→                slug: test.slug,
+   308→                type: test.type,
+   309→                duration: test.duration,
+   310→                totalMarks: test.totalMarks,
+   311→                passingMarks: test.passingMarks,
+   312→                isPublished: test.isPublished,
+   313→                difficulty: test.difficulty,
+   314→                negativeMarking: test.negativeMarking,
+   315→                negativeMarks: test.negativeMarks,
+   316→                instructions: test.instructions,
+   317→                year: test.year,
+   318→                examSession: test.examSession,
+   319→                isPremium: test.isPremium,
+   320→                price: test.price,
+   321→                attemptCount: 0,
+   322→                // Defensive: ensure the field exists immediately so the
+   323→                // Flutter app never reads a missing questionCount (defaults
+   324→                // to 0, showing "0 Questions"). Step 6 overwrites with the
+   325→                // real count after all questions are added.
+   326→                questionCount: 0,
+   327→                createdAt: serverTimestamp(),
+   328→                updatedAt: serverTimestamp(),
+   329→              });
+   330→              testId = testRef.id;
+   331→              testsAdded++;
+   332→            }
+   333→
+   334→            // Questions — check by testId + question text (no slug on questions)
+   335→            for (const q of test.questions) {
+   336→              const existingQ = await getDocs(
+   337→                query(
+   338→                  collection(db, 'questions'),
+   339→                  where('testId', '==', testId),
+   340→                  where('question', '==', q.question),
+   341→                ),
+   342→              );
+   343→              if (existingQ.empty) {
+   344→                await addDoc(collection(db, 'questions'), {
+   345→                  testId,
+   346→                  question: q.question,
+   347→                  options: q.options,
+   348→                  correctAnswerIndex: q.correctAnswerIndex,
+   349→                  explanation: q.explanation,
+   350→                  subjectTopic: q.subjectTopic,
+   351→                  marks: q.marks,
+   352→                  isPremium: q.isPremium,
+   353→                  createdAt: serverTimestamp(),
+   354→                  updatedAt: serverTimestamp(),
+   355→                });
+   356→                questionsAdded++;
+   357→              }
+   358→            }
+   359→          }
+   360→        }
+   361→      }
+   362→
+   363→      // -------------------------------------------------------------------
+   364→      // Step 2: Banners
+   365→      // -------------------------------------------------------------------
+   366→      updateLog('Banners (5)', 'pending');
+   367→      for (const banner of SEED_BANNERS) {
+   368→        const existing = await getDocs(
+   369→          query(collection(db, 'banners'), where('title', '==', banner.title)),
+   370→        );
+   371→        const payload = {
+   372→          subtitle: banner.subtitle,
+   373→          imageUrl: banner.imageUrl,
+   374→          link: banner.link,
+   375→          linkLabel: banner.linkLabel,
+   376→          order: banner.order,
+   377→          isActive: banner.isActive,
+   378→          // IMPORTANT: startsAt MUST be in the past, otherwise the Flutter
+   379→          // app's BannerModel.isVisible check (now.isBefore(startsAt) →
+   380→          // hidden) will hide the banner from users. We always overwrite
+   381→          // the dates here so any previously-seeded banner with a bad
+   382→          // future start date gets repaired on re-seed.
+   383→          startsAt: new Date(banner.startsAt),
+   384→          endsAt: new Date(banner.endsAt),
+   385→          updatedAt: serverTimestamp(),
+   386→        };
+   387→        if (existing.empty) {
+   388→          await addDoc(collection(db, 'banners'), {
+   389→            title: banner.title,
+   390→            ...payload,
+   391→            createdAt: serverTimestamp(),
+   392→          });
+   393→          bannersAdded++;
+   394→        } else {
+   395→          // Banner exists — repair its dates + fields in case it was
+   396→          // seeded before the startsAt fix.
+   397→          await updateDoc(existing.docs[0].ref, payload);
+   398→        }
+   399→      }
+   400→      updateLog('Banners (5)', 'done', `${bannersAdded} added (existing ones date-repaired)`);
+   401→
+   402→      // -------------------------------------------------------------------
+   403→      // Step 3: Announcements
+   404→      // -------------------------------------------------------------------
+   405→      updateLog('Announcements (8)', 'pending');
+   406→      for (const ann of SEED_ANNOUNCEMENTS) {
+   407→        const existing = await getDocs(
+   408→          query(collection(db, 'announcements'), where('title', '==', ann.title)),
+   409→        );
+   410→        if (existing.empty) {
+   411→          await addDoc(collection(db, 'announcements'), {
+   412→            title: ann.title,
+   413→            message: ann.message,
+   414→            type: ann.type,
+   415→            imageUrl: ann.imageUrl || '',
+   416→            link: ann.link || '',
+   417→            linkLabel: ann.linkLabel || '',
+   418→            isPinned: ann.isPinned,
+   419→            isPublished: ann.isPublished,
+   420→            order: ann.order,
+   421→            expiresAt: new Date(ann.expiresAt),
+   422→            createdAt: serverTimestamp(),
+   423→            updatedAt: serverTimestamp(),
+   424→          });
+   425→          announcementsAdded++;
+   426→        }
+   427→      }
+   428→      updateLog('Announcements (8)', 'done', `${announcementsAdded} added`);
+   429→
+   430→      // -------------------------------------------------------------------
+   431→      // Step 4: Upcoming Exams
+   432→      // -------------------------------------------------------------------
+   433→      updateLog('Upcoming Exams (10)', 'pending');
+   434→
+   435→      // Build a slug -> categoryId map by fetching existing categories
+   436→      const allCatsSnap = await getDocs(collection(db, 'categories'));
+   437→      const slugToCatId: Record<string, string> = {};
+   438→      allCatsSnap.forEach((d) => {
+   439→        const data = d.data() as { slug?: string };
+   440→        if (data.slug) slugToCatId[data.slug] = d.id;
+   441→      });
+   442→
+   443→      for (const exam of SEED_UPCOMING_EXAMS) {
+   444→        const existing = await getDocs(
+   445→          query(collection(db, 'upcoming_exams'), where('name', '==', exam.name)),
+   446→        );
+   447→        if (existing.empty) {
+   448→          const resolvedCategoryId = slugToCatId[exam.categoryIdSlug] || '';
+   449→          await addDoc(collection(db, 'upcoming_exams'), {
+   450→            name: exam.name,
+   451→            organization: exam.organization,
+   452→            categoryId: resolvedCategoryId,
+   453→            examDate: new Date(exam.examDate),
+   454→            applicationStartDate: new Date(exam.applicationStartDate),
+   455→            applicationEndDate: new Date(exam.applicationEndDate),
+   456→            notificationUrl: exam.notificationUrl,
+   457→            syllabusUrl: exam.syllabusUrl,
+   458→            officialUrl: exam.officialUrl || null,
+   459→            applyUrl: exam.applyUrl || null,
+   460→            imageUrl: exam.imageUrl,
+   461→            description: exam.description,
+   462→            tags: exam.tags,
+   463→            isPublished: exam.isPublished,
+   464→            order: exam.order,
+   465→            createdAt: serverTimestamp(),
+   466→            updatedAt: serverTimestamp(),
+   467→          });
+   468→          upcomingExamsAdded++;
+   469→        }
+   470→      }
+   471→      updateLog('Upcoming Exams (10)', 'done', `${upcomingExamsAdded} added`);
+   472→
+   473→      // -------------------------------------------------------------------
+   474→      // Step 5: Current Affairs (15 real 2025 entries)
+   475→      // -------------------------------------------------------------------
+   476→      updateLog('Current Affairs (15)', 'pending');
+   477→      for (const ca of SEED_CURRENT_AFFAIRS) {
+   478→        const existing = await getDocs(
+   479→          query(collection(db, 'current_affairs'), where('title', '==', ca.title)),
+   480→        );
+   481→        if (existing.empty) {
+   482→          await addDoc(collection(db, 'current_affairs'), {
+   483→            date: new Date(ca.date),
+   484→            title: ca.title,
+   485→            summary: ca.summary,
+   486→            content: ca.content,
+   487→            source: ca.source || null,
+   488→            category: ca.category || null,
+   489→            categoryId: ca.categoryId || null,
+   490→            isImportant: !!ca.isImportant,
+   491→            tags: ca.tags || [],
+   492→            pdfUrl: ca.pdfUrl || null,
+   493→            imageUrl: ca.imageUrl || null,
+   494→            isPublished: true,
+   495→            createdAt: serverTimestamp(),
+   496→            updatedAt: serverTimestamp(),
+   497→          });
+   498→          currentAffairsAdded++;
+   499→        }
+   500→      }
+   501→      updateLog('Current Affairs (15)', 'done', `${currentAffairsAdded} added`);
+   502→
+   503→      // -------------------------------------------------------------------
+   504→      // Step 6: Sync counts (subjectCount on categories, testCount on subjects)
+   505→      // The Flutter app reads `category.subjectCount` and `subject.testCount`
+   506→      // directly from Firestore. If these are 0 (the default), the user app
+   507→      // shows "0 Subjects" on category cards and "0" in the Tests column —
+   508→      // even though the subjects/tests actually exist. This step computes the
+   509→      // real counts from the subjects/tests collections and writes them back.
+   510→      // -------------------------------------------------------------------
+   511→      updateLog('Syncing counts', 'pending');
+   512→      const allSubjectsSnap = await getDocs(collection(db, 'subjects'));
+   513→      const subjCountByCat: Record<string, number> = {};
+   514→      allSubjectsSnap.forEach((d) => {
+   515→        const catId = (d.data() as any)?.categoryId;
+   516→        if (catId) subjCountByCat[catId] = (subjCountByCat[catId] || 0) + 1;
+   517→      });
+   518→      const allTestsSnap = await getDocs(collection(db, 'tests'));
+   519→      const testCountBySubj: Record<string, number> = {};
+   520→      allTestsSnap.forEach((d) => {
+   521→        const sId = (d.data() as any)?.subjectId;
+   522→        if (sId) testCountBySubj[sId] = (testCountBySubj[sId] || 0) + 1;
+   523→      });
+   524→      // Write back category.subjectCount
+   525→      let catsFixed = 0;
+   526→      const catBatch = writeBatch(db);
+   527→      allCatsSnap.forEach((d) => {
+   528→        const correct = subjCountByCat[d.id] || 0;
+   529→        const stored = (d.data() as any)?.subjectCount ?? -1;
+   530→        if (stored !== correct) {
+   531→          catBatch.update(d.ref, { subjectCount: correct, updatedAt: serverTimestamp() });
+   532→          catsFixed++;
+   533→        }
+   534→      });
+   535→      if (catsFixed > 0) await catBatch.commit();
+   536→      // Write back subject.testCount
+   537→      let subjsFixed = 0;
+   538→      const subjBatch = writeBatch(db);
+   539→      allSubjectsSnap.forEach((d) => {
+   540→        const correct = testCountBySubj[d.id] || 0;
+   541→        const stored = (d.data() as any)?.testCount ?? -1;
+   542→        if (stored !== correct) {
+   543→          subjBatch.update(d.ref, { testCount: correct, updatedAt: serverTimestamp() });
+   544→          subjsFixed++;
+   545→        }
+   546→      });
+   547→      if (subjsFixed > 0) await subjBatch.commit();
+   548→      // Write back test.questionCount — the Flutter app reads
+   549→      // `test.questionCount` directly to show "N Questions" on test cards.
+   550→      // The seed creates test docs with questionCount: 0 then adds questions
+   551→      // separately, so without this write-back every test shows "0 Questions".
+   552→      const allQuestionsSnap = await getDocs(collection(db, 'questions'));
+   553→      const qCountByTest: Record<string, number> = {};
+   554→      allQuestionsSnap.forEach((d) => {
+   555→        const tId = (d.data() as any)?.testId;
+   556→        if (tId) qCountByTest[tId] = (qCountByTest[tId] || 0) + 1;
+   557→      });
+   558→      let testsFixed = 0;
+   559→      const testBatch = writeBatch(db);
+   560→      allTestsSnap.forEach((d) => {
+   561→        const correct = qCountByTest[d.id] || 0;
+   562→        const stored = (d.data() as any)?.questionCount ?? -1;
+   563→        if (stored !== correct) {
+   564→          testBatch.update(d.ref, { questionCount: correct, updatedAt: serverTimestamp() });
+   565→          testsFixed++;
+   566→        }
+   567→      });
+   568→      if (testsFixed > 0) await testBatch.commit();
+   569→      updateLog('Syncing counts', 'done', `${catsFixed} categories + ${subjsFixed} subjects + ${testsFixed} tests updated`);
+   570→
+   571→      // -------------------------------------------------------------------
+   572→      // Done
+   573→      // -------------------------------------------------------------------
+   574→      const summary = [
+   575→        `${categoriesAdded}/13 categories`,
+   576→        `${subjectsAdded}/26 subjects`,
+   577→        `${testsAdded}/26 tests`,
+   578→        `${questionsAdded}/130 questions`,
+   579→        `${bannersAdded}/5 banners`,
+   580→        `${announcementsAdded}/8 announcements`,
+   581→        `${upcomingExamsAdded}/10 upcoming exams`,
+   582→        `${currentAffairsAdded}/15 current affairs`,
+   583→      ].join(' • ');
+   584→      toast.success(`Seed complete: ${summary}`);
+   585→      updateLog('✅ Done', 'done', summary);
+   586→    } catch (e) {
+   587→      console.error(e);
+   588→      const msg = e instanceof Error ? e.message : 'Unknown error';
+   589→      toast.error(`Seed failed: ${msg}`);
+   590→      updateLog('❌ Error', 'error', msg);
+   591→    } finally {
+   592→      setSeeding(false);
+   593→    }
+   594→  };
+   595→
+   596→  // ===========================================================================
+   597→  // DELETE OPERATION
+   598→  // ===========================================================================
+   599→  const handleDelete = async () => {
+   600→    setDeleting(true);
+   601→    setLog([]);
+   602→    setDeleteConfirm2(false);
+   603→    setDeleteDialogOpen(false);
+   604→
+   605→    // Only deletes from content collections — never user data
+   606→    const contentCollections = [
+   607→      'banners',
+   608→      'announcements',
+   609→      'upcoming_exams',
+   610→      'current_affairs',
+   611→      'questions',
+   612→      'tests',
+   613→      'subjects',
+   614→      'categories',
+   615→    ];
+   616→
+   617→    const counts: Record<string, number> = {};
+   618→
+   619→    try {
+   620→      for (const colName of contentCollections) {
+   621→        updateLog(`Deleting ${colName}...`, 'pending');
+   622→        const snap = await getDocs(collection(db, colName));
+   623→        if (snap.empty) {
+   624→          counts[colName] = 0;
+   625→          updateLog(`Deleting ${colName}...`, 'done', 'empty');
+   626→          continue;
+   627→        }
+   628→
+   629→        // Delete in batches of 450 (Firestore batch limit is 500)
+   630→        const docs = snap.docs;
+   631→        for (let i = 0; i < docs.length; i += 450) {
+   632→          const chunk = docs.slice(i, i + 450);
+   633→          const batch = writeBatch(db);
+   634→          chunk.forEach((d) => batch.delete(d.ref));
+   635→          await batch.commit();
+   636→        }
+   637→        counts[colName] = docs.length;
+   638→        updateLog(`Deleting ${colName}...`, 'done', `${docs.length} deleted`);
+   639→      }
+   640→
+   641→      const total = Object.values(counts).reduce((a, b) => a + b, 0);
+   642→      toast.success(`Deleted ${total} documents from ${contentCollections.length} collections`);
+   643→      updateLog('✅ Done', 'done', `${total} total documents deleted`);
+   644→    } catch (e) {
+   645→      console.error(e);
+   646→      const msg = e instanceof Error ? e.message : 'Unknown error';
+   647→      toast.error(`Delete failed: ${msg}`);
+   648→      updateLog('❌ Error', 'error', msg);
+   649→    } finally {
+   650→      setDeleting(false);
+   651→    }
+   652→  };
+   653→
+   654→  return (
+   655→    <div className="space-y-6">
+   656→      {/* ===================== Header ===================== */}
+   657→      <div className="flex items-start justify-between gap-4 flex-wrap">
+   658→        <div>
+   659→          <h2 className="text-2xl font-bold text-slate-900 flex items-center gap-2">
+   660→            <Database className="w-6 h-6 text-emerald-600" />
+   661→            Data Seed Manager
+   662→          </h2>
+   663→          <p className="text-slate-500 mt-1 text-sm max-w-2xl">
+   664→            Seed the app with real Indian exam-prep data — 13 categories (LIC, SSC,
+   665→            Banking, UPSC, Assam, WB, UP, Defence, Teaching, Insurance, Police,
+   666→            Rajasthan, Maharashtra), 26 subjects, 26 tests, 130 questions, 15 current
+   667→            affairs, 5 banners, 8 announcements, 10 upcoming exams with official +
+   668→            apply links. Indian Railways category is preserved if it already exists.
+   669→          </p>
+   670→        </div>
+   671→      </div>
+   672→
+   673→      {/* ===================== Live Data Status ===================== */}
+   674→      <Card className="border-slate-200">
+   675→        <CardContent className="p-5">
+   676→          <div className="flex items-center gap-2 mb-3">
+   677→            <Activity className="w-4 h-4 text-slate-600" />
+   678→            <h3 className="text-sm font-semibold text-slate-900">Current Data in Firestore (live)</h3>
+   679→            <span className="text-xs text-slate-400 ml-auto">updates in real-time</span>
+   680→          </div>
+   681→          <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+   682→            {Object.entries(EXPECTED).map(([key, exp]) => {
+   683→              const n = counts[key] || 0;
+   684→              const ok = n >= exp.min;
+   685→              const partial = n > 0 && n < exp.min;
+   686→              return (
+   687→                <div
+   688→                  key={key}
+   689→                  className={`rounded-lg border p-2.5 text-center ${
+   690→                    ok
+   691→                      ? 'border-emerald-200 bg-emerald-50'
+   692→                      : partial
+   693→                        ? 'border-amber-200 bg-amber-50'
+   694→                        : 'border-red-200 bg-red-50'
+   695→                  }`}
+   696→                  title={`Expected ≥ ${exp.min}`}
+   697→                >
+   698→                  <div className={`text-2xl font-bold ${ok ? 'text-emerald-700' : partial ? 'text-amber-700' : 'text-red-700'}`}>
+   699→                    {n}
+   700→                  </div>
+   701→                  <div className="text-[10px] text-slate-500 mt-0.5 leading-tight">{exp.label}</div>
+   702→                  <div className="text-[9px] text-slate-400 mt-0.5">
+   703→                    {ok ? '✓ ready' : partial ? 'partial' : 'missing'}
+   704→                  </div>
+   705→                </div>
+   706→              );
+   707→            })}
+   708→          </div>
+   709→          {(counts.categories || 0) === 0 ? (
+   710→            <p className="text-xs text-red-600 mt-3 flex items-center gap-1">
+   711→              <AlertTriangle className="w-3.5 h-3.5" />
+   712→              No categories found. Click <span className="font-semibold">“Seed Data”</span> below to populate the app.
+   713→            </p>
+   714→          ) : (counts.subjects || 0) === 0 ? (
+   715→            <p className="text-xs text-amber-700 mt-3 flex items-center gap-1">
+   716→              <AlertTriangle className="w-3.5 h-3.5" />
+   717→              Categories exist but no subjects. The seed may have partially failed — click <span className="font-semibold">“Seed Data”</span> again (it’s safe, it skips existing docs).
+   718→            </p>
+   719→          ) : (
+   720→            <p className="text-xs text-emerald-700 mt-3 flex items-center gap-1">
+   721→              <CheckCircle2 className="w-3.5 h-3.5" />
+   722→              Data is present. If the user app still shows “0 subjects”, pull-to-refresh inside the category — Firestore streams should sync automatically.
+   723→            </p>
+   724→          )}
+   725→        </CardContent>
+   726→      </Card>
+   727→
+   728→      {/* ===================== Cards ===================== */}
+   729→      <div className="grid gap-4 md:grid-cols-3">
+   730→        {/* ---- Seed Card ---- */}
+   731→        <Card className="border-emerald-200 bg-emerald-50/50">
+   732→          <CardContent className="p-6">
+   733→            <div className="flex items-center gap-3 mb-3">
+   734→              <div className="w-10 h-10 rounded-lg bg-emerald-100 flex items-center justify-center">
+   735→                <Sparkles className="w-5 h-5 text-emerald-700" />
+   736→              </div>
+   737→              <div>
+   738→                <h3 className="font-semibold text-slate-900">Seed Real Indian Exam Data</h3>
+   739→                <p className="text-xs text-slate-500">Idempotent — safe to run multiple times</p>
+   740→              </div>
+   741→            </div>
+   742→            <ul className="text-sm text-slate-600 space-y-1 mb-4">
+   743→              <li>• 13 categories (LIC, SSC, Banking, UPSC, Assam, WB, UP, Defence, Teaching, Insurance, Police, Rajasthan, Maharashtra)</li>
+   744→              <li>• 26 subjects + 26 tests + 130 questions</li>
+   745→              <li>• 5 banners (homepage promotional)</li>
+   746→              <li>• 8 announcements (exam notifications)</li>
+   747→              <li>• 10 upcoming exams (real 2025-2026 dates + official/apply links)</li>
+   748→              <li>• 15 current affairs (real 2025 events — National, International, Sports, Economy, Science, Technology)</li>
+   749→            </ul>
+   750→            <Button
+   751→              onClick={handleSeed}
+   752→              disabled={seeding || deleting || syncing}
+   753→              className="w-full bg-emerald-600 hover:bg-emerald-700"
+   754→            >
+   755→              {seeding ? (
+   756→                <>
+   757→                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+   758→                  Seeding...
+   759→                </>
+   760→              ) : (
+   761→                <>
+   762→                  <Sparkles className="w-4 h-4 mr-2" />
+   763→                  Seed Data
+   764→                </>
+   765→              )}
+   766→            </Button>
+   767→          </CardContent>
+   768→        </Card>
+   769→
+   770→        {/* ---- Sync Counts Card ---- */}
+   771→        <Card className="border-sky-200 bg-sky-50/50">
+   772→          <CardContent className="p-6">
+   773→            <div className="flex items-center gap-3 mb-3">
+   774→              <div className="w-10 h-10 rounded-lg bg-sky-100 flex items-center justify-center">
+   775→                <RefreshCw className="w-5 h-5 text-sky-700" />
+   776→              </div>
+   777→              <div>
+   778→                <h3 className="font-semibold text-slate-900">Sync Subject / Test / Question Counts</h3>
+   779→                <p className="text-xs text-slate-500">Fixes “0 subjects” &amp; “0 Questions” on cards</p>
+   780→              </div>
+   781→            </div>
+   782→            <p className="text-sm text-slate-600 mb-3">
+   783→              Recomputes <code className="text-xs bg-sky-100 px-1 rounded">subjectCount</code> on every
+   784→              category, <code className="text-xs bg-sky-100 px-1 rounded">testCount</code> on every
+   785→              subject, and <code className="text-xs bg-sky-100 px-1 rounded">questionCount</code> on
+   786→              every test from the live collections, then writes the correct values back to Firestore.
+   787→            </p>
+   788→            <ul className="text-sm text-slate-600 space-y-1 mb-4">
+   789→              <li>• Run this after seeding, bulk-import, or manual edits</li>
+   790→              <li>• Use it if the user app shows “0 Subjects” or “0 Questions”</li>
+   791→              <li>• Safe to run anytime — only writes docs whose count is stale</li>
+   792→            </ul>
+   793→            <Button
+   794→              onClick={handleSyncCounts}
+   795→              disabled={seeding || deleting || syncing}
+   796→              className="w-full bg-sky-600 hover:bg-sky-700"
+   797→            >
+   798→              {syncing ? (
+   799→                <>
+   800→                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+   801→                  Syncing...
+   802→                </>
+   803→              ) : (
+   804→                <>
+   805→                  <RefreshCw className="w-4 h-4 mr-2" />
+   806→                  Sync Counts Now
+   807→                </>
+   808→              )}
+   809→            </Button>
+   810→          </CardContent>
+   811→        </Card>
+   812→
+   813→        {/* ---- Delete Card ---- */}
+   814→        <Card className="border-red-200 bg-red-50/50">
+   815→          <CardContent className="p-6">
+   816→            <div className="flex items-center gap-3 mb-3">
+   817→              <div className="w-10 h-10 rounded-lg bg-red-100 flex items-center justify-center">
+   818→                <Trash2 className="w-5 h-5 text-red-700" />
+   819→              </div>
+   820→              <div>
+   821→                <h3 className="font-semibold text-slate-900">Delete All Content</h3>
+   822→                <p className="text-xs text-slate-500">Destructive — requires double confirmation</p>
+   823→              </div>
+   824→            </div>
+   825→            <ul className="text-sm text-slate-600 space-y-1 mb-4">
+   826→              <li>• banners, announcements, upcoming_exams</li>
+   827→              <li>• current_affairs, questions, tests</li>
+   828→              <li>• subjects, categories</li>
+   829→              <li className="text-emerald-700 font-medium">
+   830→                ✓ Never deletes: users, results, bookmarks, payments, subscriptions
+   831→              </li>
+   832→            </ul>
+   833→            <Button
+   834→              onClick={() => setDeleteDialogOpen(true)}
+   835→              disabled={seeding || deleting || syncing}
+   836→              variant="destructive"
+   837→              className="w-full"
+   838→            >
+   839→              <Trash2 className="w-4 h-4 mr-2" />
+   840→              Delete All Content
+   841→            </Button>
+   842→          </CardContent>
+   843→        </Card>
+   844→      </div>
+   845→
+   846→      {/* ===================== Progress Log ===================== */}
+   847→      {(seeding || deleting || syncing || log.length > 0) && (
+   848→        <Card>
+   849→          <CardContent className="p-4">
+   850→            <h4 className="text-sm font-medium text-slate-700 mb-3 flex items-center gap-2">
+   851→              <Loader2
+   852→                className={`w-4 h-4 ${(seeding || deleting || syncing) ? 'animate-spin' : 'hidden'}`}
+   853→              />
+   854→              {seeding ? 'Seeding progress' : deleting ? 'Deletion progress' : syncing ? 'Syncing counts' : 'Last operation log'}
+   855→            </h4>
+   856→            <div className="space-y-1.5 max-h-80 overflow-y-auto">
+   857→              {log.map((entry, idx) => (
+   858→                <div
+   859→                  key={idx}
+   860→                  className="flex items-start gap-2 text-sm font-mono py-1 border-b border-slate-100 last:border-0"
+   861→                >
+   862→                  {entry.status === 'pending' && <Loader2 className="w-3.5 h-3.5 mt-0.5 animate-spin text-slate-400 flex-shrink-0" />}
+   863→                  {entry.status === 'done' && <CheckCircle2 className="w-3.5 h-3.5 mt-0.5 text-emerald-600 flex-shrink-0" />}
+   864→                  {entry.status === 'error' && <AlertTriangle className="w-3.5 h-3.5 mt-0.5 text-red-600 flex-shrink-0" />}
+   865→                  <span className="text-slate-700 flex-1">{entry.step}</span>
+   866→                  {entry.detail && (
+   867→                    <span className="text-slate-400 text-xs">{entry.detail}</span>
+   868→                  )}
+   869→                </div>
+   870→              ))}
+   871→            </div>
+   872→          </CardContent>
+   873→        </Card>
+   874→      )}
+   875→
+   876→      {/* ===================== Double Confirmation Dialog ===================== */}
+   877→      <AlertDialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+   878→        <AlertDialogContent>
+   879→          <AlertDialogHeader>
+   880→            <AlertDialogTitle className="text-red-700">
+   881→              ⚠️ Delete ALL content data?
+   882→            </AlertDialogTitle>
+   883→            <AlertDialogDescription asChild>
+   884→              <div className="space-y-3">
+   885→                <p>
+   886→                  This will permanently delete all documents from these collections:
+   887→                  <span className="font-mono text-xs block mt-1 p-2 bg-slate-100 rounded">
+   888→                    banners, announcements, upcoming_exams, current_affairs,
+   889→                    questions, tests, subjects, categories
+   890→                  </span>
+   891→                </p>
+   892→                <p className="text-emerald-700 font-medium">
+   893→                  ✓ User data (users, results, bookmarks, payments, subscriptions) is SAFE.
+   894→                </p>
+   895→                <p className="text-red-600 font-medium">
+   896→                  ✗ This action cannot be undone. All seeded exam content will be lost.
+   897→                </p>
+   898→                <label className="flex items-center gap-2 mt-2">
+   899→                  <input
+   900→                    type="checkbox"
+   901→                    checked={deleteConfirm2}
+   902→                    onChange={(e) => setDeleteConfirm2(e.target.checked)}
+   903→                    className="rounded border-slate-300"
+   904→                  />
+   905→                  <span className="text-sm text-slate-700">
+   906→                    I understand this is permanent and irreversible
+   907→                  </span>
+   908→                </label>
+   909→              </div>
+   910→            </AlertDialogDescription>
+   911→          </AlertDialogHeader>
+   912→          <AlertDialogFooter>
+   913→            <AlertDialogCancel>Cancel</AlertDialogCancel>
+   914→            <AlertDialogAction
+   915→              onClick={handleDelete}
+   916→              disabled={!deleteConfirm2}
+   917→              className="bg-red-600 hover:bg-red-700 disabled:opacity-50"
+   918→            >
+   919→              Yes, Delete Everything
+   920→            </AlertDialogAction>
+   921→          </AlertDialogFooter>
+   922→        </AlertDialogContent>
+   923→      </AlertDialog>
+   924→    </div>
+   925→  );
+   926→}
+   927→

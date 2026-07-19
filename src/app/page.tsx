@@ -28,8 +28,8 @@ const Products = dynamic(() => import('@/components/admin/products'), { ssr: fal
 const Notifications = dynamic(() => import('@/components/admin/notifications'), { ssr: false });
 const PremiumPlans = dynamic(() => import('@/components/admin/premium-plans'), { ssr: false });
 const PaymentSettings = dynamic(() => import('@/components/admin/payment-settings'), { ssr: false });
-const Support = dynamic(() => import('@/components/admin/support'), { ssr: false });
 const DataManagement = dynamic(() => import('@/components/admin/data-management'), { ssr: false });
+const Support = dynamic(() => import('@/components/admin/support'), { ssr: false });
 
 function AdminContent() {
   const { currentSection } = useAppStore();

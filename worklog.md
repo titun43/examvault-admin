@@ -3142,3 +3142,36 @@ Work Log:
 Stage Summary:
 - States covered: WBCS, UPPSC, RPSC, MPSC, BPSC, JPSC, OPSC, Kerala PSC, TNPSC
 - All state-specific facts cross-checked
+
+---
+Task ID: clear-firebase-data
+Agent: main
+Task: User reported "admin panel still showing data" after seed-data.ts was deleted from the repo. Root cause: deleting code doesn't clear Firebase Firestore — the old v3 data (23 categories, 46 tests, 4020 questions) still lives in Firestore and the admin panel reads from it. Need to give the user a way to wipe Firebase clean.
+
+Work Log:
+- Diagnosed the issue: fresh-clones/examvault-admin commit a58817f deleted src/lib/seed-data.ts AND src/components/admin/data-seed.tsx (which had the only "Delete All Seeded Data" button). So the admin panel lost its only Firebase-clearing tool, while Firestore still holds all the old data.
+- Created NEW standalone component src/components/admin/data-management.tsx (~540 lines):
+  * Live counts of ALL 18 Firestore collections via real-time onSnapshot
+  * "Clear All Content Data" button — wipes 12 content collections (categories, subjects, tests, questions, banners, app_open_banners, announcements, upcoming_exams, current_affairs, study_materials, daily_quizzes, notifications). Preserves users/payments/support. Double AlertDialog confirmation.
+  * "NUKE ALL DATA" button — wipes EVERYTHING including users, payments, support_tickets (with messages subcollection). Must type "DELETE" to confirm.
+  * Operation log with per-collection progress (pending/done/error states)
+  * Uses Firebase Client SDK (same auth context as admin panel) — no service account needed
+  * Does NOT depend on seed-data.ts
+- Wired into admin-shell.tsx (Tools nav group → "Data Management" with Database icon), store.ts (added 'data-management' to AdminSection union), page.tsx (dynamic import + switch case)
+- Synced all changes to /home/z/my-project (the running dev copy):
+  * Copied data-management.tsx
+  * Applied same edits to store.ts, admin-shell.tsx, page.tsx
+  * Deleted old src/lib/seed-data.ts (3560 lines of v3 data) and src/components/admin/data-seed.tsx
+- Ran `bun run lint` — 0 errors, 0 warnings
+- Committed to fresh-clones/examvault-admin as 1bced19 "feat: add Data Management page — clear all Firebase data" and pushed to GitHub (origin/main)
+- Updated watchdog-dev.sh to use `node next dev -p 3000 -H 0.0.0.0` (binds to all interfaces so Agent Browser / Preview Panel can reach it)
+- Started dev server + watchdog on port 3000
+- Verified with Agent Browser: page loads at http://localhost:3000, login form renders (Email + Password + Sign In button), no console errors, no build errors. Screenshot saved to /tmp/admin-login.png
+
+Stage Summary:
+- The admin panel now has a permanent "Data Management" section (under Tools nav group) with two buttons:
+  1. "Clear All Content Data" — safe wipe of 12 content collections (keeps users/payments)
+  2. "NUKE ALL DATA" — wipes everything (type DELETE to confirm)
+- User needs to: log in to admin panel → click "Data Management" in sidebar → click the appropriate clear button → Firebase data is wiped → admin panel shows 0 data (live counts update in real-time)
+- Files: src/components/admin/data-management.tsx (NEW), src/components/admin/admin-shell.tsx (MODIFIED), src/lib/store.ts (MODIFIED), src/app/page.tsx (MODIFIED), watchdog-dev.sh (MODIFIED)
+- Commit 1bced19 pushed to https://github.com/titun43/examvault-admin.git (main branch)

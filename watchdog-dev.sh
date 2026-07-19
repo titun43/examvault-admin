@@ -7,7 +7,7 @@ while true; do
     pkill -f 'next-server' 2>/dev/null
     pkill -f 'next dev' 2>/dev/null
     sleep 1
-    bun run dev >> dev.log 2>&1 &
+    node node_modules/.bin/next dev -p 3000 -H 0.0.0.0 >> dev.log 2>&1 &
     echo "[watchdog] restarted at $(date)" >> dev.log
   fi
   sleep 10

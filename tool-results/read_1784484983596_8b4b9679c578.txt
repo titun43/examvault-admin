@@ -1,0 +1,850 @@
+     1→// =============================================================================
+     2→// ExamVault — Assam Police PART B
+     3→// Bilingual question pool — Quantitative Aptitude (police-quant) + English (police-english)
+     4→//
+     5→// Format (CRITICAL — every field is bilingual EN + অসমীয়া):
+     6→//   question  -> "English\nঅসমীয়া"
+     7→//   option    -> "English / অসমীয়া"
+     8→//   expl      -> "English\nঅসমীয়া"
+     9→//
+    10→// police-quant   : 30 questions (Percentage, Profit-Loss, Interest, Time-Work,
+    11→//                                   Ratio, Average, Mensuration — class X level)
+    12→// police-english : 30 questions (Grammar, Vocabulary, Sentence Correction)
+    13→// Total = 60 bilingual items.
+    14→//
+    15→// Per the task spec, numeric digits stay as digits (NOT transliterated to
+    16→// Assamese numerals); surrounding words/units are translated to Assamese.
+    17→//
+    18→// correctAnswerIndex is distributed evenly (8 × 0, 8 × 1, 7 × 2, 7 × 3)
+    19→// within each subject so test slicing produces a balanced answer key.
+    20→// =============================================================================
+    21→import type { QuestionPoolMap } from './structure';
+    22→
+    23→export const POLICE_POOLS_B: QuestionPoolMap = {
+    24→  // ===========================================================================
+    25→  // police-quant — Quantitative Aptitude (30)
+    26→  // ===========================================================================
+    27→  'police-quant': [
+    28→    // --- Percentage (5) ---
+    29→    {
+    30→      question: 'What is 25% of 240?\n240 ৰ 25% কিমান?',
+    31→      options: ['60 / 60', '50 / 50', '55 / 55', '65 / 65'],
+    32→      correctAnswerIndex: 0,
+    33→      explanation:
+    34→        '25% of 240 = (25/100) × 240 = 60.\n240 ৰ 25% = (25/100) × 240 = 60।',
+    35→      subjectTopic: 'Percentage',
+    36→      marks: 1,
+    37→    },
+    38→    {
+    39→      question:
+    40→        'If 35% of a number is 70, what is the number?\nযদি কোনো সংখ্যাৰ 35% হয় 70, তেন্তে সংখ্যাটো কিমান?',
+    41→      options: ['150 / 150', '200 / 200', '250 / 250', '245 / 245'],
+    42→      correctAnswerIndex: 1,
+    43→      explanation:
+    44→        'Let the number be x. Then 35% of x = 70, so x = 70 × 100 / 35 = 200.\nসংখ্যাটো x হওক। তেন্তে x ৰ 35% = 70, গতিকে x = 70 × 100 / 35 = 200।',
+    45→      subjectTopic: 'Percentage',
+    46→      marks: 1,
+    47→    },
+    48→    {
+    49→      question:
+    50→        'A man spends 75% of his income. If he saves ₹4,000, what is his income?\nএজন মানুহে তেওঁৰ আয়ৰ 75% খৰচ কৰে। যদি তেওঁ ₹4,000 পূজি কৰে, তেন্তে তেওঁৰ আয় কিমান?',
+    51→      options: [
+    52→        '₹12,000 / 12,000 টকা',
+    53→        '₹14,000 / 14,000 টকা',
+    54→        '₹16,000 / 16,000 টকা',
+    55→        '₹18,000 / 18,000 টকা',
+    56→      ],
+    57→      correctAnswerIndex: 2,
+    58→      explanation:
+    59→        'If 75% is spent, 25% is saved. 25% of income = ₹4,000, so income = 4,000 × 100 / 25 = ₹16,000.\nযদি 75% খৰচ হয়, তেন্তে 25% পূজি হয়। আয়ৰ 25% = ₹4,000, গতিকে আয় = 4,000 × 100 / 25 = ₹16,000।',
+    60→      subjectTopic: 'Percentage',
+    61→      marks: 1,
+    62→    },
+    63→    {
+    64→      question:
+    65→        'A candidate got 450 votes out of 900. What percentage of votes did he get?\nএজন প্ৰাৰ্থীয়ে 900 ৰ ভিতৰত 450 ভোট পালে। তেওঁ কিমান শতাংশ ভোট পালে?',
+    66→      options: ['45% / 45%', '40% / 40%', '55% / 55%', '50% / 50%'],
+    67→      correctAnswerIndex: 3,
+    68→      explanation:
+    69→        'Percentage = (450 / 900) × 100 = 50%.\nশতাংশ = (450 / 900) × 100 = 50%।',
+    70→      subjectTopic: 'Percentage',
+    71→      marks: 1,
+    72→    },
+    73→    {
+    74→      question: 'What is 12.5% of 80?\n80 ৰ 12.5% কিমান?',
+    75→      options: ['10 / 10', '8 / 8', '12 / 12', '16 / 16'],
+    76→      correctAnswerIndex: 0,
+    77→      explanation:
+    78→        '12.5% of 80 = (12.5 / 100) × 80 = 10.\n80 ৰ 12.5% = (12.5 / 100) × 80 = 10।',
+    79→      subjectTopic: 'Percentage',
+    80→      marks: 1,
+    81→    },
+    82→
+    83→    // --- Profit-Loss (5) ---
+    84→    {
+    85→      question:
+    86→        'A man buys a watch for ₹500 and sells it for ₹600. What is his profit percentage?\nএজন মানুহে ₹500 ত এটা ঘড়ি কিনি ₹600 ত বিক্ৰী কৰে। তেওঁৰ লাভৰ শতাংশ কিমান?',
+    87→      options: ['15% / 15%', '20% / 20%', '25% / 25%', '10% / 10%'],
+    88→      correctAnswerIndex: 1,
+    89→      explanation:
+    90→        'Profit = 600 − 500 = ₹100. Profit % = (100 / 500) × 100 = 20%.\nলাভ = 600 − 500 = ₹100। লাভ % = (100 / 500) × 100 = 20%।',
+    91→      subjectTopic: 'Profit-Loss',
+    92→      marks: 1,
+    93→    },
+    94→    {
+    95→      question:
+    96→        'An article bought for ₹800 is sold for ₹680. Find the loss percentage.\n₹800 ত কিনা এটা সামগ্ৰী ₹680 ত বিক্ৰী কৰা হ’ল। লোকচানৰ শতাংশ নিৰ্ণয় কৰা।',
+    97→      options: ['20% / 20%', '25% / 25%', '15% / 15%', '10% / 10%'],
+    98→      correctAnswerIndex: 2,
+    99→      explanation:
+   100→        'Loss = 800 − 680 = ₹120. Loss % = (120 / 800) × 100 = 15%.\nলোকচান = 800 − 680 = ₹120। লোকচান % = (120 / 800) × 100 = 15%।',
+   101→      subjectTopic: 'Profit-Loss',
+   102→      marks: 1,
+   103→    },
+   104→    {
+   105→      question:
+   106→        'A pen is sold for ₹1,100 at a profit of 10%. What is its cost price?\nএটা কলম 10% লাভত ₹1,100 ত বিক্ৰী কৰা হয়। ইয়াৰ ক্ৰয়মূল্য কিমান?',
+   107→      options: [
+   108→        '₹990 / 990 টকা',
+   109→        '₹1,010 / 1,010 টকা',
+   110→        '₹1,110 / 1,110 টকা',
+   111→        '₹1,000 / 1,000 টকা',
+   112→      ],
+   113→      correctAnswerIndex: 3,
+   114→      explanation:
+   115→        'CP = SP × 100 / (100 + profit%) = 1100 × 100 / 110 = ₹1,000.\nক্ৰয়মূল্য = বিক্ৰয়মূল্য × 100 / (100 + লাভ%) = 1100 × 100 / 110 = ₹1,000।',
+   116→      subjectTopic: 'Profit-Loss',
+   117→      marks: 1,
+   118→    },
+   119→    {
+   120→      question:
+   121→        'A book is bought for ₹120 and sold for ₹150. What is the profit?\nএখন কিতাপ ₹120 ত কিনি ₹150 ত বিক্ৰী কৰা হ’ল। লাভ কিমান?',
+   122→      options: [
+   123→        '₹30 / 30 টকা',
+   124→        '₹25 / 25 টকা',
+   125→        '₹35 / 35 টকা',
+   126→        '₹20 / 20 টকা',
+   127→      ],
+   128→      correctAnswerIndex: 0,
+   129→      explanation:
+   130→        'Profit = SP − CP = 150 − 120 = ₹30.\nলাভ = বিক্ৰয়মূল্য − ক্ৰয়মূল্য = 150 − 120 = ₹30।',
+   131→      subjectTopic: 'Profit-Loss',
+   132→      marks: 1,
+   133→    },
+   134→    {
+   135→      question:
+   136→        'An article costing ₹250 is sold at a loss of 20%. What is the selling price?\n₹250 মূল্যৰ এটা সামগ্ৰী 20% লোকচানত বিক্ৰী কৰা হ’ল। বিক্ৰয়মূল্য কিমান?',
+   137→      options: [
+   138→        '₹220 / 220 টকা',
+   139→        '₹200 / 200 টকা',
+   140→        '₹210 / 210 টকা',
+   141→        '₹180 / 180 টকা',
+   142→      ],
+   143→      correctAnswerIndex: 1,
+   144→      explanation:
+   145→        'SP = CP × (100 − loss%) / 100 = 250 × 80 / 100 = ₹200.\nবিক্ৰয়মূল্য = ক্ৰয়মূল্য × (100 − লোকচান%) / 100 = 250 × 80 / 100 = ₹200।',
+   146→      subjectTopic: 'Profit-Loss',
+   147→      marks: 1,
+   148→    },
+   149→
+   150→    // --- Interest (4) ---
+   151→    {
+   152→      question:
+   153→        'Find the simple interest on ₹2,000 at 5% per annum for 3 years.\n₹2,000 ৰ ওপৰত 5% বাৰ্ষিক হাৰত 3 বছৰৰ সৰল সুদ নিৰ্ণয় কৰা।',
+   154→      options: [
+   155→        '₹250 / 250 টকা',
+   156→        '₹350 / 350 টকা',
+   157→        '₹300 / 300 টকা',
+   158→        '₹400 / 400 টকা',
+   159→      ],
+   160→      correctAnswerIndex: 2,
+   161→      explanation:
+   162→        'SI = P × R × T / 100 = 2000 × 5 × 3 / 100 = ₹300.\nসৰল সুদ = মূলধন × হাৰ × সময় / 100 = 2000 × 5 × 3 / 100 = ₹300।',
+   163→      subjectTopic: 'Interest',
+   164→      marks: 1,
+   165→    },
+   166→    {
+   167→      question:
+   168→        'The simple interest on a sum is ₹480 at 8% per annum for 3 years. Find the principal.\nএটা মূলধনৰ ওপৰত 8% বাৰ্ষিক হাৰত 3 বছৰত সৰল সুদ ₹480 হয়। মূলধন উলিওৱা।',
+   169→      options: [
+   170→        '₹1,800 / 1,800 টকা',
+   171→        '₹2,200 / 2,200 টকা',
+   172→        '₹1,500 / 1,500 টকা',
+   173→        '₹2,000 / 2,000 টকা',
+   174→      ],
+   175→      correctAnswerIndex: 3,
+   176→      explanation:
+   177→        'P = SI × 100 / (R × T) = 480 × 100 / (8 × 3) = ₹2,000.\nমূলধন = সুদ × 100 / (হাৰ × সময়) = 480 × 100 / (8 × 3) = ₹2,000।',
+   178→      subjectTopic: 'Interest',
+   179→      marks: 1,
+   180→    },
+   181→    {
+   182→      question:
+   183→        'Find the simple interest on ₹5,000 at 6% per annum for 1 year.\n₹5,000 ৰ ওপৰত 6% বাৰ্ষিক হাৰত 1 বছৰৰ সৰল সুদ নিৰ্ণয় কৰা।',
+   184→      options: [
+   185→        '₹300 / 300 টকা',
+   186→        '₹250 / 250 টকা',
+   187→        '₹350 / 350 টকা',
+   188→        '₹600 / 600 টকা',
+   189→      ],
+   190→      correctAnswerIndex: 0,
+   191→      explanation:
+   192→        'SI = P × R × T / 100 = 5000 × 6 × 1 / 100 = ₹300.\nসৰল সুদ = 5000 × 6 × 1 / 100 = ₹300।',
+   193→      subjectTopic: 'Interest',
+   194→      marks: 1,
+   195→    },
+   196→    {
+   197→      question:
+   198→        'At what rate will ₹1,000 amount to ₹1,200 in 2 years (simple interest)?\nকিমান হাৰত ₹1,000 টকাই 2 বছৰত ₹1,200 হ’ব (সৰল সুদ)?',
+   199→      options: ['8% / 8%', '10% / 10%', '12% / 12%', '5% / 5%'],
+   200→      correctAnswerIndex: 1,
+   201→      explanation:
+   202→        'SI = 1200 − 1000 = ₹200. R = SI × 100 / (P × T) = 200 × 100 / (1000 × 2) = 10% per annum.\nসুদ = 1200 − 1000 = ₹200। হাৰ = 200 × 100 / (1000 × 2) = 10% বাৰ্ষিক।',
+   203→      subjectTopic: 'Interest',
+   204→      marks: 1,
+   205→    },
+   206→
+   207→    // --- Time-Work (4) ---
+   208→    {
+   209→      question:
+   210→        'A can do a piece of work in 10 days and B in 15 days. How many days will they take together?\nA এ 10 দিনত আৰু B এ 15 দিনত এটা কাম কৰিব পাৰে। দুয়ো একেলগে কিমান দিন ল’ব?',
+   211→      options: [
+   212→        '5 days / 5 দিন',
+   213→        '8 days / 8 দিন',
+   214→        '6 days / 6 দিন',
+   215→        '12 days / 12 দিন',
+   216→      ],
+   217→      correctAnswerIndex: 2,
+   218→      explanation:
+   219→        'Together: 1/10 + 1/15 = 1/6 per day, so they finish in 6 days.\nএকেলগে: 1/10 + 1/15 = 1/6 প্ৰতিদিন, গতিকে 6 দিনত সম্পূৰ্ণ কৰে।',
+   220→      subjectTopic: 'Time-Work',
+   221→      marks: 1,
+   222→    },
+   223→    {
+   224→      question:
+   225→        'A does 1/4 of a work in 5 days. In how many days will he finish the whole work?\nA এ 5 দিনত এটা কামৰ 1/4 অংশ কৰে। সম্পূৰ্ণ কামটো কিমান দিনত শেষ কৰিব?',
+   226→      options: [
+   227→        '15 days / 15 দিন',
+   228→        '25 days / 25 দিন',
+   229→        '10 days / 10 দিন',
+   230→        '20 days / 20 দিন',
+   231→      ],
+   232→      correctAnswerIndex: 3,
+   233→      explanation:
+   234→        '1/4 work in 5 days, so whole work in 5 × 4 = 20 days.\n5 দিনত 1/4 কাম, গতিকে সম্পূৰ্ণ কাম 5 × 4 = 20 দিনত।',
+   235→      subjectTopic: 'Time-Work',
+   236→      marks: 1,
+   237→    },
+   238→    {
+   239→      question:
+   240→        'If 12 men finish a job in 6 days, how many days will 8 men take?\nযদি 12 জন মানুহে 6 দিনত এটা কাম শেষ কৰে, তেন্তে 8 জন মানুহে কিমান দিন ল’ব?',
+   241→      options: [
+   242→        '9 days / 9 দিন',
+   243→        '8 days / 8 দিন',
+   244→        '10 days / 10 দিন',
+   245→        '12 days / 12 দিন',
+   246→      ],
+   247→      correctAnswerIndex: 0,
+   248→      explanation:
+   249→        'Men × days = constant. 12 × 6 = 8 × d, so d = 72 / 8 = 9 days.\nমানুহ × দিন = ধ্ৰুৱক। 12 × 6 = 8 × d, গতিকে d = 72 / 8 = 9 দিন।',
+   250→      subjectTopic: 'Time-Work',
+   251→      marks: 1,
+   252→    },
+   253→    {
+   254→      question:
+   255→        'A and B together finish a task in 4 days; A alone in 6 days. In how many days will B alone finish it?\nA আৰু B একেলগে 4 দিনত এটা কাম শেষ কৰে; A অকলে 6 দিনত। B অকলে কিমান দিনত শেষ কৰিব?',
+   256→      options: [
+   257→        '10 days / 10 দিন',
+   258→        '12 days / 12 দিন',
+   259→        '8 days / 8 দিন',
+   260→        '15 days / 15 দিন',
+   261→      ],
+   262→      correctAnswerIndex: 1,
+   263→      explanation:
+   264→        "B's 1-day work = 1/4 − 1/6 = 1/12, so B alone takes 12 days.\nB ৰ এদিনৰ কাম = 1/4 − 1/6 = 1/12, গতিকে B অকলে 12 দিন লয়।",
+   265→      subjectTopic: 'Time-Work',
+   266→      marks: 1,
+   267→    },
+   268→
+   269→    // --- Ratio (4) ---
+   270→    {
+   271→      question:
+   272→        'Two numbers are in the ratio 3:5 and their sum is 64. Find the smaller number.\nদুটা সংখ্যা 3:5 অনুপাতত আছে আৰু তেওঁলোকৰ যোগফল 64। সৰু সংখ্যাটো উলিওৱা।',
+   273→      options: ['18 / 18', '20 / 20', '24 / 24', '30 / 30'],
+   274→      correctAnswerIndex: 2,
+   275→      explanation:
+   276→        'Smaller = (3 / 8) × 64 = 24.\nসৰু সংখ্যা = (3 / 8) × 64 = 24।',
+   277→      subjectTopic: 'Ratio',
+   278→      marks: 1,
+   279→    },
+   280→    {
+   281→      question:
+   282→        'Divide ₹1,200 between A and B in the ratio 2:3. What is A’s share?\n₹1,200 টকা A আৰু B ৰ মাজত 2:3 অনুপাতত ভগাওক। A ৰ অংশ কিমান?',
+   283→      options: [
+   284→        '₹400 / 400 টকা',
+   285→        '₹500 / 500 টকা',
+   286→        '₹720 / 720 টকা',
+   287→        '₹480 / 480 টকা',
+   288→      ],
+   289→      correctAnswerIndex: 3,
+   290→      explanation:
+   291→        "A's share = (2 / 5) × 1200 = ₹480.\nA ৰ অংশ = (2 / 5) × 1200 = ₹480।",
+   292→      subjectTopic: 'Ratio',
+   293→      marks: 1,
+   294→    },
+   295→    {
+   296→      question:
+   297→        'If 5 pens cost ₹75, what is the cost of 8 pens?\nযদি 5 টা কলমৰ মূল্য ₹75, তেন্তে 8 টা কলমৰ মূল্য কিমান?',
+   298→      options: [
+   299→        '₹120 / 120 টকা',
+   300→        '₹100 / 100 টকা',
+   301→        '₹125 / 125 টকা',
+   302→        '₹150 / 150 টকা',
+   303→      ],
+   304→      correctAnswerIndex: 0,
+   305→      explanation:
+   306→        'Cost of 1 pen = 75 / 5 = ₹15; cost of 8 pens = 15 × 8 = ₹120.\n1 টা কলমৰ মূল্য = 75 / 5 = ₹15; 8 টাৰ মূল্য = 15 × 8 = ₹120।',
+   307→      subjectTopic: 'Ratio',
+   308→      marks: 1,
+   309→    },
+   310→    {
+   311→      question:
+   312→        'Two numbers are in the ratio 4:7 and their difference is 21. Find the larger number.\nদুটা সংখ্যা 4:7 অনুপাতত আছে আৰু তেওঁলোকৰ পাৰ্থক্য 21। ডাঙৰ সংখ্যাটো উলিওৱা।',
+   313→      options: ['28 / 28', '49 / 49', '35 / 35', '42 / 42'],
+   314→      correctAnswerIndex: 1,
+   315→      explanation:
+   316→        'Difference of ratio parts = 7 − 4 = 3. Larger = (7 / 3) × 21 = 49.\nঅনুপাতৰ পাৰ্থক্য = 7 − 4 = 3। ডাঙৰ সংখ্যা = (7 / 3) × 21 = 49।',
+   317→      subjectTopic: 'Ratio',
+   318→      marks: 1,
+   319→    },
+   320→
+   321→    // --- Average (4) ---
+   322→    {
+   323→      question: 'Find the average of 5, 10, 15, 20 and 25.\n5, 10, 15, 20 আৰু 25 ৰ গড় উলিওৱা।',
+   324→      options: ['12 / 12', '18 / 18', '15 / 15', '20 / 20'],
+   325→      correctAnswerIndex: 2,
+   326→      explanation:
+   327→        'Average = (5 + 10 + 15 + 20 + 25) / 5 = 75 / 5 = 15.\nগড় = (5 + 10 + 15 + 20 + 25) / 5 = 75 / 5 = 15।',
+   328→      subjectTopic: 'Average',
+   329→      marks: 1,
+   330→    },
+   331→    {
+   332→      question:
+   333→        'The average of 6 numbers is 12. What is their sum?\n6 টা সংখ্যাৰ গড় 12। তেওঁলোকৰ যোগফল কিমান?',
+   334→      options: ['60 / 60', '70 / 70', '75 / 75', '72 / 72'],
+   335→      correctAnswerIndex: 3,
+   336→      explanation:
+   337→        'Sum = average × count = 12 × 6 = 72.\nযোগফল = গড় × সংখ্যা = 12 × 6 = 72।',
+   338→      subjectTopic: 'Average',
+   339→      marks: 1,
+   340→    },
+   341→    {
+   342→      question:
+   343→        'The average weight of 8 boys is 50 kg. What is their total weight?\n8 টা ল’ৰাৰ গড় ওজন 50 কিলোগ্ৰাম। তেওঁলোকৰ মুঠ ওজন কিমান?',
+   344→      options: [
+   345→        '400 kg / 400 কিলোগ্ৰাম',
+   346→        '360 kg / 360 কিলোগ্ৰাম',
+   347→        '440 kg / 440 কিলোগ্ৰাম',
+   348→        '380 kg / 380 কিলোগ্ৰাম',
+   349→      ],
+   350→      correctAnswerIndex: 0,
+   351→      explanation:
+   352→        'Total weight = average × count = 50 × 8 = 400 kg.\nমুঠ ওজন = গড় × সংখ্যা = 50 × 8 = 400 কিলোগ্ৰাম।',
+   353→      subjectTopic: 'Average',
+   354→      marks: 1,
+   355→    },
+   356→    {
+   357→      question:
+   358→        'Find the average of 10, 20, 30, 40, 50 and 60.\n10, 20, 30, 40, 50 আৰু 60 ৰ গড় উলিওৱা।',
+   359→      options: ['30 / 30', '35 / 35', '40 / 40', '45 / 45'],
+   360→      correctAnswerIndex: 1,
+   361→      explanation:
+   362→        'Average = (10 + 20 + 30 + 40 + 50 + 60) / 6 = 210 / 6 = 35.\nগড় = (10 + 20 + 30 + 40 + 50 + 60) / 6 = 210 / 6 = 35।',
+   363→      subjectTopic: 'Average',
+   364→      marks: 1,
+   365→    },
+   366→
+   367→    // --- Mensuration (4) ---
+   368→    {
+   369→      question:
+   370→        'Find the area of a rectangle 12 m long and 8 m broad.\n12 মিটাৰ দীঘল আৰু 8 মিটাৰ বহল এটা আয়তৰ কালি উলিওৱা।',
+   371→      options: [
+   372→        '40 m² / 40 বৰ্গ মিটাৰ',
+   373→        '80 m² / 80 বৰ্গ মিটাৰ',
+   374→        '96 m² / 96 বৰ্গ মিটাৰ',
+   375→        '100 m² / 100 বৰ্গ মিটাৰ',
+   376→      ],
+   377→      correctAnswerIndex: 2,
+   378→      explanation:
+   379→        'Area = length × breadth = 12 × 8 = 96 m².\nকালি = দৈৰ্ঘ্য × প্ৰস্থ = 12 × 8 = 96 বৰ্গ মিটাৰ।',
+   380→      subjectTopic: 'Mensuration',
+   381→      marks: 1,
+   382→    },
+   383→    {
+   384→      question:
+   385→        'Find the volume of a cube of side 5 cm.\nবাহু 5 চে.মি. থকা এটা ঘনকৰ আয়তন উলিওৱা।',
+   386→      options: [
+   387→        '25 cm³ / 25 ঘন চে.মি.',
+   388→        '75 cm³ / 75 ঘন চে.মি.',
+   389→        '100 cm³ / 100 ঘন চে.মি.',
+   390→        '125 cm³ / 125 ঘন চে.মি.',
+   391→      ],
+   392→      correctAnswerIndex: 3,
+   393→      explanation:
+   394→        'Volume of cube = side³ = 5³ = 125 cm³.\nঘনকৰ আয়তন = বাহু³ = 5³ = 125 ঘন চে.মি.।',
+   395→      subjectTopic: 'Mensuration',
+   396→      marks: 1,
+   397→    },
+   398→    {
+   399→      question:
+   400→        'Find the area of a circle of radius 7 cm (use π = 22/7).\nব্যাসাৰ্ধ 7 চে.মি. থকা এটা বৃত্তৰ কালি উলিওৱা (π = 22/7 ব্যৱহাৰ কৰা)।',
+   401→      options: [
+   402→        '154 cm² / 154 বৰ্গ চে.মি.',
+   403→        '144 cm² / 144 বৰ্গ চে.মি.',
+   404→        '121 cm² / 121 বৰ্গ চে.মি.',
+   405→        '49 cm² / 49 বৰ্গ চে.মি.',
+   406→      ],
+   407→      correctAnswerIndex: 0,
+   408→      explanation:
+   409→        'Area = πr² = (22/7) × 7² = (22/7) × 49 = 154 cm².\nকালি = πr² = (22/7) × 7² = (22/7) × 49 = 154 বৰ্গ চে.মি.।',
+   410→      subjectTopic: 'Mensuration',
+   411→      marks: 1,
+   412→    },
+   413→    {
+   414→      question:
+   415→        'Find the perimeter of a square of side 9 cm.\nবাহু 9 চে.মি. থকা এটা বৰ্গৰ পৰিসীমা উলিওৱা।',
+   416→      options: [
+   417→        '81 cm / 81 চে.মি.',
+   418→        '36 cm / 36 চে.মি.',
+   419→        '18 cm / 18 চে.মি.',
+   420→        '27 cm / 27 চে.মি.',
+   421→      ],
+   422→      correctAnswerIndex: 1,
+   423→      explanation:
+   424→        'Perimeter of square = 4 × side = 4 × 9 = 36 cm.\nবৰ্গৰ পৰিসীমা = 4 × বাহু = 4 × 9 = 36 চে.মি.।',
+   425→      subjectTopic: 'Mensuration',
+   426→      marks: 1,
+   427→    },
+   428→  ],
+   429→
+   430→  // ===========================================================================
+   431→  // police-english — English (30)
+   432→  // ===========================================================================
+   433→  'police-english': [
+   434→    // --- Grammar (12) ---
+   435→    {
+   436→      question:
+   437→        'Choose the correct article: "___ honest man is respected."\nশুদ্ধ article বাছনি কৰা: "___ honest man is respected."',
+   438→      options: ['An / An', 'A / A', 'The / The', 'No article / কোনো article নহয়'],
+   439→      correctAnswerIndex: 0,
+   440→      explanation:
+   441→        "'Honest' begins with a vowel sound (silent 'h'), so 'An' is used.\n'প্ৰকৃত' শব্দটো স্বৰবৰ্ণৰ ধ্বনিৰে আৰম্ভ হয় (নিঃশব্দ 'h'), গতিকে 'An' ব্যৱহাৰ কৰা হয়।",
+   442→      subjectTopic: 'Grammar',
+   443→      marks: 1,
+   444→    },
+   445→    {
+   446→      question:
+   447→        'Fill in the blank with the correct preposition: "He is fond ___ music."\nশুদ্ধ preposition ৰে খালী ঠাই পূৰ কৰা: "He is fond ___ music."',
+   448→      options: ['with / ৰ সৈতে', 'of / ৰ', 'to / লৈ', 'for / ৰ বাবে'],
+   449→      correctAnswerIndex: 1,
+   450→      explanation:
+   451→        "'Fond of' is the correct prepositional phrase meaning 'liking'.\n'Fond of' হৈছে 'ভাল পোৱা' অৰ্থৰ শুদ্ধ prepositional phrase।",
+   452→      subjectTopic: 'Grammar',
+   453→      marks: 1,
+   454→    },
+   455→    {
+   456→      question:
+   457→        'Choose the correct tense form: "She ___ a letter yesterday."\nশুদ্ধ tense বাছনি কৰা: "She ___ a letter yesterday."',
+   458→      options: [
+   459→        'writes / লিখে',
+   460→        'has written / লিখিছে',
+   461→        'wrote / লিখিছিল',
+   462→        'will write / লিখিব',
+   463→      ],
+   464→      correctAnswerIndex: 2,
+   465→      explanation:
+   466→        "'Yesterday' indicates past time, so the simple past 'wrote' is used.\n'Yesterday' অতীত কাল বুজায়, গতিকে simple past 'wrote' ব্যৱহৃত হয়।",
+   467→      subjectTopic: 'Grammar',
+   468→      marks: 1,
+   469→    },
+   470→    {
+   471→      question:
+   472→        'Change into passive voice: "He writes a letter."\nPassive voice লৈ পৰিবৰ্তন কৰা: "He writes a letter."',
+   473→      options: [
+   474→        'A letter is being written by him. / A letter is being written by him.',
+   475→        'A letter was written by him. / A letter was written by him.',
+   476→        'A letter has been written by him. / A letter has been written by him.',
+   477→        'A letter is written by him. / A letter is written by him.',
+   478→      ],
+   479→      correctAnswerIndex: 3,
+   480→      explanation:
+   481→        "Simple present active 'writes' becomes 'is written' in passive.\nSimple present active 'writes' পৰা passive ত 'is written' হয়।",
+   482→      subjectTopic: 'Grammar',
+   483→      marks: 1,
+   484→    },
+   485→    {
+   486→      question:
+   487→        'Change into indirect speech: He said, "I am happy."\nIndirect speech লৈ পৰিবৰ্তন কৰা: He said, "I am happy."',
+   488→      options: [
+   489→        'He said that he was happy. / He said that he was happy.',
+   490→        'He said that he is happy. / He said that he is happy.',
+   491→        'He says that he was happy. / He says that he was happy.',
+   492→        'He told that he is happy. / He told that he is happy.',
+   493→      ],
+   494→      correctAnswerIndex: 0,
+   495→      explanation:
+   496→        "Present tense 'am' becomes past tense 'was' in indirect speech; 'said' stays.\nIndirect speech ত present tense 'am' পৰিণত হয় past tense 'was' লৈ; 'said' অপৰিবৰ্তিত থাকে।",
+   497→      subjectTopic: 'Grammar',
+   498→      marks: 1,
+   499→    },
+   500→    {
+   501→      question:
+   502→        'Choose the correct modal: "You ___ smoke here." (prohibition)\nশুদ্ধ modal বাছনি কৰা: "You ___ smoke here." (নিষেধ)',
+   503→      options: [
+   504→        'should / উচিত',
+   505→        'must not / নালাগে',
+   506→        'can / পাৰে',
+   507→        'will / হ’ব',
+   508→      ],
+   509→      correctAnswerIndex: 1,
+   510→      explanation:
+   511→        "'Must not' expresses prohibition.\n'Must not' এ নিষেধ বুজায়।",
+   512→      subjectTopic: 'Grammar',
+   513→      marks: 1,
+   514→    },
+   515→    {
+   516→      question:
+   517→        'Fill in the blank with the correct article: "___ sun rises in the east."\nশুদ্ধ article ৰে খালী ঠাই পূৰ কৰা: "___ sun rises in the east."',
+   518→      options: ['A / A', 'An / An', 'The / The', 'No article / কোনো article নহয়'],
+   519→      correctAnswerIndex: 2,
+   520→      explanation:
+   521→        "The definite article 'The' is used before unique things like the sun.\nসূৰ্যৰ দৰে অদ্বিতীয় বস্তুৰ আগত definite article 'The' ব্যৱহৃত হয়।",
+   522→      subjectTopic: 'Grammar',
+   523→      marks: 1,
+   524→    },
+   525→    {
+   526→      question:
+   527→        'Fill in the blank with the correct preposition: "She has been living here ___ 2010."\nশুদ্ধ preposition ৰে খালী ঠাই পূৰ কৰা: "She has been living here ___ 2010."',
+   528→      options: ['for / for', 'from / from', 'in / in', 'since / since'],
+   529→      correctAnswerIndex: 3,
+   530→      explanation:
+   531→        "'Since' is used with a point of time (2010) in perfect continuous tense.\n'Since' এ নিৰ্দিষ্ট সময়বিন্দু (2010) ৰ লগত perfect continuous tense ত ব্যৱহৃত হয়।",
+   532→      subjectTopic: 'Grammar',
+   533→      marks: 1,
+   534→    },
+   535→    {
+   536→      question:
+   537→        'Choose the correct tense form: "They ___ football now."\nশুদ্ধ tense বাছনি কৰা: "They ___ football now."',
+   538→      options: [
+   539→        'are playing / খেলি আছে',
+   540→        'play / খেলে',
+   541→        'played / খেলিছিল',
+   542→        'have played / খেলিছে',
+   543→      ],
+   544→      correctAnswerIndex: 0,
+   545→      explanation:
+   546→        "'Now' indicates present continuous action, so 'are playing' is correct.\n'Now' এ present continuous ক্ৰিয়া বুজায়, গতিকে 'are playing' শুদ্ধ।",
+   547→      subjectTopic: 'Grammar',
+   548→      marks: 1,
+   549→    },
+   550→    {
+   551→      question:
+   552→        'Change into passive voice: "She sings a song."\nPassive voice লৈ পৰিবৰ্তন কৰা: "She sings a song."',
+   553→      options: [
+   554→        'A song is being sung by her. / A song is being sung by her.',
+   555→        'A song is sung by her. / A song is sung by her.',
+   556→        'A song was sung by her. / A song was sung by her.',
+   557→        'A song sung by her. / A song sung by her.',
+   558→      ],
+   559→      correctAnswerIndex: 1,
+   560→      explanation:
+   561→        "Simple present 'sings' becomes 'is sung' in passive voice.\nSimple present 'sings' পৰা passive voice ত 'is sung' হয়।",
+   562→      subjectTopic: 'Grammar',
+   563→      marks: 1,
+   564→    },
+   565→    {
+   566→      question:
+   567→        'Change into indirect speech: She said, "I will come."\nIndirect speech লৈ পৰিবৰ্তন কৰা: She said, "I will come."',
+   568→      options: [
+   569→        'She said that she will come. / She said that she will come.',
+   570→        'She said that she comes. / She said that she comes.',
+   571→        'She said that she would come. / She said that she would come.',
+   572→        'She told that she will come. / She told that she will come.',
+   573→      ],
+   574→      correctAnswerIndex: 2,
+   575→      explanation:
+   576→        "'Will' changes to 'would' in indirect speech.\nIndirect speech ত 'will' পৰিণত হয় 'would' লৈ।",
+   577→      subjectTopic: 'Grammar',
+   578→      marks: 1,
+   579→    },
+   580→    {
+   581→      question:
+   582→        'Choose the correct modal: "___ I borrow your pen, please?"\nশুদ্ধ modal বাছনি কৰা: "___ I borrow your pen, please?"',
+   583→      options: ['Will / Will', 'Should / Should', 'Would / Would', 'May / May'],
+   584→      correctAnswerIndex: 3,
+   585→      explanation:
+   586→        "'May' is used for polite requests seeking permission.\nভদ্ৰভাৱে অনুমতি বিচৰাত 'May' ব্যৱহৃত হয়।",
+   587→      subjectTopic: 'Grammar',
+   588→      marks: 1,
+   589→    },
+   590→
+   591→    // --- Vocabulary (12): synonyms 4, antonyms 4, one-word 2, spelling 2 ---
+   592→    {
+   593→      question: "Choose the synonym of 'Abundant'.\n'Abundant' ৰ সমাৰ্থক শব্দ বাছনি কৰা।",
+   594→      options: [
+   595→        'Plentiful / প্ৰচুৰ',
+   596→        'Scarce / দুৰ্লভ',
+   597→        'Empty / খালী',
+   598→        'Poor / দুখীয়া',
+   599→      ],
+   600→      correctAnswerIndex: 0,
+   601→      explanation:
+   602→        "'Abundant' means existing in large quantities, i.e. 'Plentiful'.\n'Abundant' মানে প্ৰচুৰ পৰিমাণে থকা, অৰ্থাৎ 'Plentiful'।",
+   603→      subjectTopic: 'Vocabulary',
+   604→      marks: 1,
+   605→    },
+   606→    {
+   607→      question: "Choose the synonym of 'Brave'.\n'Brave' ৰ সমার্থক শব্দ বাছনি কৰা।",
+   608→      options: [
+   609→        'Cowardly / ভীৰু',
+   610→        'Courageous / সাহসী',
+   611→        'Fearful / ভয়াল',
+   612→        'Weak / দুৰ্বল',
+   613→      ],
+   614→      correctAnswerIndex: 1,
+   615→      explanation:
+   616→        "'Brave' means showing courage; synonym is 'Courageous'.\n'Brave' মানে সাহসী; সমাৰ্থক শব্দ 'Courageous'।",
+   617→      subjectTopic: 'Vocabulary',
+   618→      marks: 1,
+   619→    },
+   620→    {
+   621→      question: "Choose the synonym of 'Ancient'.\n'Ancient' ৰ সমাৰ্থক শব্দ বাছনি কৰা।",
+   622→      options: [
+   623→        'Modern / আধুনিক',
+   624→        'New / নতুন',
+   625→        'Old / পুৰণি',
+   626→        'Recent / শেহতীয়া',
+   627→      ],
+   628→      correctAnswerIndex: 2,
+   629→      explanation:
+   630→        "'Ancient' means very old; synonym is 'Old'.\n'Ancient' মানে অতি পুৰণি; সমাৰ্থক শব্দ 'Old'।",
+   631→      subjectTopic: 'Vocabulary',
+   632→      marks: 1,
+   633→    },
+   634→    {
+   635→      question: "Choose the synonym of 'Begin'.\n'Begin' ৰ সমাৰ্থক শব্দ বাছনি কৰা।",
+   636→      options: [
+   637→        'End / শেষ কৰা',
+   638→        'Stop / ৰোৱা',
+   639→        'Close / বন্ধ কৰা',
+   640→        'Start / আৰম্ভ কৰা',
+   641→      ],
+   642→      correctAnswerIndex: 3,
+   643→      explanation:
+   644→        "'Begin' means to start; synonym is 'Start'.\n'Begin' মানে আৰম্ভ কৰা; সমাৰ্থক শব্দ 'Start'।",
+   645→      subjectTopic: 'Vocabulary',
+   646→      marks: 1,
+   647→    },
+   648→    {
+   649→      question: "Choose the antonym of 'Hot'.\n'Hot' ৰ বিপৰীত শব্দ বাছনি কৰা।",
+   650→      options: [
+   651→        'Cold / ঠাণ্ডা',
+   652→        'Warm / উষ্ণ',
+   653→        'Boiling / উতলন',
+   654→        'Heated / গৰম',
+   655→      ],
+   656→      correctAnswerIndex: 0,
+   657→      explanation:
+   658→        "'Cold' is the opposite of 'Hot'.\n'Cold' হৈছে 'Hot' ৰ বিপৰীত শব্দ।",
+   659→      subjectTopic: 'Vocabulary',
+   660→      marks: 1,
+   661→    },
+   662→    {
+   663→      question: "Choose the antonym of 'Victory'.\n'Victory' ৰ বিপৰীত শব্দ বাছনি কৰা।",
+   664→      options: [
+   665→        'Win / জয়',
+   666→        'Defeat / পৰাজয়',
+   667→        'Success / সফলতা',
+   668→        'Triumph / বিজয়',
+   669→      ],
+   670→      correctAnswerIndex: 1,
+   671→      explanation:
+   672→        "'Defeat' is the opposite of 'Victory'.\n'Defeat' হৈছে 'Victory' ৰ বিপৰীত শব্দ।",
+   673→      subjectTopic: 'Vocabulary',
+   674→      marks: 1,
+   675→    },
+   676→    {
+   677→      question: "Choose the antonym of 'Generous'.\n'Generous' ৰ বিপৰীত শব্দ বাছনি কৰা।",
+   678→      options: [
+   679→        'Kind / দয়ালু',
+   680→        'Giving / দানশীল',
+   681→        'Mean / কৃপণ',
+   682→        'Charitable / পৰোপকাৰী',
+   683→      ],
+   684→      correctAnswerIndex: 2,
+   685→      explanation:
+   686→        "'Mean' (miserly) is the opposite of 'Generous'.\n'Mean' (কৃপণ) হৈছে 'Generous' ৰ বিপৰীত শব্দ।",
+   687→      subjectTopic: 'Vocabulary',
+   688→      marks: 1,
+   689→    },
+   690→    {
+   691→      question: "Choose the antonym of 'Arrive'.\n'Arrive' ৰ বিপৰীত শব্দ বাছনি কৰা।",
+   692→      options: [
+   693→        'Come / অহা',
+   694→        'Reach / পোৱা',
+   695→        'Stay / থকা',
+   696→        'Depart / ওলাই যোৱা',
+   697→      ],
+   698→      correctAnswerIndex: 3,
+   699→      explanation:
+   700→        "'Depart' (leave) is the opposite of 'Arrive'.\n'Depart' (ওলাই যোৱা) হৈছে 'Arrive' ৰ বিপৰীত শব্দ।",
+   701→      subjectTopic: 'Vocabulary',
+   702→      marks: 1,
+   703→    },
+   704→    {
+   705→      question:
+   706→        "Choose the one-word substitution for: 'A person who treats sick animals.'\nএটা শব্দৰ পৰিবৰ্তন বাছনি কৰা: 'যিজনে অসুস্থ জন্তুৰ চিকিৎসা কৰে।'",
+   707→      options: [
+   708→        'Veterinarian / পশুচিকিৎসক',
+   709→        'Doctor / চিকিৎসক',
+   710→        'Surgeon / শল্যচিকিৎসক',
+   711→        'Dentist / দন্তচিকিৎসক',
+   712→      ],
+   713→      correctAnswerIndex: 0,
+   714→      explanation:
+   715→        "A 'Veterinarian' is a doctor who treats sick animals.\n'Veterinarian' হৈছে অসুস্থ জন্তুৰ চিকিৎসা কৰা চিকিৎসক।",
+   716→      subjectTopic: 'Vocabulary',
+   717→      marks: 1,
+   718→    },
+   719→    {
+   720→      question:
+   721→        "Choose the one-word substitution for: 'A place where books are kept.'\nএটা শব্দৰ পৰিবৰ্তন বাছনি কৰা: 'য'ত কিতাপ ৰখা হয়।'",
+   722→      options: [
+   723→        'Museum / সংগ্ৰহালয়',
+   724→        'Library / পুথিভঁৰাল',
+   725→        'School / বিদ্যালয়',
+   726→        'Hospital / চিকিৎসালয়',
+   727→      ],
+   728→      correctAnswerIndex: 1,
+   729→      explanation:
+   730→        "A 'Library' is a place where books are kept.\n'Library' হৈছে কিতাপ ৰখা ঠাই।",
+   731→      subjectTopic: 'Vocabulary',
+   732→      marks: 1,
+   733→    },
+   734→    {
+   735→      question: 'Choose the correctly spelt word.\nশুদ্ধ বানানৰ শব্দটো বাছনি কৰা।',
+   736→      options: [
+   737→        'Accomodation / Accomodation',
+   738→        'Acommodation / Acommodation',
+   739→        'Accommodation / Accommodation',
+   740→        'Accommodasion / Accommodasion',
+   741→      ],
+   742→      correctAnswerIndex: 2,
+   743→      explanation:
+   744→        "The correct spelling is 'Accommodation' (double c, double m).\nশুদ্ধ বানান হৈছে 'Accommodation' (দুটাকৈ c, দুটাকৈ m)।",
+   745→      subjectTopic: 'Vocabulary',
+   746→      marks: 1,
+   747→    },
+   748→    {
+   749→      question: 'Choose the correctly spelt word.\nশুদ্ধ বানানৰ শব্দটো বাছনি কৰা।',
+   750→      options: [
+   751→        'Definately / Definately',
+   752→        'Definitley / Definitley',
+   753→        'Definitle / Definitle',
+   754→        'Definitely / Definitely',
+   755→      ],
+   756→      correctAnswerIndex: 3,
+   757→      explanation:
+   758→        "The correct spelling is 'Definitely'.\nশুদ্ধ বানান হৈছে 'Definitely'।",
+   759→      subjectTopic: 'Vocabulary',
+   760→      marks: 1,
+   761→    },
+   762→
+   763→    // --- Sentence Correction (6) ---
+   764→    {
+   765→      question: 'Choose the correct sentence.\nশুদ্ধ বাক্যটো বাছনি কৰা।',
+   766→      options: [
+   767→        'He goes to school every day. / He goes to school every day.',
+   768→        'He going to school every day. / He going to school every day.',
+   769→        'He gone to school every day. / He gone to school every day.',
+   770→        'He is go to school every day. / He is go to school every day.',
+   771→      ],
+   772→      correctAnswerIndex: 0,
+   773→      explanation:
+   774→        "With third person singular subject 'He' in simple present, the verb takes '-es': 'goes'.\nThird person singular 'He' ৰ সৈতে simple present ত ক্ৰিয়াই '-es' লয়: 'goes'।",
+   775→      subjectTopic: 'Sentence Correction',
+   776→      marks: 1,
+   777→    },
+   778→    {
+   779→      question: 'Choose the correct sentence.\nশুদ্ধ বাক্যটো বাছনি কৰা।',
+   780→      options: [
+   781→        'She not like tea. / She not like tea.',
+   782→        "She doesn't like tea. / She doesn't like tea.",
+   783→        "She don't likes tea. / She don't likes tea.",
+   784→        "She isn't like tea. / She isn't like tea.",
+   785→      ],
+   786→      correctAnswerIndex: 1,
+   787→      explanation:
+   788→        "With third person singular, the negative is 'doesn't + base verb': 'She doesn't like tea.'\nThird person singular ৰ ক্ষেত্ৰত negative হয় 'doesn't + মূল ক্ৰিয়া': 'She doesn't like tea.'",
+   789→      subjectTopic: 'Sentence Correction',
+   790→      marks: 1,
+   791→    },
+   792→    {
+   793→      question: 'Choose the correct sentence.\nশুদ্ধ বাক্যটো বাছনি কৰা।',
+   794→      options: [
+   795→        'I am living here for 2010. / I am living here for 2010.',
+   796→        'I was living here since 2010. / I was living here since 2010.',
+   797→        'I have been living here since 2010. / I have been living here since 2010.',
+   798→        'I lived here since 2010. / I lived here since 2010.',
+   799→      ],
+   800→      correctAnswerIndex: 2,
+   801→      explanation:
+   802→        "An action that began in the past and continues uses present perfect continuous with 'since': 'I have been living here since 2010.'\nঅতীতত আৰম্ভ হৈ চলি থকা ক্ৰিয়াৰ ক্ষেত্ৰত 'since' ৰ সৈতে present perfect continuous ব্যৱহৃত হয়: 'I have been living here since 2010.'",
+   803→      subjectTopic: 'Sentence Correction',
+   804→      marks: 1,
+   805→    },
+   806→    {
+   807→      question: 'Choose the correct sentence.\nশুদ্ধ বাক্যটো বাছনি কৰা।',
+   808→      options: [
+   809→        'One of my friend is a doctor. / One of my friend is a doctor.',
+   810→        'One of my friends are a doctor. / One of my friends are a doctor.',
+   811→        'One of my friend was a doctor. / One of my friend was a doctor.',
+   812→        'One of my friends is a doctor. / One of my friends is a doctor.',
+   813→      ],
+   814→      correctAnswerIndex: 3,
+   815→      explanation:
+   816→        "'One of' is followed by a plural noun and singular verb: 'One of my friends is a doctor.'\n'One of' ৰ পিছত plural noun আৰু singular verb ব্যৱহৃত হয়: 'One of my friends is a doctor.'",
+   817→      subjectTopic: 'Sentence Correction',
+   818→      marks: 1,
+   819→    },
+   820→    {
+   821→      question: 'Choose the correct sentence.\nশুদ্ধ বাক্যটো বাছনি কৰা।',
+   822→      options: [
+   823→        'He is taller than me. / He is taller than me.',
+   824→        'He is more taller than me. / He is more taller than me.',
+   825→        'He is tallest than me. / He is tallest than me.',
+   826→        'He is much tall than me. / He is much tall than me.',
+   827→      ],
+   828→      correctAnswerIndex: 0,
+   829→      explanation:
+   830→        "'Tall' is a one-syllable adjective; its comparative is 'taller', not 'more taller'.\n'Tall' এটা একাক্ষৰ বিশেষণ; ইয়াৰ comparative 'taller', 'more taller' নহয়।",
+   831→      subjectTopic: 'Sentence Correction',
+   832→      marks: 1,
+   833→    },
+   834→    {
+   835→      question: 'Choose the correct sentence.\nশুদ্ধ বাক্যটো বাছনি কৰা।',
+   836→      options: [
+   837→        'Neither of the boys were present. / Neither of the boys were present.',
+   838→        'Neither of the boys was present. / Neither of the boys was present.',
+   839→        'Neither of the boy were present. / Neither of the boy were present.',
+   840→        'Neither of the boys is being present. / Neither of the boys is being present.',
+   841→      ],
+   842→      correctAnswerIndex: 1,
+   843→      explanation:
+   844→        "'Neither of' takes a singular verb: 'Neither of the boys was present.'\n'Neither of' ৰ লগত singular verb ব্যৱহৃত হয়: 'Neither of the boys was present.'",
+   845→      subjectTopic: 'Sentence Correction',
+   846→      marks: 1,
+   847→    },
+   848→  ],
+   849→};
+   850→

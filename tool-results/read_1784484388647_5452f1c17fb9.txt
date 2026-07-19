@@ -1,0 +1,788 @@
+     1→// =============================================================================
+     2→// ExamVault — Assam Seed Data (structure)
+     3→// Target: Assam students. Real, Assam-focused competitive-exam content.
+     4→//
+     5→// Hierarchy: Categories → Subjects → Tests → Questions (bilingual EN + অসমীয়া)
+     6→//
+     7→// This file defines the STRUCTURE (categories, subjects, tests, banners,
+     8→// study materials) plus the question-pool → test-slicing logic. The actual
+     9→// bilingual question pools live in questions-<category>.ts files (written by
+    10→// parallel agents) and are assembled in index.ts.
+    11→// =============================================================================
+    12→
+    13→export type TestType = 'mock' | 'previousYear' | 'practice' | 'subjectwise' | 'dailyQuiz';
+    14→
+    15→// ---------------------------------------------------------------------------
+    16→// Reference-keyed definitions (IDs are assigned at seed time by Firestore
+    17→// addDoc, so we link entities by stable string keys instead of IDs).
+    18→// ---------------------------------------------------------------------------
+    19→
+    20→export interface SeedCategory {
+    21→  key: string;
+    22→  name: string;
+    23→  slug: string;
+    24→  icon: string;
+    25→  description: string;
+    26→  color: string;
+    27→  order: number;
+    28→  isPremium: boolean;
+    29→  premiumPrice: number;
+    30→  premiumDurationMonths: number;
+    31→}
+    32→
+    33→export interface SeedSubject {
+    34→  key: string;
+    35→  categoryKey: string;
+    36→  name: string;
+    37→  slug: string;
+    38→  icon: string;
+    39→  description: string;
+    40→  order: number;
+    41→  premiumPrice: number;
+    42→}
+    43→
+    44→export interface SeedTest {
+    45→  key: string;
+    46→  subjectKey: string;
+    47→  categoryKey: string;
+    48→  title: string;
+    49→  slug: string;
+    50→  type: TestType;
+    51→  duration: number;
+    52→  totalMarks: number;
+    53→  passingMarks: number;
+    54→  difficulty: 'easy' | 'medium' | 'hard';
+    55→  negativeMarking: boolean;
+    56→  negativeMarks: number;
+    57→  instructions: string;
+    58→  year: number;
+    59→  examSession: string;
+    60→  isPremium: boolean;
+    61→  price: number;
+    62→  questionCount: number;
+    63→}
+    64→
+    65→export interface SeedQuestionPoolItem {
+    66→  question: string;
+    67→  options: [string, string, string, string];
+    68→  correctAnswerIndex: number;
+    69→  explanation: string;
+    70→  subjectTopic: string;
+    71→  marks: number;
+    72→}
+    73→
+    74→export interface SeedBanner {
+    75→  title: string;
+    76→  subtitle: string;
+    77→  imageFile: string;
+    78→  order: number;
+    79→  isActive: boolean;
+    80→  primaryButtonLabel: string;
+    81→  primaryButtonSection: string;
+    82→}
+    83→
+    84→export interface SeedStudyMaterial {
+    85→  subjectKey: string;
+    86→  categoryKey: string;
+    87→  type: 'previousPaper' | 'notes' | 'syllabus';
+    88→  title: string;
+    89→  description: string;
+    90→  pages: number;
+    91→  isPremium: boolean;
+    92→  isPublished: boolean;
+    93→  order: number;
+    94→  content: string;
+    95→}
+    96→
+    97→// ===========================================================================
+    98→// CATEGORIES (6) — real Assam competitive exams
+    99→// ===========================================================================
+   100→export const SEED_CATEGORIES: SeedCategory[] = [
+   101→  {
+   102→    key: 'apsc',
+   103→    name: 'APSC',
+   104→    slug: 'apsc',
+   105→    icon: '🏛️',
+   106→    description: 'Assam Public Service Commission — Combined Competitive Examination (Prelims & Mains). The flagship state-civil-services exam.',
+   107→    color: '#10b981',
+   108→    order: 1,
+   109→    isPremium: false,
+   110→    premiumPrice: 199,
+   111→    premiumDurationMonths: 3,
+   112→  },
+   113→  {
+   114→    key: 'assam-police',
+   115→    name: 'Assam Police',
+   116→    slug: 'assam-police',
+   117→    icon: '🛡️',
+   118→    description: 'SLPRB Assam — Constable (UB/AB) & Sub-Inspector recruitment. Mass-recruitment exam for the Assam Police Department.',
+   119→    color: '#3b82f6',
+   120→    order: 2,
+   121→    isPremium: false,
+   122→    premiumPrice: 149,
+   123→    premiumDurationMonths: 2,
+   124→  },
+   125→  {
+   126→    key: 'assam-tet',
+   127→    name: 'Assam TET',
+   128→    slug: 'assam-tet',
+   129→    icon: '👩‍🏫',
+   130→    description: 'Assam Teachers Eligibility Test — Elementary (LP & UP) and Secondary. Mandatory qualification for government teacher posts in Assam.',
+   131→    color: '#f59e0b',
+   132→    order: 3,
+   133→    isPremium: false,
+   134→    premiumPrice: 129,
+   135→    premiumDurationMonths: 2,
+   136→  },
+   137→  {
+   138→    key: 'adre',
+   139→    name: 'Assam Direct Recruitment',
+   140→    slug: 'assam-direct-recruitment',
+   141→    icon: '📝',
+   142→    description: 'ADRE — Grade III & Grade IV recruitment conducted by SEBA/SLPRB for 32,000+ government posts across Assam.',
+   143→    color: '#ef4444',
+   144→    order: 4,
+   145→    isPremium: false,
+   146→    premiumPrice: 149,
+   147→    premiumDurationMonths: 2,
+   148→  },
+   149→  {
+   150→    key: 'assam-secretariat',
+   151→    name: 'Assam Secretariat',
+   152→    slug: 'assam-secretariat',
+   153→    icon: '📂',
+   154→    description: 'Assam Secretariat — Junior Assistant & Computer Operator recruitment. Clerical-grade government jobs in the state secretariat.',
+   155→    color: '#8b5cf6',
+   156→    order: 5,
+   157→    isPremium: false,
+   158→    premiumPrice: 99,
+   159→    premiumDurationMonths: 1,
+   160→  },
+   161→  {
+   162→    key: 'ssc-railway',
+   163→    name: 'SSC & Railway',
+   164→    slug: 'ssc-railway',
+   165→    icon: '🚆',
+   166→    description: 'SSC (CGL/CHSL/MTS) & Railway (RRB NTPC/Group-D) exams with regional relevance for Assam aspirants.',
+   167→    color: '#06b6d4',
+   168→    order: 6,
+   169→    isPremium: false,
+   170→    premiumPrice: 129,
+   171→    premiumDurationMonths: 2,
+   172→  },
+   173→];
+   174→
+   175→// ===========================================================================
+   176→// SUBJECTS (28) — mapped to each category's actual syllabus
+   177→// ===========================================================================
+   178→export const SEED_SUBJECTS: SeedSubject[] = [
+   179→  // --- APSC (5) ---
+   180→  { key: 'apsc-gs', categoryKey: 'apsc', name: 'General Studies', slug: 'apsc-general-studies', icon: '📚', description: 'APSC GS Paper — History, Geography, Polity, Economy, Science & Current Affairs.', order: 1, premiumPrice: 0 },
+   181→  { key: 'apsc-history', categoryKey: 'apsc', name: 'History of Assam & India', slug: 'apsc-history', icon: '🕰️', description: 'Ancient, Medieval & Modern history with special focus on Assam history.', order: 2, premiumPrice: 0 },
+   182→  { key: 'apsc-geography', categoryKey: 'apsc', name: 'Geography', slug: 'apsc-geography', icon: '🌍', description: 'Physical, economic & regional geography of Assam and India.', order: 3, premiumPrice: 0 },
+   183→  { key: 'apsc-polity', categoryKey: 'apsc', name: 'Indian Polity', slug: 'apsc-indian-polity', icon: '⚖️', description: 'Constitution, governance, Panchayati Raj & Assam state administration.', order: 4, premiumPrice: 0 },
+   184→  { key: 'apsc-economy', categoryKey: 'apsc', name: 'Economy', slug: 'apsc-economy', icon: '💰', description: 'Indian economy, Assam budget, banking & economic development.', order: 5, premiumPrice: 0 },
+   185→
+   186→  // --- Assam Police (5) ---
+   187→  { key: 'police-gk', categoryKey: 'assam-police', name: 'General Knowledge', slug: 'police-general-knowledge', icon: '🧠', description: 'Assam & India general knowledge for police recruitment.', order: 1, premiumPrice: 0 },
+   188→  { key: 'police-reasoning', categoryKey: 'assam-police', name: 'Reasoning', slug: 'police-reasoning', icon: '🧩', description: 'Logical & analytical reasoning for SI/Constable exam.', order: 2, premiumPrice: 0 },
+   189→  { key: 'police-quant', categoryKey: 'assam-police', name: 'Quantitative Aptitude', slug: 'police-quantitative-aptitude', icon: '🔢', description: 'Numerical ability for Assam Police recruitment.', order: 3, premiumPrice: 0 },
+   190→  { key: 'police-english', categoryKey: 'assam-police', name: 'English', slug: 'police-english', icon: '🔤', description: 'English language & grammar for police exam.', order: 4, premiumPrice: 0 },
+   191→  { key: 'police-assamese', categoryKey: 'assam-police', name: 'Assamese Language', slug: 'police-assamese-language', icon: '📖', description: 'অসমীয়া ভাষা আৰু ব্যাকৰণ — Assamese language & grammar.', order: 5, premiumPrice: 0 },
+   192→
+   193→  // --- Assam TET (5) ---
+   194→  { key: 'tet-cdp', categoryKey: 'assam-tet', name: 'Child Development & Pedagogy', slug: 'tet-child-development-pedagogy', icon: '🧒', description: 'CDP — learning theories, Piaget, Vygotsky, assessment & inclusive education.', order: 1, premiumPrice: 0 },
+   195→  { key: 'tet-assamese', categoryKey: 'assam-tet', name: 'Language I — Assamese', slug: 'tet-language-assamese', icon: '📖', description: 'অসমীয়া ভাষা — ব্যাকৰণ, সাহিত্য আৰু শিক্ষাশাস্ত্ৰ।', order: 2, premiumPrice: 0 },
+   196→  { key: 'tet-english', categoryKey: 'assam-tet', name: 'Language II — English', slug: 'tet-language-english', icon: '🔤', description: 'English language comprehension & pedagogy for TET.', order: 3, premiumPrice: 0 },
+   197→  { key: 'tet-maths', categoryKey: 'assam-tet', name: 'Mathematics', slug: 'tet-mathematics', icon: '🔢', description: 'Mathematics pedagogy & content for elementary level.', order: 4, premiumPrice: 0 },
+   198→  { key: 'tet-evs', categoryKey: 'assam-tet', name: 'Environmental Studies', slug: 'tet-environmental-studies', icon: '🌳', description: 'EVS — environment, Assam ecology & pedagogy.', order: 5, premiumPrice: 0 },
+   199→
+   200→  // --- ADRE (5) ---
+   201→  { key: 'adre-gk', categoryKey: 'adre', name: 'General Knowledge (Assam)', slug: 'adre-general-knowledge', icon: '🧠', description: 'Assam-focused GK for ADRE Grade III & IV.', order: 1, premiumPrice: 0 },
+   202→  { key: 'adre-reasoning', categoryKey: 'adre', name: 'Reasoning', slug: 'adre-reasoning', icon: '🧩', description: 'Logical reasoning for ADRE recruitment.', order: 2, premiumPrice: 0 },
+   203→  { key: 'adre-maths', categoryKey: 'adre', name: 'Mathematics', slug: 'adre-mathematics', icon: '🔢', description: 'Class IX–X level mathematics for ADRE.', order: 3, premiumPrice: 0 },
+   204→  { key: 'adre-english', categoryKey: 'adre', name: 'English', slug: 'adre-english', icon: '🔤', description: 'English grammar & comprehension for ADRE.', order: 4, premiumPrice: 0 },
+   205→  { key: 'adre-awareness', categoryKey: 'adre', name: 'General Awareness', slug: 'adre-general-awareness', icon: '🌐', description: 'India & world general awareness for ADRE.', order: 5, premiumPrice: 0 },
+   206→
+   207→  // --- Assam Secretariat (4) ---
+   208→  { key: 'sec-english', categoryKey: 'assam-secretariat', name: 'General English', slug: 'secretariat-general-english', icon: '🔤', description: 'English grammar, vocabulary & drafting for Junior Assistant.', order: 1, premiumPrice: 0 },
+   209→  { key: 'sec-gk', categoryKey: 'assam-secretariat', name: 'General Knowledge', slug: 'secretariat-general-knowledge', icon: '🧠', description: 'Assam & India GK for Secretariat exam.', order: 2, premiumPrice: 0 },
+   210→  { key: 'sec-reasoning', categoryKey: 'assam-secretariat', name: 'Reasoning', slug: 'secretariat-reasoning', icon: '🧩', description: 'Logical & verbal reasoning for Junior Assistant.', order: 3, premiumPrice: 0 },
+   211→  { key: 'sec-computer', categoryKey: 'assam-secretariat', name: 'Computer Knowledge', slug: 'secretariat-computer-knowledge', icon: '💻', description: 'MS Office, internet & computer fundamentals.', order: 4, premiumPrice: 0 },
+   212→
+   213→  // --- SSC & Railway (4) ---
+   214→  { key: 'ssc-reasoning', categoryKey: 'ssc-railway', name: 'General Intelligence & Reasoning', slug: 'ssc-general-intelligence-reasoning', icon: '🧩', description: 'Verbal & non-verbal reasoning for SSC/RRB.', order: 1, premiumPrice: 0 },
+   215→  { key: 'ssc-quant', categoryKey: 'ssc-railway', name: 'Quantitative Aptitude', slug: 'ssc-quantitative-aptitude', icon: '🔢', description: 'Maths aptitude for SSC CGL/CHSL & RRB.', order: 2, premiumPrice: 0 },
+   216→  { key: 'ssc-english', categoryKey: 'ssc-railway', name: 'English Language', slug: 'ssc-english-language', icon: '🔤', description: 'English for SSC & Railway exams.', order: 3, premiumPrice: 0 },
+   217→  { key: 'ssc-ga', categoryKey: 'ssc-railway', name: 'General Awareness', slug: 'ssc-general-awareness', icon: '🌐', description: 'Static GK & current affairs for SSC/RRB.', order: 4, premiumPrice: 0 },
+   218→];
+   219→
+   220→// ===========================================================================
+   221→// TESTS (~80) — the PRIMARY FOCUS per user request ("bohut test")
+   222→// ===========================================================================
+   223→
+   224→const COMMON_INSTRUCTIONS_EN =
+   225→  'Read each question carefully. Each question carries the marks shown. ' +
+   226→  'Negative marking applies as specified. Choose the BEST answer. ' +
+   227→  'Do not refresh or leave the page during the test.';
+   228→const COMMON_INSTRUCTIONS_AS =
+   229→  'প্ৰতিটো প্ৰশ্ন মনোযোগেৰে পঢ়ক। প্ৰতিটো প্ৰশ্নত দেখুওৱা নম্বৰ থাকিব। ' +
+   230→  'নিৰ্দিষ্ট কৰা অনুসাৰে ঋণাত্মক নম্বৰ প্ৰযোজ্য। শ্ৰেষ্ঠ উত্তৰটো বাছক। ' +
+   231→  'পৰীক্ষাৰ সময়ত পৃষ্ঠাটো ৰিফ্ৰেশ বা এৰি নাযাব।';
+   232→
+   233→function mkTest(
+   234→  key: string,
+   235→  subjectKey: string,
+   236→  categoryKey: string,
+   237→  title: string,
+   238→  slug: string,
+   239→  type: TestType,
+   240→  duration: number,
+   241→  totalMarks: number,
+   242→  passingMarks: number,
+   243→  difficulty: 'easy' | 'medium' | 'hard',
+   244→  year: number,
+   245→  n: number,
+   246→  opts?: Partial<SeedTest>,
+   247→): SeedTest {
+   248→  return {
+   249→    key,
+   250→    subjectKey,
+   251→    categoryKey,
+   252→    title,
+   253→    slug,
+   254→    type,
+   255→    duration,
+   256→    totalMarks,
+   257→    passingMarks,
+   258→    difficulty,
+   259→    negativeMarking: true,
+   260→    negativeMarks: 0.25,
+   261→    instructions: `${COMMON_INSTRUCTIONS_EN}\n\n${COMMON_INSTRUCTIONS_AS}`,
+   262→    year,
+   263→    examSession: '',
+   264→    isPremium: opts?.isPremium ?? false,
+   265→    price: opts?.price ?? 0,
+   266→    questionCount: n,
+   267→  };
+   268→}
+   269→
+   270→export const SEED_TESTS: SeedTest[] = [
+   271→  // ============ APSC — General Studies (4 tests) ============
+   272→  mkTest('apsc-gs-mock-1', 'apsc-gs', 'apsc', 'APSC GS Mock Test 1', 'apsc-gs-mock-1', 'mock', 120, 200, 100, 'medium', 2025, 10),
+   273→  mkTest('apsc-gs-mock-2', 'apsc-gs', 'apsc', 'APSC GS Mock Test 2', 'apsc-gs-mock-2', 'mock', 120, 200, 100, 'medium', 2025, 10),
+   274→  mkTest('apsc-gs-prev-2023', 'apsc-gs', 'apsc', 'APSC GS Previous Year 2023', 'apsc-gs-previous-2023', 'previousYear', 120, 200, 100, 'hard', 2023, 10),
+   275→  mkTest('apsc-gs-practice-1', 'apsc-gs', 'apsc', 'APSC GS Practice Set 1', 'apsc-gs-practice-1', 'practice', 60, 100, 40, 'easy', 2025, 10, { isPremium: true, price: 49 }),
+   276→
+   277→  // ============ APSC — History (4) ============
+   278→  mkTest('apsc-history-mock-1', 'apsc-history', 'apsc', 'APSC History Mock Test 1', 'apsc-history-mock-1', 'mock', 90, 150, 75, 'medium', 2025, 10),
+   279→  mkTest('apsc-history-mock-2', 'apsc-history', 'apsc', 'APSC History Mock Test 2', 'apsc-history-mock-2', 'mock', 90, 150, 75, 'medium', 2025, 10),
+   280→  mkTest('apsc-history-prev-2022', 'apsc-history', 'apsc', 'APSC History Previous Year 2022', 'apsc-history-previous-2022', 'previousYear', 90, 150, 75, 'hard', 2022, 10),
+   281→  mkTest('apsc-history-practice-1', 'apsc-history', 'apsc', 'APSC History Practice Set 1', 'apsc-history-practice-1', 'practice', 45, 100, 40, 'easy', 2025, 10, { isPremium: true, price: 49 }),
+   282→
+   283→  // ============ APSC — Geography (4) ============
+   284→  mkTest('apsc-geo-mock-1', 'apsc-geography', 'apsc', 'APSC Geography Mock Test 1', 'apsc-geography-mock-1', 'mock', 90, 150, 75, 'medium', 2025, 10),
+   285→  mkTest('apsc-geo-mock-2', 'apsc-geography', 'apsc', 'APSC Geography Mock Test 2', 'apsc-geography-mock-2', 'mock', 90, 150, 75, 'medium', 2025, 10),
+   286→  mkTest('apsc-geo-prev-2023', 'apsc-geography', 'apsc', 'APSC Geography Previous Year 2023', 'apsc-geography-previous-2023', 'previousYear', 90, 150, 75, 'hard', 2023, 10),
+   287→  mkTest('apsc-geo-practice-1', 'apsc-geography', 'apsc', 'APSC Geography Practice Set 1', 'apsc-geo-practice-1', 'practice', 45, 100, 40, 'easy', 2025, 10, { isPremium: true, price: 49 }),
+   288→
+   289→  // ============ APSC — Polity (4) ============
+   290→  mkTest('apsc-polity-mock-1', 'apsc-polity', 'apsc', 'APSC Polity Mock Test 1', 'apsc-polity-mock-1', 'mock', 90, 150, 75, 'medium', 2025, 10),
+   291→  mkTest('apsc-polity-mock-2', 'apsc-polity', 'apsc', 'APSC Polity Mock Test 2', 'apsc-polity-mock-2', 'mock', 90, 150, 75, 'medium', 2025, 10),
+   292→  mkTest('apsc-polity-prev-2022', 'apsc-polity', 'apsc', 'APSC Polity Previous Year 2022', 'apsc-polity-previous-2022', 'previousYear', 90, 150, 75, 'hard', 2022, 10),
+   293→  mkTest('apsc-polity-practice-1', 'apsc-polity', 'apsc', 'APSC Polity Practice Set 1', 'apsc-polity-practice-1', 'practice', 45, 100, 40, 'easy', 2025, 10, { isPremium: true, price: 49 }),
+   294→
+   295→  // ============ APSC — Economy (4) ============
+   296→  mkTest('apsc-econ-mock-1', 'apsc-economy', 'apsc', 'APSC Economy Mock Test 1', 'apsc-economy-mock-1', 'mock', 90, 150, 75, 'medium', 2025, 10),
+   297→  mkTest('apsc-econ-mock-2', 'apsc-economy', 'apsc', 'APSC Economy Mock Test 2', 'apsc-economy-mock-2', 'mock', 90, 150, 75, 'medium', 2025, 10),
+   298→  mkTest('apsc-econ-prev-2023', 'apsc-economy', 'apsc', 'APSC Economy Previous Year 2023', 'apsc-economy-previous-2023', 'previousYear', 90, 150, 75, 'hard', 2023, 10),
+   299→  mkTest('apsc-econ-practice-1', 'apsc-economy', 'apsc', 'APSC Economy Practice Set 1', 'apsc-econ-practice-1', 'practice', 45, 100, 40, 'easy', 2025, 10, { isPremium: true, price: 49 }),
+   300→
+   301→  // ============ Assam Police — GK (3) ============
+   302→  mkTest('police-gk-mock-1', 'police-gk', 'assam-police', 'Assam Police GK Mock Test 1', 'police-gk-mock-1', 'mock', 60, 100, 40, 'medium', 2025, 10),
+   303→  mkTest('police-gk-mock-2', 'police-gk', 'assam-police', 'Assam Police GK Mock Test 2', 'police-gk-mock-2', 'mock', 60, 100, 40, 'medium', 2025, 10),
+   304→  mkTest('police-gk-prev-2024', 'police-gk', 'assam-police', 'Assam Police GK Previous Year 2024', 'police-gk-previous-2024', 'previousYear', 60, 100, 40, 'hard', 2024, 10),
+   305→
+   306→  // ============ Assam Police — Reasoning (3) ============
+   307→  mkTest('police-reasoning-mock-1', 'police-reasoning', 'assam-police', 'Police Reasoning Mock Test 1', 'police-reasoning-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   308→  mkTest('police-reasoning-mock-2', 'police-reasoning', 'assam-police', 'Police Reasoning Mock Test 2', 'police-reasoning-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   309→  mkTest('police-reasoning-prev-2024', 'police-reasoning', 'assam-police', 'Police Reasoning Previous Year 2024', 'police-reasoning-previous-2024', 'previousYear', 45, 100, 40, 'hard', 2024, 10),
+   310→
+   311→  // ============ Assam Police — Quant (3) ============
+   312→  mkTest('police-quant-mock-1', 'police-quant', 'assam-police', 'Police Quant Mock Test 1', 'police-quant-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   313→  mkTest('police-quant-mock-2', 'police-quant', 'assam-police', 'Police Quant Mock Test 2', 'police-quant-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   314→  mkTest('police-quant-prev-2024', 'police-quant', 'assam-police', 'Police Quant Previous Year 2024', 'police-quant-previous-2024', 'previousYear', 45, 100, 40, 'hard', 2024, 10),
+   315→
+   316→  // ============ Assam Police — English (3) ============
+   317→  mkTest('police-english-mock-1', 'police-english', 'assam-police', 'Police English Mock Test 1', 'police-english-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   318→  mkTest('police-english-mock-2', 'police-english', 'assam-police', 'Police English Mock Test 2', 'police-english-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   319→  mkTest('police-english-prev-2024', 'police-english', 'assam-police', 'Police English Previous Year 2024', 'police-english-previous-2024', 'previousYear', 45, 100, 40, 'hard', 2024, 10),
+   320→
+   321→  // ============ Assam Police — Assamese (3) ============
+   322→  mkTest('police-assamese-mock-1', 'police-assamese', 'assam-police', 'Police Assamese Mock Test 1', 'police-assamese-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   323→  mkTest('police-assamese-mock-2', 'police-assamese', 'assam-police', 'Police Assamese Mock Test 2', 'police-assamese-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   324→  mkTest('police-assamese-prev-2024', 'police-assamese', 'assam-police', 'Police Assamese Previous Year 2024', 'police-assamese-previous-2024', 'previousYear', 45, 100, 40, 'hard', 2024, 10),
+   325→
+   326→  // ============ Assam TET — CDP (2) ============
+   327→  mkTest('tet-cdp-mock-1', 'tet-cdp', 'assam-tet', 'TET CDP Mock Test 1', 'tet-cdp-mock-1', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   328→  mkTest('tet-cdp-mock-2', 'tet-cdp', 'assam-tet', 'TET CDP Mock Test 2', 'tet-cdp-mock-2', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   329→
+   330→  // ============ Assam TET — Assamese (2) ============
+   331→  mkTest('tet-assamese-mock-1', 'tet-assamese', 'assam-tet', 'TET Assamese Mock Test 1', 'tet-assamese-mock-1', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   332→  mkTest('tet-assamese-mock-2', 'tet-assamese', 'assam-tet', 'TET Assamese Mock Test 2', 'tet-assamese-mock-2', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   333→
+   334→  // ============ Assam TET — English (2) ============
+   335→  mkTest('tet-english-mock-1', 'tet-english', 'assam-tet', 'TET English Mock Test 1', 'tet-english-mock-1', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   336→  mkTest('tet-english-mock-2', 'tet-english', 'assam-tet', 'TET English Mock Test 2', 'tet-english-mock-2', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   337→
+   338→  // ============ Assam TET — Maths (2) ============
+   339→  mkTest('tet-maths-mock-1', 'tet-maths', 'assam-tet', 'TET Mathematics Mock Test 1', 'tet-maths-mock-1', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   340→  mkTest('tet-maths-mock-2', 'tet-maths', 'assam-tet', 'TET Mathematics Mock Test 2', 'tet-maths-mock-2', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   341→
+   342→  // ============ Assam TET — EVS (2) ============
+   343→  mkTest('tet-evs-mock-1', 'tet-evs', 'assam-tet', 'TET EVS Mock Test 1', 'tet-evs-mock-1', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   344→  mkTest('tet-evs-mock-2', 'tet-evs', 'assam-tet', 'TET EVS Mock Test 2', 'tet-evs-mock-2', 'mock', 60, 100, 60, 'medium', 2025, 10),
+   345→
+   346→  // ============ ADRE — GK (3) ============
+   347→  mkTest('adre-gk-mock-1', 'adre-gk', 'adre', 'ADRE GK Mock Test 1', 'adre-gk-mock-1', 'mock', 60, 100, 40, 'medium', 2025, 10),
+   348→  mkTest('adre-gk-mock-2', 'adre-gk', 'adre', 'ADRE GK Mock Test 2', 'adre-gk-mock-2', 'mock', 60, 100, 40, 'medium', 2025, 10),
+   349→  mkTest('adre-gk-prev-2024', 'adre-gk', 'adre', 'ADRE GK Previous Year 2024', 'adre-gk-previous-2024', 'previousYear', 60, 100, 40, 'hard', 2024, 10),
+   350→
+   351→  // ============ ADRE — Reasoning (3) ============
+   352→  mkTest('adre-reasoning-mock-1', 'adre-reasoning', 'adre', 'ADRE Reasoning Mock Test 1', 'adre-reasoning-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   353→  mkTest('adre-reasoning-mock-2', 'adre-reasoning', 'adre', 'ADRE Reasoning Mock Test 2', 'adre-reasoning-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   354→  mkTest('adre-reasoning-prev-2024', 'adre-reasoning', 'adre', 'ADRE Reasoning Previous Year 2024', 'adre-reasoning-previous-2024', 'previousYear', 45, 100, 40, 'hard', 2024, 10),
+   355→
+   356→  // ============ ADRE — Maths (3) ============
+   357→  mkTest('adre-maths-mock-1', 'adre-maths', 'adre', 'ADRE Mathematics Mock Test 1', 'adre-maths-mock-1', 'mock', 60, 100, 40, 'medium', 2025, 10),
+   358→  mkTest('adre-maths-mock-2', 'adre-maths', 'adre', 'ADRE Mathematics Mock Test 2', 'adre-maths-mock-2', 'mock', 60, 100, 40, 'medium', 2025, 10),
+   359→  mkTest('adre-maths-prev-2024', 'adre-maths', 'adre', 'ADRE Mathematics Previous Year 2024', 'adre-maths-previous-2024', 'previousYear', 60, 100, 40, 'hard', 2024, 10),
+   360→
+   361→  // ============ ADRE — English (3) ============
+   362→  mkTest('adre-english-mock-1', 'adre-english', 'adre', 'ADRE English Mock Test 1', 'adre-english-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   363→  mkTest('adre-english-mock-2', 'adre-english', 'adre', 'ADRE English Mock Test 2', 'adre-english-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   364→  mkTest('adre-english-prev-2024', 'adre-english', 'adre', 'ADRE English Previous Year 2024', 'adre-english-previous-2024', 'previousYear', 45, 100, 40, 'hard', 2024, 10),
+   365→
+   366→  // ============ ADRE — General Awareness (3) ============
+   367→  mkTest('adre-awareness-mock-1', 'adre-awareness', 'adre', 'ADRE General Awareness Mock 1', 'adre-awareness-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   368→  mkTest('adre-awareness-mock-2', 'adre-awareness', 'adre', 'ADRE General Awareness Mock 2', 'adre-awareness-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   369→  mkTest('adre-awareness-prev-2024', 'adre-awareness', 'adre', 'ADRE Awareness Previous Year 2024', 'adre-awareness-previous-2024', 'previousYear', 45, 100, 40, 'hard', 2024, 10),
+   370→
+   371→  // ============ Assam Secretariat — English (2) ============
+   372→  mkTest('sec-english-mock-1', 'sec-english', 'assam-secretariat', 'Secretariat English Mock 1', 'secretariat-english-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   373→  mkTest('sec-english-mock-2', 'sec-english', 'assam-secretariat', 'Secretariat English Mock 2', 'secretariat-english-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   374→
+   375→  // ============ Assam Secretariat — GK (2) ============
+   376→  mkTest('sec-gk-mock-1', 'sec-gk', 'assam-secretariat', 'Secretariat GK Mock 1', 'secretariat-gk-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   377→  mkTest('sec-gk-mock-2', 'sec-gk', 'assam-secretariat', 'Secretariat GK Mock 2', 'secretariat-gk-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   378→
+   379→  // ============ Assam Secretariat — Reasoning (2) ============
+   380→  mkTest('sec-reasoning-mock-1', 'sec-reasoning', 'assam-secretariat', 'Secretariat Reasoning Mock 1', 'secretariat-reasoning-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   381→  mkTest('sec-reasoning-mock-2', 'sec-reasoning', 'assam-secretariat', 'Secretariat Reasoning Mock 2', 'secretariat-reasoning-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   382→
+   383→  // ============ Assam Secretariat — Computer (2) ============
+   384→  mkTest('sec-computer-mock-1', 'sec-computer', 'assam-secretariat', 'Secretariat Computer Mock 1', 'secretariat-computer-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   385→  mkTest('sec-computer-mock-2', 'sec-computer', 'assam-secretariat', 'Secretariat Computer Mock 2', 'secretariat-computer-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   386→
+   387→  // ============ SSC & Railway — Reasoning (2) ============
+   388→  mkTest('ssc-reasoning-mock-1', 'ssc-reasoning', 'ssc-railway', 'SSC Reasoning Mock Test 1', 'ssc-reasoning-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   389→  mkTest('ssc-reasoning-mock-2', 'ssc-reasoning', 'ssc-railway', 'SSC Reasoning Mock Test 2', 'ssc-reasoning-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   390→
+   391→  // ============ SSC & Railway — Quant (2) ============
+   392→  mkTest('ssc-quant-mock-1', 'ssc-quant', 'ssc-railway', 'SSC Quant Mock Test 1', 'ssc-quant-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   393→  mkTest('ssc-quant-mock-2', 'ssc-quant', 'ssc-railway', 'SSC Quant Mock Test 2', 'ssc-quant-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   394→
+   395→  // ============ SSC & Railway — English (2) ============
+   396→  mkTest('ssc-english-mock-1', 'ssc-english', 'ssc-railway', 'SSC English Mock Test 1', 'ssc-english-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   397→  mkTest('ssc-english-mock-2', 'ssc-english', 'ssc-railway', 'SSC English Mock Test 2', 'ssc-english-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   398→
+   399→  // ============ SSC & Railway — General Awareness (2) ============
+   400→  mkTest('ssc-ga-mock-1', 'ssc-ga', 'ssc-railway', 'SSC General Awareness Mock 1', 'ssc-ga-mock-1', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   401→  mkTest('ssc-ga-mock-2', 'ssc-ga', 'ssc-railway', 'SSC General Awareness Mock 2', 'ssc-ga-mock-2', 'mock', 45, 100, 40, 'medium', 2025, 10),
+   402→];
+   403→
+   404→// ===========================================================================
+   405→// BANNERS (3) — images already generated in /public/banners/
+   406→// ===========================================================================
+   407→export const SEED_BANNERS: SeedBanner[] = [
+   408→  {
+   409→    title: 'APSC CCE 2025',
+   410→    subtitle: 'Complete Mock Test Series — Prelims & Mains',
+   411→    imageFile: 'apsc-2025.png',
+   412→    order: 1,
+   413→    isActive: true,
+   414→    primaryButtonLabel: 'Start Practicing',
+   415→    primaryButtonSection: 'tests',
+   416→  },
+   417→  {
+   418→    title: 'Assam Police 2025',
+   419→    subtitle: 'Constable & Sub-Inspector — Full Test Series',
+   420→    imageFile: 'assam-police.png',
+   421→    order: 2,
+   422→    isActive: true,
+   423→    primaryButtonLabel: 'Attempt Now',
+   424→    primaryButtonSection: 'tests',
+   425→  },
+   426→  {
+   427→    title: 'ADRE 2025',
+   428→    subtitle: 'Grade III & IV — 32,000+ Posts Recruitment',
+   429→    imageFile: 'adre-2025.png',
+   430→    order: 3,
+   431→    isActive: true,
+   432→    primaryButtonLabel: 'Start Tests',
+   433→    primaryButtonSection: 'tests',
+   434→  },
+   435→];
+   436→
+   437→// ===========================================================================
+   438→// STUDY MATERIALS (6) — real Assam content, PDFs generated at seed time
+   439→// ===========================================================================
+   440→export const SEED_STUDY_MATERIALS: SeedStudyMaterial[] = [
+   441→  {
+   442→    subjectKey: 'apsc-gs',
+   443→    categoryKey: 'apsc',
+   444→    type: 'syllabus',
+   445→    title: 'APSC CCE Complete Syllabus 2025',
+   446→    description: 'Detailed syllabus for APSC Combined Competitive Examination — Prelims & Mains.',
+   447→    pages: 4,
+   448→    isPremium: false,
+   449→    isPublished: true,
+   450→    order: 1,
+   451→    content: `APSC COMBINED COMPETITIVE EXAMINATION — SYLLABUS 2025
+   452→=====================================================
+   453→
+   454→PRELIMINARY EXAMINATION (2 Papers, 200 marks each, 2 hours each)
+   455→
+   456→Paper I — General Studies (200 marks, 2 hours)
+   457→  1. Indian Polity
+   458→  2. Indian History (Ancient, Medieval, Modern)
+   459→  3. Geography of India with special reference to Assam
+   460→  4. Indian Economy
+   461→  5. General Science & Technology
+   462→  6. Current Affairs (national & international)
+   463→  7. Assam History, Geography, Polity & Economy
+   464→  8. Environmental Studies
+   465→
+   466→Paper II — Optional Subject (200 marks, 2 hours)
+   467→
+   468→MAIN EXAMINATION
+   469→  - English (Essay & Precis)
+   470→  - General English
+   471→  - General Studies (Papers I, II, III, IV)
+   472→  - Optional Subject (Papers I & II)
+   473→  - Interview / Personality Test (200 marks)
+   474→
+   475→NOTE: Negative marking of 0.25 per wrong answer in Prelims.
+   476→
+   477→অসম লোক সেৱা আয়োগ — সম্পূৰ্ণ পাঠ্যক্ৰম ২০২৫।`,
+   478→  },
+   479→  {
+   480→    subjectKey: 'apsc-history',
+   481→    categoryKey: 'apsc',
+   482→    type: 'notes',
+   483→    title: 'Assam History Quick Revision Notes',
+   484→    description: 'Concise notes on Assam history — Ahom kingdom, Koch dynasty, British era, freedom movement.',
+   485→    pages: 5,
+   486→    isPremium: false,
+   487→    isPublished: true,
+   488→    order: 2,
+   489→    content: `ASSAM HISTORY — QUICK REVISION NOTES
+   490→====================================
+   491→
+   492→1. ANCIENT ASSAM (প্ৰাচীন অসম)
+   493→   - Pragjyotisha / Kamarupa kingdom
+   494→   - King Bhaskaravarman (7th century) — contemporary of Harsha
+   495→   - Hiuen Tsang visited Kamarupa
+   496→   - Capital: Pragjyotishpura (modern Guwahati)
+   497→
+   498→2. MEDIEVAL ASSAM (মধ্যযুগীয় অসম)
+   499→   A. Ahom Kingdom (1228-1826)
+   500→      - Founded by Sukapha (1228) — came from Mong Mao
+   501→      - Capital: Charaideo
+   502→      - Paik system (forced labour)
+   503→      - Battle of Saraighat (1671) — Lachit Borphukan defeated Mughals
+   504→      - Moamoria Rebellion (1769-1806) — weakened Ahom rule
+   505→   B. Koch Kingdom
+   506→      - Founded by Biswa Singha (1515)
+   507→      - King Naranarayana & Chilarai (great generals)
+   508→   C. Kachari, Jaintia, Tripuri kingdoms
+   509→
+   510→3. BRITISH ERA (ব্ৰিটিছ শাসনকাল)
+   511→   - Treaty of Yandabo (1826) — First Anglo-Burmese War ended; Assam came under British
+   512→   - Assam became a Chief Commissioner's Province (1874)
+   513→   - Tea industry established (1839 onwards)
+   514→   - Oil discovered at Digboi (1889) — first oil well in Asia
+   515→   - Language movement, tea-garden labour
+   516→
+   517→4. FREEDOM MOVEMENT IN ASSAM (স্বাধীনতা সংগ্ৰাম)
+   518→   - Kanaklata Barua — martyred in 1942 Quit India movement
+   519→   - Kushal Konwar — hanged 1943
+   520→   - Gopinath Bordoloi — first Chief Minister; key role in keeping Assam with India
+   521→   - Bhogeswari Phukanani — freedom fighter
+   522→
+   523→5. POST-INDEPENDENCE (স্বাধীনতা-উত্তৰ)
+   524→   - Assam became a state of India (1947)
+   525→   - Capital shifted from Shillong to Dispur (1972)
+   526→   - States carved out: Nagaland (1963), Meghalaya (1972), Mizoram (1987), Arunachal Pradesh (1987)
+   527→
+   528→KEY DATES TO REMEMBER:
+   529→  1228 — Ahom kingdom founded
+   530→  1671 — Battle of Saraighat
+   531→  1826 — Treaty of Yandabo
+   532→  1889 — Oil at Digboi
+   533→  1947 — Independence
+   534→  1972 — Dispur becomes capital`,
+   535→  },
+   536→  {
+   537→    subjectKey: 'police-gk',
+   538→    categoryKey: 'assam-police',
+   539→    type: 'syllabus',
+   540→    title: 'Assam Police Constable & SI Syllabus',
+   541→    description: 'Complete syllabus for Assam Police Constable (UB/AB) and Sub-Inspector recruitment.',
+   542→    pages: 3,
+   543→    isPremium: false,
+   544→    isPublished: true,
+   545→    order: 1,
+   546→    content: `ASSAM POLICE — CONSTABLE & SI SYLLABUS
+   547→=======================================
+   548→
+   549→CONSTABLE (UB/AB) — WRITTEN TEST (100 marks)
+   550→  1. General Knowledge & Current Affairs (Assam & India)
+   551→  2. Reasoning
+   552→  3. Mathematics (Class IX-X standard)
+   553→  4. English
+   554→  5. Assamese / Regional Language
+   555→
+   556→SUB-INSPECTOR (UB) — WRITTEN TEST (100 marks)
+   557→  - Logical Reasoning / Aptitude
+   558→  - General Knowledge (Assam & India)
+   559→  - Mathematics
+   560→  - English
+   561→  - Assamese Language
+   562→
+   563→PHYSICAL TESTS
+   564→  Constable:
+   565→    - Race: 3.2 km (men) / 2.4 km (women)
+   566→    - Long jump, high jump
+   567→  SI:
+   568→    - Race, long jump, high jump, 800m run
+   569→
+   570→ELIGIBILITY
+   571→  - Age: 18-25 years (age relaxation for reserved categories)
+   572→  - Education: HSLC (Constable), Graduation (SI)
+   573→
+   574→অসম আৰক্ষী — কনষ্টেবুল আৰু উপ-পৰিদৰ্শক পাঠ্যক্ৰম।`,
+   575→  },
+   576→  {
+   577→    subjectKey: 'adre-gk',
+   578→    categoryKey: 'adre',
+   579→    type: 'notes',
+   580→    title: 'ADRE Assam GK Notes',
+   581→    description: 'Important Assam general knowledge facts for ADRE Grade III & IV — districts, rivers, culture.',
+   582→    pages: 4,
+   583→    isPremium: false,
+   584→    isPublished: true,
+   585→    order: 1,
+   586→    content: `ADRE — ASSAM GENERAL KNOWLEDGE NOTES
+   587→====================================
+   588→
+   589→1. ASSAM AT A GLANCE
+   590→   - Capital: Dispur (Guwahati)
+   591→   - Area: 78,438 sq km
+   592→   - Population (2011): 3.12 crore
+   593→   - Districts: 35 (as of 2023)
+   594→   - Official Language: Assamese
+   595→   - State formed: 26 January 1950 (statehood); reorganized 1972
+   596→   - State animal: One-horned rhinoceros
+   597→   - State bird: White-winged wood duck (Deo Hans)
+   598→   - State flower: Foxtail orchid (Kopou Phool)
+   599→   - State tree: Hollong
+   600→
+   601→2. RIVERS OF ASSAM
+   602→   - Brahmaputra (main river, flows west to east then south)
+   603→   - Tributaries: Subansiri, Kameng, Manas, Sankosh, Dhansiri, Kopili, Burhi Dihing, Disang
+   604→   - Barak river (in Barak Valley): Surma, Kushiara
+   605→
+   606→3. NATIONAL PARKS & WILDLIFE
+   607→   - Kaziranga NP (one-horned rhino) — UNESCO World Heritage Site
+   608→   - Manas NP (UNESCO, tiger reserve)
+   609→   - Nameri NP, Orang NP, Dibru-Saikhowa NP
+   610→   - Pobitora WLS (highest density of rhino)
+   611→
+   612→4. IMPORTANT CITIES/TOWNS
+   613→   - Guwahati (largest city, gateway to NE India)
+   614→   - Dibrugarh, Jorhat, Tezpur, Silchar, Tinsukia, Nagaon, Bongaigaon
+   615→
+   616→5. FESTIVALS
+   617→   - Bihu (Rongali/Bohag, Kongali/Kati, Bhogali/Magh)
+   618→   - Baishagu (Bodo), Ali-Ai-Ligang (Mishing), Baikho (Rabha)
+   619→   - Durga Puja, Kali Puja, Eid
+   620→
+   621→6. FAMOUS PERSONALITIES
+   622→   - Jyoti Prasad Agarwala (cultural icon, filmmaker)
+   623→   - Bishnu Prasad Rabha (artist, revolutionary)
+   624→   - Bhupen Hazarika (music legend, Bharat Ratna)
+   625→   - Gopinath Bordoloi (first CM, Bharat Ratna)
+   626→   - Mamoni Raisom Goswami (Jnanpith awardee)
+   627→
+   628→7. ECONOMY
+   629→   - Tea (largest tea-producing state)
+   630→   - Oil & gas (Digboi, Nazira, Duliajan — ONGC/OIL)
+   631→   - Silk (Muga, Pat, Eri — unique to Assam)
+   632→   - Agriculture: rice, jute, mustard
+   633→
+   634→8. KEY FACTS
+   635→   - First oil well in Asia: Digboi (1889)
+   636→   - Longest river bridge: Bogibeel bridge (4.94 km, rail-cum-road)
+   637→   - Saraighat Bridge: first across Brahmaputra (1962)
+   638→   - Lokpriya Gopinath Bordoloi International Airport, Guwahati
+   639→
+   640→অসমৰ সাধাৰণ জ্ঞান — গুৰুত্বপূৰ্ণ তথ্যাৱলী।`,
+   641→  },
+   642→  {
+   643→    subjectKey: 'tet-cdp',
+   644→    categoryKey: 'assam-tet',
+   645→    type: 'notes',
+   646→    title: 'TET Child Development & Pedagogy Notes',
+   647→    description: 'Key concepts of CDP — Piaget, Vygotsky, Kohlberg, theories of learning, assessment.',
+   648→    pages: 5,
+   649→    isPremium: false,
+   650→    isPublished: true,
+   651→    order: 1,
+   652→    content: `CHILD DEVELOPMENT & PEDAGOGY (CDP) — TET NOTES
+   653→==============================================
+   654→
+   655→1. PIAGET'S COGNITIVE DEVELOPMENT THEORY
+   656→   - Sensorimotor (0-2 yrs): object permanence
+   657→   - Preoperational (2-7 yrs): symbolic thought, egocentrism
+   658→   - Concrete operational (7-11 yrs): conservation, logical thought
+   659→   - Formal operational (11+ yrs): abstract reasoning
+   660→
+   661→2. VYGOTSKY'S SOCIO-CULTURAL THEORY
+   662→   - Zone of Proximal Development (ZPD)
+   663→   - Scaffolding
+   664→   - More Knowledgeable Other (MKO)
+   665→   - Language as a tool of thought
+   666→
+   667→3. KOHLBERG'S MORAL DEVELOPMENT
+   668→   - Pre-conventional: obedience, self-interest
+   669→   - Conventional: conformity, law & order
+   670→   - Post-conventional: social contract, universal ethics
+   671→
+   672→4. BRUNER
+   673→   - Scaffolding, discovery learning
+   674→   - Three modes of representation: enactive, iconic, symbolic
+   675→
+   676→5. THEORIES OF LEARNING
+   677→   - Behaviorism (Skinner, Pavlov): conditioning, reinforcement
+   678→   - Constructivism (Piaget, Vygotsky): knowledge constructed by learner
+   679→   - Multiple Intelligences (Howard Gardner): 8 intelligences
+   680→
+   681→6. ASSESSMENT FOR LEARNING
+   682→   - Formative (during learning) vs Summative (end)
+   683→   - Continuous & Comprehensive Evaluation (CCE)
+   684→   - Assessment OF / FOR / AS learning
+   685→
+   686→7. INCLUSIVE EDUCATION
+   687→   - RTE Act 2009: free & compulsory education 6-14 years
+   688→   - CWSN (Children With Special Needs)
+   689→   - Universal design for learning
+   690→
+   691→8. MOTIVATION
+   692→   - Intrinsic vs Extrinsic
+   693→   - Maslow's hierarchy of needs
+   694→
+   695→9. GROWTH & DEVELOPMENT PRINCIPLES
+   696→   - Continuous, orderly, sequential
+   697→   - Individual differences
+   698→   - Heredity & environment interaction
+   699→
+   700→শিশু বিকাশ আৰু শিক্ষাশাস্ত্ৰ — মূল ধাৰণাসমূহ।`,
+   701→  },
+   702→  {
+   703→    subjectKey: 'ssc-ga',
+   704→    categoryKey: 'ssc-railway',
+   705→    type: 'syllabus',
+   706→    title: 'SSC CGL & RRB NTPC Syllabus',
+   707→    description: 'Complete syllabus for SSC CGL/CHSL and RRB NTPC exams.',
+   708→    pages: 3,
+   709→    isPremium: false,
+   710→    isPublished: true,
+   711→    order: 1,
+   712→    content: `SSC CGL / CHSL & RRB NTPC — SYLLABUS
+   713→=====================================
+   714→
+   715→SSC CGL TIER-I (100 questions, 200 marks, 60 min)
+   716→  1. General Intelligence & Reasoning (25 Q, 50 marks)
+   717→  2. General Awareness (25 Q, 50 marks)
+   718→  3. Quantitative Aptitude (25 Q, 50 marks)
+   719→  4. English Comprehension (25 Q, 50 marks)
+   720→  - Negative marking: 0.50 per wrong answer
+   721→
+   722→SSC CGL TIER-II
+   723→  - Paper I: Mathematics + English + Reasoning + GK
+   724→  - Paper II: Statistics (for JSO)
+   725→  - Paper III: General Studies (Finance & Economics)
+   726→
+   727→RRB NTPC (CBT-1, 100 questions, 90 min)
+   728→  1. Mathematics (30)
+   729→  2. General Intelligence & Reasoning (30)
+   730→  3. General Awareness (40)
+   731→  - Negative marking: 0.33 per wrong answer
+   732→
+   733→GENERAL AWARENESS TOPICS
+   734→  - History, Geography, Polity, Economy
+   735→  - General Science
+   736→  - Current Affairs (last 6 months)
+   737→  - Static GK
+   738→
+   739→SSC আৰু ৰে'লৱে — সম্পূৰ্ণ পাঠ্যক্ৰম।`,
+   740→  },
+   741→];
+   742→
+   743→// ===========================================================================
+   744→// POOL-SLICING: assign questions from a subject's pool to that subject's tests.
+   745→// ===========================================================================
+   746→
+   747→export type QuestionPoolMap = Record<string, SeedQuestionPoolItem[]>;
+   748→
+   749→export function resolveQuestions(
+   750→  pools: QuestionPoolMap,
+   751→  tests: SeedTest[],
+   752→): Array<{ testKey: string; subjectKey: string; item: SeedQuestionPoolItem }> {
+   753→  const out: Array<{ testKey: string; subjectKey: string; item: SeedQuestionPoolItem }> = [];
+   754→  const bySubject: Record<string, SeedTest[]> = {};
+   755→  for (const t of tests) {
+   756→    (bySubject[t.subjectKey] ??= []).push(t);
+   757→  }
+   758→  for (const [subjectKey, subjectTests] of Object.entries(bySubject)) {
+   759→    const pool = pools[subjectKey] ?? [];
+   760→    let cursor = 0;
+   761→    for (const t of subjectTests) {
+   762→      for (let i = 0; i < t.questionCount; i++) {
+   763→        const item = pool.length > 0 ? pool[cursor % pool.length] : FALLBACK_ITEM;
+   764→        out.push({ testKey: t.key, subjectKey, item: { ...item } });
+   765→        cursor++;
+   766→      }
+   767→    }
+   768→  }
+   769→  return out;
+   770→}
+   771→
+   772→const FALLBACK_ITEM: SeedQuestionPoolItem = {
+   773→  question: 'Sample question — to be updated.\nনমুনা প্ৰশ্ন — আপডেট কৰিব লাগিব।',
+   774→  options: ['Option A / বিকল্প ক', 'Option B / বিকল্প খ', 'Option C / বিকল্প গ', 'Option D / বিকল্প ঘ'],
+   775→  correctAnswerIndex: 0,
+   776→  explanation: 'Explanation placeholder.\nব্যাখ্যাৰ স্থান।',
+   777→  subjectTopic: 'General',
+   778→  marks: 1,
+   779→};
+   780→
+   781→export const SEED_STATS = {
+   782→  categories: SEED_CATEGORIES.length,
+   783→  subjects: SEED_SUBJECTS.length,
+   784→  tests: SEED_TESTS.length,
+   785→  banners: SEED_BANNERS.length,
+   786→  studyMaterials: SEED_STUDY_MATERIALS.length,
+   787→};
+   788→

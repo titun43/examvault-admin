@@ -3234,3 +3234,292 @@ Stage Summary:
 - Helps admin find the right subject faster when many categories/subjects exist
 - Also useful after NUKE: if no categories exist, the form tells the admin to add one first (with a clickable link)
 - Commit 79f960c pushed to https://github.com/titun43/examvault-admin.git (main branch)
+
+---
+Task ID: 3
+Agent: banner-image-generator
+Task: Generate 3 Assam-themed banner images for ExamVault admin panel
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand prior work (Task 1 = verification agent confirmed admin panel renders cleanly at http://localhost:3000; Task 2 = added Category dropdown filter to Tests Add/Edit form, commit 79f960c pushed).
+- Invoked the image-generation Skill to learn the z-ai-web-dev-sdk API surface (CLI `z-ai image -p ... -o ... -s <size>` and SDK `zai.images.generations.create({prompt, size})`).
+- Created /home/z/my-project/public/banners/ directory.
+- First attempt: used `z-ai image` CLI with size 1440x720 in parallel (3 simultaneous calls). FAILED with two distinct errors:
+  (a) API 400: "size的长宽均需满足512px-2880px之间,且为32整数倍,并保证最大像素数不超过2^22px" — i.e. both width AND height must be multiples of 32 and within 512–2880px; 720 is NOT a multiple of 32, so 1440x720 is rejected by the upstream API even though the CLI's allow-list permits it (CLI bug).
+  (b) API 429: "Too many requests" — parallel calls trigger rate limiting.
+- Second attempt: tried CLI with size 1536x512 (exactly 3:1, both multiples of 32, valid). FAILED because the CLI hard-rejects any size not in its allow-list (`--size must be one of: 1024x1024, 768x1344, 864x1152, 1344x768, 1152x864, 1440x720, 720x1440`).
+- Workaround: wrote /home/z/my-project/scripts/gen-banners.cjs — a Node.js script that imports `z-ai-web-dev-sdk` directly (via `require('z-ai-web-dev-sdk').default`) and calls `zai.images.generations.create({prompt, size: '1536x512'})`, bypassing the CLI's overly-strict allow-list. The SDK's `createImageGeneration` method passes the size straight through to the API, which accepts 1536x512.
+- Script runs the 3 generations sequentially with 10s pauses between calls and exponential-backoff retry (15s, 30s, 45s) on 429 rate-limit responses.
+- Initial `require('z-ai-web-dev-sdk').create` call failed (`TypeError: ZAI.create is not a function`) because the SDK is an ES module — the create method lives on the default export, not the namespace. Fixed by using `.default`.
+- Script completed successfully: all 3 images generated. Each API response returned a base64-encoded JPEG payload (despite the SDK labelling it format:"png"), so the saved .png files were actually JPEG-encoded.
+- Post-processed with Python PIL: opened each file (PIL auto-detects actual format from content, ignoring extension), confirmed 1536x512, and re-saved as true PNG (RGB, optimize=True) so the files match their .png extension. Verified with `file`: now all three report "PNG image data, 1536 x 512, 8-bit/color RGB, non-interlaced".
+
+Stage Summary:
+- Generated 3 professional Assam-themed promotional banners for ExamVault admin panel, saved as true PNG files at 1536x512 (exactly 3:1 landscape aspect ratio, the closest API-valid 3:1 size to the requested 1200x400):
+  1. /home/z/my-project/public/banners/apsc-2025.png    — 1536x512, 867 KB PNG — "APSC CCE 2025" + "Mock Test Series", dark slate + emerald green + gold, rhino silhouette + Brahmaputra + Kaziranga grass + books/question marks, no faces.
+  2. /home/z/my-project/public/banners/assam-police.png — 1536x512, 455 KB PNG — "Assam Police" + "Constable & SI 2025", navy blue + khaki + silver, Assam map outline + badge/shield with star + laurel wreaths, no faces.
+  3. /home/z/my-project/public/banners/adre-2025.png    — 1536x512, 766 KB PNG — "ADRE 2025" + "Grade III & IV", teal + amber, Assam tea garden silhouette + govt office building + textbooks/documents, no faces.
+- Generation script preserved at /home/z/my-project/scripts/gen-banners.cjs for future regenerations (edit prompts at top of file, then `node scripts/gen-banners.cjs`).
+- Note on text rendering: AI image-gen models often produce slightly imperfect text. The required strings ("APSC CCE 2025", "Mock Test Series", "Assam Police", "Constable & SI 2025", "ADRE 2025", "Grade III & IV") were included verbatim in the prompts; if any text appears garbled in the rendered output, a CSS-overlay approach in the admin UI (rendering crisp HTML text on top of the AI banner) is the recommended production fix — re-running generation will produce different (possibly cleaner) text.
+- Note on dimensions: requested 1200x400, delivered 1536x512 (same 3:1 ratio, slightly higher resolution for Retina/crisp display). The API does not accept arbitrary pixel dimensions — only multiples of 32 within 512–2880px with total pixels ≤ 2^22. 1536x512 is the smallest exact-3:1 option; next would be 1920x640 or 2304x768 if higher resolution is later desired.
+- Next actions for downstream agents:
+  (a) Upload the 3 PNGs to Firebase Storage at the banner path the admin panel reads from (check `src/components/admin/data-seed.tsx` or banner config for the storage path convention).
+  (b) If text looks off, consider adding a text-overlay component in the admin UI rather than re-generating.
+  (c) Optionally regenerate at 2304x768 for higher-DPI displays using the same script with SIZE='2304x768'.
+
+---
+Task ID: 2-e
+Agent: secretariat-question-writer
+Task: Write bilingual Assam Secretariat question pool (80 questions)
+
+Work Log:
+- Read /home/z/my-project/worklog.md to understand prior work; confirmed prior tasks (1, 2-a/b/c/d territory) established the ExamVault admin + assam-seed pipeline.
+- Read /home/z/my-project/src/lib/assam-seed/structure.ts and confirmed the SeedQuestionPoolItem interface and QuestionPoolMap type (Record<string, SeedQuestionPoolItem[]>); confirmed the four subject keys sec-english, sec-gk, sec-reasoning, sec-computer exist in structure.ts (lines 208–211) under categoryKey 'assam-secretariat'.
+- Authored /home/z/my-project/src/lib/assam-seed/questions-secretariat.ts exporting `SECRETARIAT_POOLS: QuestionPoolMap` with 4 pools × 20 items = 80 bilingual questions.
+- Each item is fully bilingual: question = "English\nঅসমীয়া"; each option = "English / অসমীয়া"; explanation = "English\nঅসমীয়া". All questions, options, explanations verified to contain the bilingual separators via tsx runtime check.
+- Content is real, exam-accurate, HSLC+ clerical level:
+  • sec-english: tense, voice (active↔passive), narration (direct↔indirect), articles, prepositions, conjunctions, subject-verb agreement, synonyms/antonyms, one-word substitution, spelling, idioms, sentence correction, formal-letter drafting (Yours sincerely), précis length.
+  • sec-gk: Assam GK (capital Dispur, oldest refinery Digboi 1901, Brahmaputra, Bihu 3×/year, "O Mur Apunar Dex" by Lakshminath Bezbaruah, Kaziranga, first CM Gopinath Bordoloi, Kati=Kongali Bihu, Majuli, tea, one-horned rhino state animal, Bihu dance) + India GK (Constitution adopted 26 Nov 1949, Rajya Sabha Upper House, Ganga longest river, Rajendra Prasad Chairman of Constituent Assembly & first President, 12 nominated RS members, Kanchenjunga highest peak in India, Fundamental Rights Part III).
+  • sec-reasoning: analogy (Dog:Puppy::Cat:Kitten etc.), classification (odd-one-out for fruit/vegetable, bird/mammal, 2D/3D, flower/tree), series (geometric 2,4,8,16; squares 1,4,9,16,25; arithmetic 3,6,9,12; factorials 1,1,2,6,24), coding-decoding (letter-sum CAT=24→DOG=26, A=1 B=2 BAD=7, Caesar +1 TABLE→UCDMF CHAIR→DIBJS), blood relations (mother/daughter/brother), direction sense (3-4-5 triangle, SE→N rotation → SW).
+  • sec-computer: MS Word shortcuts (Ctrl+A select all, Ctrl+C copy, Ctrl+Z undo), MS Excel (SUM function adds, formula starts with =), MS PowerPoint (F5 slideshow, .pptx extension), Internet (WWW, Google Chrome browser), Hardware (CPU=brain, RAM=Random Access Memory, volatile RAM, mouse pointing device, 8 bits=1 byte), OS (Windows, Desktop), I/O devices (keyboard input, monitor output), Networking (LAN=Local Area Network, IP=Internet Protocol).
+- correctAnswerIndex is evenly distributed 5/5/5/5 across 0,1,2,3 in EACH of the four pools (verified via tsx runtime script). Two questions (sec-reasoning q16 DIBJS coding, q20 Brother blood-relation) were rearranged to move the correct answer to index 3 so the distribution would be perfectly balanced.
+- Subject topic tags used: Grammar / Vocabulary / Drafting (english); Assam GK / India GK / Constitution (gk); Analogy / Series / Coding / Classification / Blood Relations / Direction (reasoning); MS Word / MS Excel / MS PowerPoint / Internet / Hardware / OS / Networking (computer). marks=1 on all 80 items.
+- Verification: ran `npx tsc --noEmit --strict --module ESNext --moduleResolution Bundler --target ES2020 --skipLibCheck src/lib/assam-seed/questions-secretariat.ts` → exit 0, no type errors. Also ran a tsx runtime script that imports SECRETARIAT_POOLS, iterates all 80 items, and asserts: options.length===4, correctAnswerIndex in 0..3, marks is number, question contains '\n', explanation contains '\n', every option contains ' / ' → ALL PASSED.
+
+Stage Summary:
+- File: /home/z/my-project/src/lib/assam-seed/questions-secretariat.ts
+- Total: 80 bilingual questions (20 each × 4 subjects)
+- Pool keys & counts: sec-english=20, sec-gk=20, sec-reasoning=20, sec-computer=20
+- correctAnswerIndex distribution per pool: 0:5, 1:5, 2:5, 3:5 (perfectly balanced)
+- TypeScript strict-mode type-check: PASS (exit 0)
+- Bilingual format: 100% of questions/options/explanations verified bilingual (English + অসমীয়া)
+
+---
+Task ID: 2-a1
+Agent: apsc-question-writer-a
+Task: Write bilingual APSC question pool PART A (80 questions: gs + history)
+
+Work Log:
+- Read worklog.md (prior verification work) and structure.ts to confirm QuestionPoolMap/SeedQuestionPoolItem shape.
+- Inspected existing questions-secretariat.ts as format reference (bilingual EN + অসমীয়া style).
+- Created /home/z/my-project/src/lib/assam-seed/questions-apsc-a.ts exporting APSC_POOLS_A with two pools: 'apsc-gs' (40) and 'apsc-history' (40).
+- apsc-gs topics spread: History 6, Geography 6, Polity 6, Economy 6, Science 6, Current Affairs 5, Assam GK 5.
+- apsc-history topics spread: Ancient India 8, Medieval India 8, Modern India 8, Assam History 8, Freedom Movement 8.
+- Each item: question (English\nAssamese), 4 options ("English / অসমীয়া"), correctAnswerIndex 0–3, bilingual explanation, subjectTopic, marks: 2.
+- Covered all requested APSC subject matter: Sukapha 1228, Charaideo, Battle of Saraighat 1671, Lachit Borphukan, Moamoria 1769, Treaty of Yandabo 1826, Biswa Singha, Naranarayana, Chilarai, Bhaskaravarman–Harsha, Digboi 1889, Kanaklata Barua, Kushal Konwar, Gopinath Bordoloi, Bishnu Prasad Rabha, Ambikagiri Rai Choudhury, Chandraprabha Saikiani, Assam Accord, etc.
+- First tsc pass surfaced two unterminated strings due to ASCII apostrophes inside single-quoted Assamese options (CO2/O2 transliterations). Fixed by switching those two option strings to double quotes.
+- Verified with `npx tsc --noEmit` → clean (no errors).
+- Verified with a tsx runtime script: counts exact (apsc-gs=40, apsc-history=40), all 4 options per item, all correctAnswerIndex ∈ {0,1,2,3}, every question & explanation contains bilingual "\n" separator, every option contains " / " bilingual separator, marks present on all 80 items. 0 invalid items.
+- correctAnswerIndex is spread across all of 0,1,2,3 in both pools (not every value equally, but all four indices are present and no answer-key bias toward a single slot).
+
+Stage Summary:
+- File: /home/z/my-project/src/lib/assam-seed/questions-apsc-a.ts
+- Total: 80 bilingual questions (apsc-gs=40, apsc-history=40)
+- Valid TypeScript (tsc --noEmit clean); QuestionPoolMap typed export.
+
+---
+Task ID: 2-b2
+Agent: police-question-writer-b
+File: /home/z/my-project/src/lib/assam-seed/questions-police-b.ts
+
+Work Log:
+- Read worklog.md and structure.ts; confirmed QuestionPoolMap/SeedQuestionPoolItem shape and that 'police-quant' & 'police-english' subject keys already exist (structure.ts L189-190) with mock/previousYear tests expecting a pool.
+- Used questions-apsc-a.ts as the bilingual format reference.
+- Wrote POLICE_POOLS_B exporting two pools keyed 'police-quant' (30) and 'police-english' (30) = 60 items total.
+- police-quant (30) topics: Percentage 5, Profit-Loss 5, Interest 4, Time-Work 4, Ratio 4, Average 4, Mensuration 4 — class X level, every answer verified by hand (e.g. 25% of 240=60; CP=1100/1.1=1000; SI=2000×5×3/100=300; 1/10+1/15=1/6 →6 days; ratio 3:5 sum 64 → smaller 24; circle r=7 → 154 cm²; square side 9 → perimeter 36).
+- police-english (30) topics: Grammar 12 (tense×3, voice×2, narration×2, articles×2, prepositions×2, modals×2), Vocabulary 12 (synonyms×4, antonyms×4, one-word×2, spelling×2), Sentence Correction 6.
+- Bilingual format on every field: question = "English\nঅসমীয়া"; each option = "English / অসমীয়া"; explanation = "English\nঅসমীয়া". Per task spec, numeric digits stay as digits (NOT transliterated to Assamese numerals); units/words translated (₹→টকা, days→দিন, m²→বৰ্গ মিটাৰ, kg→কিলোগ্ৰাম). Vocabulary options give the Assamese meaning of each English word; grammar full-sentence options duplicate the English sentence under test; spelling options kept as English (the misspelling is the point).
+- correctAnswerIndex spread across all of 0,1,2,3 in BOTH pools (8/8/7/7 each) — verified at runtime.
+- Verification: `npx tsc --noEmit --strict ...` → exit 0 (no type errors). tsx runtime script asserted options.length===4, correctAnswerIndex∈0..3, marks===1, every question & explanation contains "\n", every option contains " / " → 0 errors across 60 items.
+
+Stage Summary:
+- File: /home/z/my-project/src/lib/assam-seed/questions-police-b.ts
+- Counts: police-quant=30, police-english=30 (total 60 bilingual items)
+- correctAnswerIndex distribution per pool: 0:8, 1:8, 2:7, 3:7 (all four indices present)
+- Valid TypeScript (tsc --noEmit clean); QuestionPoolMap typed export.
+
+---
+Task ID: 2-b1
+Agent: police-question-writer-a
+Task: Write bilingual Assam Police question pool PART A (60 questions: police-gk + police-reasoning)
+
+Work Log:
+- Read /home/z/my-project/worklog.md and /home/z/my-project/src/lib/assam-seed/structure.ts to confirm QuestionPoolMap / SeedQuestionPoolItem shape and pool keys 'police-gk' & 'police-reasoning' (lines 187–188, categoryKey 'assam-police').
+- Authored /home/z/my-project/src/lib/assam-seed/questions-police-a.ts exporting POLICE_POOLS_A: QuestionPoolMap with two pools of 30 items each (60 total). Each item: question "English\nঅসমীয়া", options "English / অসমীয়া" ×4, correctAnswerIndex 0–3, explanation "English\nঅসমীয়া", subjectTopic, marks: 1.
+- police-gk (30): Assam GK=20 (Dispur capital, 35 districts, Brahmaputra, 3 Bihus, Bhupen Hazarika, Gopinath Bordoloi first CM, Kaziranga one-horned rhino, Lachit Borphukan/Saraighat 1671, Digboi Asia's first oil refinery, Bogibeel bridge Dibrugarh–Dhemaji, state animal rhinoceros, Majuli in Brahmaputra, largest tea producer, Rongali Bihu April, Sankardev saint-scholar, LGBI Airport Guwahati, Saraighat Bridge 1962, 1874 Chief Commissioner's Province, Talatal Ghar Sivasagar, Kushal Konwar Sarupathar), India GK=8 (New Delhi capital, Ganga longest, Constitution adopted 26 Nov 1949, Rajendra Prasad first President, 11 Fundamental Duties, 8 states on Tropic of Cancer, Hockey, Sardar Patel Iron Man), Current Affairs=2 (Chandrayaan-3 Aug 2023 south pole, G20 Summit 2023 New Delhi). All answers verifiable.
+- police-reasoning (30): Series=5 (geometric 2,4,8,16→32; squares 1,4,9,16,25→36; arithmetic 3,6,9,12→15; factorial 1,1,2,6,24→120; geometric 5,10,20,40→80), Analogy=5 (Dog:Puppy::Cat:Kitten; Hand:Glove::Foot:Sock; Doctor:Hospital::Teacher:School; Eye:Sight::Ear:Hearing; Pen:Write::Knife:Cut), Coding=5 (CAT=24→DOG=26; TABLE→UCMF→CHAIR=DIBJS; A=1,B=2→BAD=7; RUN→WTO +3→CAT=FDW; WATER→YCVGT +2→FIRE=HKTG), Blood Relations=5 (grandfather's only son→sister; A/B/C siblings→brother; "only daughter of my mother"→daughter; Raj/Sita/Mohan→son; "only daughter of Sunita's father"→mother), Direction=5 (3-4-5 triangle N→right→5km; SE→N rotation→SW; facing N, 90°CW + 180°→W; 4km E + left 3km→5km; 2km S + 2km W→SW), Syllogism=5 (dogs⊆animals⊆living→both follow; classic Socrates mortal; some pens are pencils/no pencil is eraser→only I; all doctors graduates/some graduates women→does not follow; no apple mango/no mango banana→neither follows).
+- correctAnswerIndex distributed per-30 as [0→8, 1→8, 2→7, 3→7] in BOTH pools; all 4 indices represented.
+- Verification: `npx tsc --noEmit --strict --module ESNext --moduleResolution Bundler --target ES2020 --skipLibCheck src/lib/assam-seed/questions-police-a.ts` → exit 0, clean. Runtime tsx check asserts per-item: options.length===4, correctAnswerIndex∈{0,1,2,3}, question & explanation contain '\n' bilingual separator, every option contains ' / ' bilingual separator, marks is number, subjectTopic non-empty, no duplicate options → ALL PASSED, 0 bad items.
+
+Stage Summary:
+- File: /home/z/my-project/src/lib/assam-seed/questions-police-a.ts
+- Total: 60 bilingual questions (police-gk=30, police-reasoning=30)
+- Pool keys & counts: police-gk=30, police-reasoning=30
+- correctAnswerIndex distribution per pool: 0:8, 1:8, 2:7, 3:7
+- TypeScript strict-mode type-check: PASS (exit 0)
+- Bilingual format: 100% verified (English + অসমীয়া on every field)
+
+---
+Task ID: 2-a3
+Agent: apsc-question-writer-c
+File: src/lib/assam-seed/questions-apsc-c.ts
+
+Work Log:
+- Created bilingual (English + অসমীয়া) APSC Economy question pool with EXACTLY 40 items for the 'apsc-economy' subject key.
+- Each item follows SeedQuestionPoolItem shape: { question, options[4], correctAnswerIndex, explanation, subjectTopic, marks: 2 }.
+- subjectTopic distribution: Indian Economy=10, Banking=8, Assam Economy=12, Agriculture=4, Industry=3, Budget=3 (covers all six required topics: NITI Aayog/Five Year Plans/GDP, RBI 1935/nationalisation 1969, Assam tea/oil/Muga-Pat-Eri silk, rice/jute/mustard, Assam budget etc.).
+- correctAnswerIndex spread evenly across 0/1/2/3 (10/10/10/10) to balance test-slicing answer keys.
+- Content is verifiable, APSC graduate-level, with no placeholders; every field is bilingual.
+- Fixed TS literal quoting (single-quoted option with Assamese apostrophe "ক'লা" switched to double quotes) and fixed three Assamese typos (অবিন→তেল, দ্বিতীয় কাল পৰ্যায়ৰ→দ্বিতীয় পৰ্যায়ৰ, পাট পাট→পাট, জute→জুট, তেলৰ কাৰখানা→ইস্পাত কাৰখানা, গ্ৰantieণ্টি→গেৰাণ্টী).
+- Validated: `npx tsc --noEmit --skipLibCheck` passes with zero errors; project-wide tsc reports no errors referencing questions-apsc-c.ts.
+
+---
+Task ID: 2-c2
+Agent: seed-author (TET Part B)
+Task: Write bilingual TET Part B question pool (English + Maths + EVS)
+
+Work Log:
+- Created /home/z/my-project/src/lib/assam-seed/questions-tet-b.ts exporting TET_POOLS_B: QuestionPoolMap.
+- Pools: tet-english (20), tet-maths (20), tet-evs (20) = 60 total bilingual items.
+- Every field bilingual: question "EN\nঅসমীয়া", option "EN / অসমীয়া", explanation "EN\nঅসমীয়া". Digits stay as digits; words/units translated.
+- correctAnswerIndex distribution per pool: 5×0, 5×1, 5×2, 5×3 (balanced).
+- English topics: Grammar (10), Vocabulary (4), Comprehension (2), Pedagogy (4).
+- Maths topics: Number System (4), Fractions (3+2 decimals = 5), Geometry (3), Mensuration (3), Data Handling (2), Pedagogy (3).
+- EVS topics: Ecology (4), Pollution (3), Assam Biodiversity (8: Kaziranga, Brahmaputra/Luit, Majuli, Manas, Pobitora, one-horned rhino, Angsi glacier, Bengal Florican), Pedagogy (5).
+- Verified TS via `npx tsc --noEmit` — no errors.
+
+---
+Task ID: 2-b3
+Agent: general-purpose
+Task: Write Assam Police Assamese-language question pool (POLICE_POOLS_C)
+
+Work Log:
+- File written: /home/z/my-project/src/lib/assam-seed/questions-police-c.ts
+- Pool key: 'police-assamese'
+- Count: police-assamese = 30 items (exactly as specified)
+- Format: every field bilingual (English\nঅসমীয়া for question/explanation; English / অসমীয়া for each option).
+- subjectTopic spread: সন্ধি(6), সমাস(6), প্ৰকৃতি-প্ৰত্যয়(6), সাহিত্য(8), বাক্য শুদ্ধি(4).
+- correctAnswerIndex distribution: [0→8, 1→8, 2→7, 3→7] (sum 30), balanced across 0,1,2,3.
+- Content covered (all verifiable): Sandhi (স্বৰ/ব্যঞ্জন/বিসৰ্গ with viccheda of বনানী, দেৱালয়, সদ্গতি, পুনৰুক্তি, তদ্ভৱ, বিদ্যালয়); Samas (দ্বন্দ্ব চকু-পানী, কৰ্মধাৰয় নীলকমল, দ্বিগু চৌকোণ, বহুব্ৰীহি পঞ্চানন, অব্যয়ীভাৱ প্ৰাগৈতিহাসিক, তৎপুৰুষ ৰাজপুত্ৰ); Prakriti-Pratyay (কৃৎ শিক্ষক/লেখক/কৃষক, তদ্ধিত অসমীয়া/বৈষ্ণৱ, স্ত্ৰী প্ৰত্যয়); Sahitya (জ্যোতিপ্ৰসাদ/ৰূপকোঁৱৰ/জয়মতী 1935, বিষ্ণুপ্ৰসাদ/কলাগুৰু, ভূপেন/ব্ৰহ্মপুত্ৰৰ বৰগীত, লক্ষ্মীনাথ/সাহিত্যৰথী, মামণি/জ্ঞানপীঠ, হেমচন্দ্ৰ বৰুয়া/হেমকোষ, শংকৰদেৱ/মহাপুৰুষ); Bakya Shuddhi (anusvara মই খাইছোঁ, ergative তেওঁলোকে, locative আকাশত, dative তেওঁক).
+- Verification: `npx tsc --noEmit` on the file passes (no errors). tsx runtime check confirms count=30, idx=[8,8,7,7], topics match expected spread, every question/explanation contains a newline, every option contains " / ".
+
+---
+
+## Task ID: 2-c1
+- Agent: general-purpose
+- File created: `/home/z/my-project/src/lib/assam-seed/questions-tet-a.ts`
+- Export: `TET_POOLS_A: QuestionPoolMap` with two pools:
+  - `tet-cdp` (Child Development & Pedagogy): **20** bilingual items
+    - subjectTopic spread: Piaget(4), Vygotsky(3), Kohlberg(2), Learning Theory(4), Assessment(3), Inclusive Education(2), RTE(2)
+  - `tet-assamese` (অসমীয়া ভাষা): **20** bilingual items
+    - subjectTopic spread: সন্ধি(5), সমাস(5), সাহিত্য(6), ভাষা শিক্ষণ(4)
+- **Total: 40 bilingual items** (every field English + অসমীয়া; question & explanation use `\n` separator, options use ` / ` separator)
+- correctAnswerIndex distribution: **5/5/5/5** across 0,1,2,3 in each pool (perfectly balanced for test slicing)
+- TypeScript verification: `npx tsc --noEmit` → **0 errors**
+- Content is verifiable (Piaget stages, Vygotsky ZPD/MKO, Kohlberg levels, Skinner/Pavlov, Gardner MI, Bruner spiral, Maslow, formative/summative/CCE, inclusive ed, RTE 2009 6–14 yrs & 25% reservation; Assamese সন্ধি/সমাস rules, Jyotiprasad/Bishnuprasad Rabha/Bhupen Hazarika/Mamoni Goswami/Bezbaroa/Sankardev, LSRW). No placeholders.
+
+---
+Task ID: 2-a2p
+Agent: general-purpose
+Task: Write APSC Polity bilingual question pool (apsc-polity, 40 items)
+
+Work Log:
+- Read worklog.md and existing questions-apsc-a.ts to confirm the bilingual format conventions.
+- Wrote /home/z/my-project/src/lib/assam-seed/questions-apsc-polity.ts with 40 bilingual (EN + অসমীয়া) items covering Constitution (10), Parliament (7), Judiciary (6), Federalism (5), Assam Polity (7), Local Govt (5).
+- All facts verifiable: Article numbers, 73rd/74th Amendments, Bordoloi as first CM, 126-seat assembly, Dispur capital, Gauhati HC, 14 LS / 7 RS seats for Assam, RTE Act 2009 (6-14 age), SC judge retirement 65, HC 62, etc.
+- correctAnswerIndex distributed evenly: 10 × 0, 10 × 1, 10 × 2, 10 × 3 (verified via grep).
+- tsc check (npx tsc --noEmit -p tsconfig.json): no errors related to questions-apsc-polity.ts.
+
+Stage Summary:
+- File: /home/z/my-project/src/lib/assam-seed/questions-apsc-polity.ts
+- Count: apsc-polity = 40
+- subjectTopic spread: Constitution, Parliament, Judiciary, Federalism, Assam Polity, Local Govt.
+- All fields bilingual; marks: 2 on every item; options formatted as "English / অসমীয়া".
+
+---
+Task ID: 2-d2
+File: src/lib/assam-seed/questions-adre-b.ts
+Counts: adre-maths=30, adre-english=30, total=60 bilingual items.
+Topics (maths): Number System, LCM-HCF, Percentage, Profit-Loss, Interest, Time-Work, Ratio, Average, Mensuration.
+Topics (english): Grammar, Vocabulary, Sentence Correction.
+correctAnswerIndex distribution per pool: idx0=8, idx1=8, idx2=7, idx3=7 (balanced).
+TS verified: transpile + project-wide tsc --noEmit clean (no errors in file).
+
+---
+Task ID: 2-a2g
+Agent: general-purpose
+Task: Write APSC Geography bilingual question pool
+
+Work Log:
+- Created /home/z/my-project/src/lib/assam-seed/questions-apsc-geo.ts
+- Pool: apsc-geography = 40 bilingual (EN + অসমীয়া) items
+- subjectTopic spread: Physical Geography (12), Indian Geography (10), Assam Geography (12), Economic Geography (6)
+- correctAnswerIndex distribution: 10 × 0, 10 × 1, 10 × 2, 10 × 3 (balanced)
+- Content covers Brahmaputra system & tributaries (Subansiri, Manas, Kopili, Dhansiri, Burhi Dihing), monsoon/Mawsynram, Himalayas, Ganga, peninsular India, Kaziranga (UNESCO 1985, one-horned rhino), Manas NP, Majuli, Orang, Dibru-Saikhowa, tea regions (Dibrugarh/Jorhat/Tinsukia), Digboi refinery, Numaligarh, Muga silk, Guwahati tea auction.
+- Fixed two single-quoted strings containing ASCII apostrophes (ম'হ, ক'লা) by switching to double quotes.
+- tsc --noEmit passes cleanly (exit 0).
+
+---
+Task ID: 2-d3
+Agent: general-purpose
+Task: Write ADRE Awareness bilingual question pool (Part C)
+
+Work Log:
+- Read worklog.md and structure.ts (QuestionPoolMap type, SeedQuestionPoolItem shape) for the required format.
+- Inspected existing sibling files (questions-adre-b.ts, questions-apsc-polity.ts) to mirror bilingual EN/অসমীয়া conventions.
+- Created new file: /home/z/my-project/src/lib/assam-seed/questions-adre-c.ts exporting `ADRE_POOLS_C: QuestionPoolMap` with a single pool key `adre-awareness` (matches subjectKey defined in structure.ts:205).
+- Authored 30 verifiable ADRE Grade III/IV (class IX-X level) general-awareness items. Every field bilingual (English\nঅসমীয়া for question/explanation; "English / অসমীয়া" for each option).
+- correctAnswerIndex distribution: 0=8, 1=8, 2=7, 3=7 (balanced 8/8/7/7).
+- subjectTopic spread: History(5), Geography(4), Polity(5), Economy(3), Science(5), Sports(3), Books & Authors(2), Important Days(1), Current Affairs(2). Total = 30. Content covers Mughal Empire, freedom movement (Jallianwala Bagh, Subhas Bose, Quit India, Mountbatten), Indian rivers/peaks/coastline/Tropic of Cancer, President/PM/Parliament/Rajya Sabha, RBI/1991 reforms/First Five-Year Plan, Au/Ampere/Vitamin D/Mitochondria/speed of light, cricket/Olympics, Wings of Fire/Anandamath, World Environment Day, Chandrayaan-3 (2023), G20 New Delhi (2023) — all verifiable, NO placeholders.
+- Verified TS: `npx tsc --noEmit src/lib/assam-seed/questions-adre-c.ts` — clean (0 errors). Broader `tsc --noEmit` confirms no new errors in src/lib/assam-seed/* (only pre-existing prisma/seed.ts errors unrelated to this change).
+- Verified counts programmatically: 30 questions, 30 correctAnswerIndex, distribution {0:8, 1:8, 2:7, 3:7}.
+
+Stage Summary:
+- File written: /home/z/my-project/src/lib/assam-seed/questions-adre-c.ts
+- Pool key: `adre-awareness`
+- Item count: adre-awareness = 30
+- correctAnswerIndex: 8/8/7/7 across 0/1/2/3
+- Bilingual: every field (question, 4 options, explanation) has English + অসমীয়া Assamese script
+- TS verification: PASSED (clean)
+
+Next Actions:
+- Wire `ADRE_POOLS_C` into assam-seed index.ts (does not yet exist) when assembling all pools, so resolveQuestions() can slice questions into the three `adre-awareness-*` tests defined in structure.ts (lines 367–369).
+
+---
+Task ID: 2-f
+Agent: general-purpose
+Task: Author SSC all-subjects bilingual question pool (Reasoning / Quant / English / GA)
+
+Work Log:
+- Read worklog.md, structure.ts (lines 60–95 for SeedQuestionPoolItem interface, line 747 for QuestionPoolMap type), and questions-apsc-geo.ts / questions-police-a.ts for format conventions.
+- Wrote new file: /home/z/my-project/src/lib/assam-seed/questions-ssc.ts exporting `SSC_POOLS: QuestionPoolMap` with four pool keys: `ssc-reasoning`, `ssc-quant`, `ssc-english`, `ssc-ga`.
+- Authored 80 verifiable SSC CGL/CHSL & RRB NTPC (class XII–graduate level) bilingual items — 20 per pool. Every field bilingual: question = "English\nঅসমীয়া"; each of 4 options = "English / অসমীয়া"; explanation = "English\nঅসমীয়া". Numeric answers (digits) stay as digits; surrounding question/option text gets Assamese.
+- correctAnswerIndex distribution: 5/5/5/5 across 0/1/2/3 in EACH pool (verified programmatically via `node --experimental-strip-types`).
+- subjectTopic spread:
+  * ssc-reasoning (20): Analogy(5), Series(5), Coding(4), Syllogism(4), Non-Verbal(2). Verbal + non-verbal (mirror image of 'b', water image of '6', paper-folding).
+  * ssc-quant (20): Percentage(5), Profit-Loss(5), Mensuration(5), Algebra(5), DI(5). Includes 20% of 450, profit % on CP=500/SP=600, area of circle r=7, x+y=5 & xy=6 ⇒ x²+y²=13, MGNREGA pie chart, etc.
+  * ssc-english (20): Grammar(10: tense×2, voice×2, narration, article, preposition, phrasal verb, sentence improvement×1+), Vocabulary(7: synonyms×2, antonyms×2, one-word×2, spelling×1, idiom×1), Comprehension(3). Includes passive of "Rama writes a letter", indirect speech "I am happy", synonym of Abundant/Brave, antonym of Ancient/Generous, "a piece of cake" idiom, "i before e except after c" rule.
+  * ssc-ga (20): History(4), Geography(4), Polity(4), Science(4), Current Affairs(4). Includes Chandragupta Maurya, Battle of Plassey 1757, Quit India 1942, Qutub Minar (Qutb-ud-din Aibak), Ganga longest river, Antarctic Desert largest, Canberra capital of Australia, Ambedkar, six fundamental rights post-44th amendment, 12 nominated Rajya Sabha members, Au = gold, Nitrogen 78%, Vitamin D from sunlight, Ampere SI unit, 2023 ODI World Cup host India, 2023 Nobel Peace Narges Mohmmadi, Droupadi Murmu President 2022, Wimbledon 2023 Carlos Alcaraz.
+- Initial `tsc --noEmit --strict` failed on 6 single-quoted option strings containing ASCII apostrophe `'` inside Assamese text (lines 133, 746, 747, 748, 875, 1147 — e.g. "ৰাহুল হয়তো মৰণশীল হ'ব পাৰে", "তেওঁ ক'লে", "অ'হম"). Fixed by converting those 6 strings to double quotes (no inner double quotes to escape).
+- Re-verified: `npx tsc --noEmit --strict src/lib/assam-seed/questions-ssc.ts` → 0 errors. Project-wide `npx tsc --noEmit` shows no new errors attributable to questions-ssc.ts.
+- Runtime sanity check via `node --experimental-strip-types`: all 4 pools = 20 items each, total = 80, correctAnswerIndex distribution [5,5,5,5] for each pool.
+
+Stage Summary:
+- File written: /home/z/my-project/src/lib/assam-seed/questions-ssc.ts
+- Pool keys: `ssc-reasoning`, `ssc-quant`, `ssc-english`, `ssc-ga`
+- Item counts: 20 + 20 + 20 + 20 = 80 (total)
+- correctAnswerIndex: 5/5/5/5 across 0/1/2/3 in EACH pool
+- Bilingual: every field (question, 4 options, explanation) has English + অসমীয়া Assamese script
+- TS verification: PASSED (clean, 0 errors after apostrophe fix)
+
+Next Actions:
+- Wire `SSC_POOLS` into assam-seed index.ts when assembling all pools, so resolveQuestions() can slice questions into any SSC-branded tests defined in structure.ts.
+
+---
+Task ID: 2-d1r
+Agent: general-purpose (ADRE reasoning pool)
+File: /home/z/my-project/src/lib/assam-seed/questions-adre-reasoning.ts
+Count: adre-reasoning = 30
+subjectTopic spread: Series(6), Analogy(5), Coding(4), Blood Relations(3), Direction(3), Odd One Out(4), Syllogism(3), Ranking(2)
+correctAnswerIndex spread: 0×8, 1×8, 2×7, 3×7
+Verification: `npx tsc --noEmit` clean; tsx runtime check confirms 30 items, balanced answer indices, all 8 subjectTopics present, every field bilingual (question/explanation contain "\n" English+অসমীয়া; options use "English / অসমীয়া").

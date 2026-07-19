@@ -250,7 +250,11 @@ var _s = __turbopack_context__.k.signature();
 ;
 ;
 // Content collections — seeded exam-prep data. Safe to wipe for a fresh start.
-// Does NOT include users, payments, support_tickets, or premium_plans.
+// Does NOT include users, payments, support_tickets, results, or premium_plans.
+// NOTE: 'daily_quizzes' is NOT a separate collection — daily quizzes are stored
+// in the 'tests' collection with type='dailyQuiz'. So clearing 'tests' covers them.
+// NOTE: subject_pack_purchases & exam_pack_purchases are Prisma (SQLite) tables,
+// NOT Firestore collections — they cannot be cleared here.
 const CONTENT_COLLECTIONS = [
     'questions',
     'tests',
@@ -262,18 +266,20 @@ const CONTENT_COLLECTIONS = [
     'upcoming_exams',
     'current_affairs',
     'study_materials',
-    'daily_quizzes',
     'notifications'
 ];
-// ALL collections — for the NUKE option. Includes operational data.
+// ALL Firestore collections — for the NUKE option. Includes operational data.
+// Every collection here MUST have a corresponding match block in firestore.rules
+// with allow delete: if isAdmin() — otherwise the delete will fail.
 const ALL_COLLECTIONS = [
     ...CONTENT_COLLECTIONS,
     'premium_plans',
     'users',
     'payments',
     'test_purchases',
-    'subject_pack_purchases',
-    'exam_pack_purchases',
+    'results',
+    'subscriptions',
+    'leaderboard',
     'support_tickets'
 ];
 // Human-readable labels for display
@@ -288,14 +294,14 @@ const COLLECTION_LABELS = {
     upcoming_exams: 'Upcoming Exams',
     current_affairs: 'Current Affairs',
     study_materials: 'Study Materials',
-    daily_quizzes: 'Daily Quizzes',
     notifications: 'Notifications',
     premium_plans: 'Premium Plans',
     users: 'Users',
     payments: 'Payments',
     test_purchases: 'Test Purchases',
-    subject_pack_purchases: 'Subject Pack Purchases',
-    exam_pack_purchases: 'Exam Pack Purchases',
+    results: 'Results',
+    subscriptions: 'Subscriptions',
+    leaderboard: 'Leaderboard',
     support_tickets: 'Support Tickets'
 };
 function DataManagement() {
@@ -360,8 +366,18 @@ function DataManagement() {
     };
     // Delete all docs from a single collection in chunked batches.
     // Firestore writeBatch limit is 500 ops — we use 450 for safety.
+    // RESILIENT: if getDocs fails (permission denied / collection has no rules),
+    // returns -1 instead of throwing — so one bad collection doesn't abort the
+    // entire NUKE operation. The caller logs the skip and continues.
     async function clearCollection(name) {
-        const snap = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getDocs"])((0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["collection"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], name));
+        let snap;
+        try {
+            snap = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getDocs"])((0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["collection"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], name));
+        } catch (e) {
+            // Permission denied or collection has no rules — skip, don't abort
+            console.warn(`[clearCollection] ${name}: read failed (skipping):`, e?.code || e?.message);
+            return -1;
+        }
         if (snap.empty) return 0;
         const docs = snap.docs;
         for(let i = 0; i < docs.length; i += 450){
@@ -373,8 +389,15 @@ function DataManagement() {
         return docs.length;
     }
     // Delete a collection AND its known subcollections (e.g. support_tickets/{id}/messages)
+    // RESILIENT: same skip-on-error pattern as clearCollection.
     async function clearCollectionWithSubs(name, subName) {
-        const snap = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getDocs"])((0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["collection"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], name));
+        let snap;
+        try {
+            snap = await (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["getDocs"])((0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f40$firebase$2f$firestore$2f$dist$2f$index$2e$esm$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["collection"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$lib$2f$firebase$2e$ts__$5b$app$2d$client$5d$__$28$ecmascript$29$__["db"], name));
+        } catch (e) {
+            console.warn(`[clearCollectionWithSubs] ${name}: read failed (skipping):`, e?.code || e?.message);
+            return -1;
+        }
         if (snap.empty) return 0;
         let total = 0;
         // Delete subcollections first (if any) to avoid orphaned docs
@@ -420,11 +443,17 @@ function DataManagement() {
                 updateLog(`Clearing ${label}...`, 'pending');
                 const n = await clearCollection(colName);
                 results[colName] = n;
-                updateLog(`Clearing ${label}...`, 'done', n === 0 ? 'empty' : `${n} deleted`);
+                if (n === -1) {
+                    updateLog(`Clearing ${label}...`, 'error', 'skipped (permission denied)');
+                } else {
+                    updateLog(`Clearing ${label}...`, 'done', n === 0 ? 'empty' : `${n} deleted`);
+                }
             }
-            const total = Object.values(results).reduce((a, b)=>a + b, 0);
-            __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].success(`Cleared ${total} documents from ${CONTENT_COLLECTIONS.length} content collections`);
-            updateLog('Done', 'done', `${total} total documents deleted`);
+            const deleted = Object.values(results).filter((n)=>n > 0).reduce((a, b)=>a + b, 0);
+            const skipped = Object.values(results).filter((n)=>n === -1).length;
+            const msg = skipped > 0 ? `Cleared ${deleted} documents (${skipped} collections skipped — no rules)` : `Cleared ${deleted} documents from ${CONTENT_COLLECTIONS.length} content collections`;
+            __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].success(msg);
+            updateLog('Done', 'done', `${deleted} total documents deleted${skipped > 0 ? `, ${skipped} skipped` : ''}`);
         } catch (e) {
             console.error('[clearContent]', e);
             const msg = e instanceof Error ? e.message : 'Unknown error';
@@ -450,11 +479,17 @@ function DataManagement() {
                 // support_tickets has a 'messages' subcollection
                 const n = colName === 'support_tickets' ? await clearCollectionWithSubs(colName, 'messages') : await clearCollection(colName);
                 results[colName] = n;
-                updateLog(`Nuking ${label}...`, 'done', n === 0 ? 'empty' : `${n} deleted`);
+                if (n === -1) {
+                    updateLog(`Nuking ${label}...`, 'error', 'skipped (permission denied)');
+                } else {
+                    updateLog(`Nuking ${label}...`, 'done', n === 0 ? 'empty' : `${n} deleted`);
+                }
             }
-            const total = Object.values(results).reduce((a, b)=>a + b, 0);
-            __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].success(`NUKE complete — ${total} documents deleted across ${ALL_COLLECTIONS.length} collections`);
-            updateLog('Done', 'done', `${total} total documents deleted`);
+            const deleted = Object.values(results).filter((n)=>n > 0).reduce((a, b)=>a + b, 0);
+            const skipped = Object.values(results).filter((n)=>n === -1).length;
+            const msg = skipped > 0 ? `NUKE complete — ${deleted} documents deleted (${skipped} collections skipped — no rules)` : `NUKE complete — ${deleted} documents deleted across ${ALL_COLLECTIONS.length} collections`;
+            __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$sonner$2f$dist$2f$index$2e$mjs__$5b$app$2d$client$5d$__$28$ecmascript$29$__["toast"].success(msg);
+            updateLog('Done', 'done', `${deleted} total documents deleted${skipped > 0 ? `, ${skipped} skipped` : ''}`);
         } catch (e) {
             console.error('[nukeAll]', e);
             const msg = e instanceof Error ? e.message : 'Unknown error';
@@ -481,14 +516,14 @@ function DataManagement() {
                                     className: "w-6 h-6 text-emerald-400"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 282,
+                                    lineNumber: 321,
                                     columnNumber: 13
                                 }, this),
                                 "Data Management"
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 281,
+                            lineNumber: 320,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -500,25 +535,25 @@ function DataManagement() {
                                     children: "irreversible"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 288,
+                                    lineNumber: 327,
                                     columnNumber: 17
                                 }, this),
                                 "."
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 285,
+                            lineNumber: 324,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/data-management.tsx",
-                    lineNumber: 280,
+                    lineNumber: 319,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/data-management.tsx",
-                lineNumber: 279,
+                lineNumber: 318,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Card"], {
@@ -533,7 +568,7 @@ function DataManagement() {
                                     className: "w-4 h-4 text-emerald-400"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 297,
+                                    lineNumber: 336,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("h3", {
@@ -541,7 +576,7 @@ function DataManagement() {
                                     children: "Current Data in Firestore (live)"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 298,
+                                    lineNumber: 337,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -549,13 +584,13 @@ function DataManagement() {
                                     children: "updates in real-time"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 299,
+                                    lineNumber: 338,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 296,
+                            lineNumber: 335,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -571,7 +606,7 @@ function DataManagement() {
                                             children: n
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 316,
+                                            lineNumber: 355,
                                             columnNumber: 19
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -579,19 +614,19 @@ function DataManagement() {
                                             children: COLLECTION_LABELS[key] || key
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 319,
+                                            lineNumber: 358,
                                             columnNumber: 19
                                         }, this)
                                     ]
                                 }, key, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 306,
+                                    lineNumber: 345,
                                     columnNumber: 17
                                 }, this);
                             })
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 301,
+                            lineNumber: 340,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -604,7 +639,7 @@ function DataManagement() {
                                             className: "w-3 h-3 rounded border border-amber-800 bg-amber-950/30"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 328,
+                                            lineNumber: 367,
                                             columnNumber: 15
                                         }, this),
                                         "Content (",
@@ -613,7 +648,7 @@ function DataManagement() {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 327,
+                                    lineNumber: 366,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -623,7 +658,7 @@ function DataManagement() {
                                             className: "w-3 h-3 rounded border border-red-800 bg-red-950/30"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 332,
+                                            lineNumber: 371,
                                             columnNumber: 15
                                         }, this),
                                         "Operational (",
@@ -632,7 +667,7 @@ function DataManagement() {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 331,
+                                    lineNumber: 370,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -644,31 +679,31 @@ function DataManagement() {
                                             children: allTotal
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 335,
+                                            lineNumber: 374,
                                             columnNumber: 46
                                         }, this),
                                         " documents"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 335,
+                                    lineNumber: 374,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 326,
+                            lineNumber: 365,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/data-management.tsx",
-                    lineNumber: 295,
+                    lineNumber: 334,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/data-management.tsx",
-                lineNumber: 294,
+                lineNumber: 333,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -685,19 +720,19 @@ function DataManagement() {
                                             className: "w-5 h-5 text-amber-400"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 346,
+                                            lineNumber: 385,
                                             columnNumber: 15
                                         }, this),
                                         "Clear All Content Data"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 345,
+                                    lineNumber: 384,
                                     columnNumber: 13
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                lineNumber: 344,
+                                lineNumber: 383,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["CardContent"], {
@@ -712,14 +747,14 @@ function DataManagement() {
                                                 children: "content collections"
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 352,
+                                                lineNumber: 391,
                                                 columnNumber: 46
                                             }, this),
                                             ": categories, subjects, tests, questions, banners, announcements, upcoming exams, current affairs, study materials, daily quizzes, and notifications."
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                        lineNumber: 351,
+                                        lineNumber: 390,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -732,27 +767,27 @@ function DataManagement() {
                                                         className: "w-3.5 h-3.5"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                                        lineNumber: 358,
+                                                        lineNumber: 397,
                                                         columnNumber: 17
                                                     }, this),
                                                     "Safe to use — does NOT delete:"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 357,
+                                                lineNumber: 396,
                                                 columnNumber: 15
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
                                                 children: "User accounts, payments, support tickets, premium plans. The admin account stays intact."
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 361,
+                                                lineNumber: 400,
                                                 columnNumber: 15
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                        lineNumber: 356,
+                                        lineNumber: 395,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -767,14 +802,14 @@ function DataManagement() {
                                                         children: contentTotal
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                                        lineNumber: 365,
+                                                        lineNumber: 404,
                                                         columnNumber: 30
                                                     }, this),
                                                     " docs"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 364,
+                                                lineNumber: 403,
                                                 columnNumber: 15
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -786,32 +821,32 @@ function DataManagement() {
                                                         className: "w-4 h-4 mr-2"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                                        lineNumber: 372,
+                                                        lineNumber: 411,
                                                         columnNumber: 17
                                                     }, this),
                                                     "Clear Content"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 367,
+                                                lineNumber: 406,
                                                 columnNumber: 15
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                        lineNumber: 363,
+                                        lineNumber: 402,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                lineNumber: 350,
+                                lineNumber: 389,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/data-management.tsx",
-                        lineNumber: 343,
+                        lineNumber: 382,
                         columnNumber: 9
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Card"], {
@@ -825,19 +860,19 @@ function DataManagement() {
                                             className: "w-5 h-5 text-red-400"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 383,
+                                            lineNumber: 422,
                                             columnNumber: 15
                                         }, this),
                                         "NUKE ALL DATA"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 382,
+                                    lineNumber: 421,
                                     columnNumber: 13
                                 }, this)
                             }, void 0, false, {
                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                lineNumber: 381,
+                                lineNumber: 420,
                                 columnNumber: 11
                             }, this),
                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["CardContent"], {
@@ -852,14 +887,14 @@ function DataManagement() {
                                                 children: "EVERYTHING"
                                             }, void 0, false, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 389,
+                                                lineNumber: 428,
                                                 columnNumber: 23
                                             }, this),
                                             " from Firestore — content, users, payments, purchases, support tickets, and premium plans. True clean slate."
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                        lineNumber: 388,
+                                        lineNumber: 427,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -872,14 +907,14 @@ function DataManagement() {
                                                         className: "w-3.5 h-3.5"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                                        lineNumber: 395,
+                                                        lineNumber: 434,
                                                         columnNumber: 17
                                                     }, this),
                                                     "Warning — irreversible:"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 394,
+                                                lineNumber: 433,
                                                 columnNumber: 15
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("p", {
@@ -890,20 +925,20 @@ function DataManagement() {
                                                         children: "admins"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                                        lineNumber: 398,
+                                                        lineNumber: 437,
                                                         columnNumber: 138
                                                     }, this),
                                                     " collection) is preserved so you can still sign in."
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 398,
+                                                lineNumber: 437,
                                                 columnNumber: 15
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                        lineNumber: 393,
+                                        lineNumber: 432,
                                         columnNumber: 13
                                     }, this),
                                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("div", {
@@ -918,14 +953,14 @@ function DataManagement() {
                                                         children: allTotal
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                                        lineNumber: 402,
+                                                        lineNumber: 441,
                                                         columnNumber: 30
                                                     }, this),
                                                     " docs"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 401,
+                                                lineNumber: 440,
                                                 columnNumber: 15
                                             }, this),
                                             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$button$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Button"], {
@@ -937,38 +972,38 @@ function DataManagement() {
                                                         className: "w-4 h-4 mr-2"
                                                     }, void 0, false, {
                                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                                        lineNumber: 409,
+                                                        lineNumber: 448,
                                                         columnNumber: 17
                                                     }, this),
                                                     "NUKE Everything"
                                                 ]
                                             }, void 0, true, {
                                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                                lineNumber: 404,
+                                                lineNumber: 443,
                                                 columnNumber: 15
                                             }, this)
                                         ]
                                     }, void 0, true, {
                                         fileName: "[project]/src/components/admin/data-management.tsx",
-                                        lineNumber: 400,
+                                        lineNumber: 439,
                                         columnNumber: 13
                                     }, this)
                                 ]
                             }, void 0, true, {
                                 fileName: "[project]/src/components/admin/data-management.tsx",
-                                lineNumber: 387,
+                                lineNumber: 426,
                                 columnNumber: 11
                             }, this)
                         ]
                     }, void 0, true, {
                         fileName: "[project]/src/components/admin/data-management.tsx",
-                        lineNumber: 380,
+                        lineNumber: 419,
                         columnNumber: 9
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/admin/data-management.tsx",
-                lineNumber: 341,
+                lineNumber: 380,
                 columnNumber: 7
             }, this),
             log.length > 0 && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Card"], {
@@ -982,25 +1017,25 @@ function DataManagement() {
                                     className: "w-4 h-4 text-emerald-400 animate-spin"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 423,
+                                    lineNumber: 462,
                                     columnNumber: 17
                                 }, this) : /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$circle$2d$check$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__CheckCircle2$3e$__["CheckCircle2"], {
                                     className: "w-4 h-4 text-emerald-400"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 425,
+                                    lineNumber: 464,
                                     columnNumber: 17
                                 }, this),
                                 "Operation Log"
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 421,
+                            lineNumber: 460,
                             columnNumber: 13
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/components/admin/data-management.tsx",
-                        lineNumber: 420,
+                        lineNumber: 459,
                         columnNumber: 11
                     }, this),
                     /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$card$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["CardContent"], {
@@ -1013,21 +1048,21 @@ function DataManagement() {
                                             className: "w-3.5 h-3.5 text-amber-400 animate-spin shrink-0 mt-0.5"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 438,
+                                            lineNumber: 477,
                                             columnNumber: 21
                                         }, this),
                                         entry.status === 'done' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$circle$2d$check$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__CheckCircle2$3e$__["CheckCircle2"], {
                                             className: "w-3.5 h-3.5 text-emerald-400 shrink-0 mt-0.5"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 441,
+                                            lineNumber: 480,
                                             columnNumber: 21
                                         }, this),
                                         entry.status === 'error' && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$lucide$2d$react$2f$dist$2f$esm$2f$icons$2f$triangle$2d$alert$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__$3c$export__default__as__AlertTriangle$3e$__["AlertTriangle"], {
                                             className: "w-3.5 h-3.5 text-red-400 shrink-0 mt-0.5"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 444,
+                                            lineNumber: 483,
                                             columnNumber: 21
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1035,7 +1070,7 @@ function DataManagement() {
                                             children: entry.step
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 446,
+                                            lineNumber: 485,
                                             columnNumber: 19
                                         }, this),
                                         entry.detail && /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1043,29 +1078,29 @@ function DataManagement() {
                                             children: entry.detail
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 448,
+                                            lineNumber: 487,
                                             columnNumber: 21
                                         }, this)
                                     ]
                                 }, i, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 433,
+                                    lineNumber: 472,
                                     columnNumber: 17
                                 }, this))
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 431,
+                            lineNumber: 470,
                             columnNumber: 13
                         }, this)
                     }, void 0, false, {
                         fileName: "[project]/src/components/admin/data-management.tsx",
-                        lineNumber: 430,
+                        lineNumber: 469,
                         columnNumber: 11
                     }, this)
                 ]
             }, void 0, true, {
                 fileName: "[project]/src/components/admin/data-management.tsx",
-                lineNumber: 419,
+                lineNumber: 458,
                 columnNumber: 9
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
@@ -1083,14 +1118,14 @@ function DataManagement() {
                                             className: "w-5 h-5 text-amber-400"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 466,
+                                            lineNumber: 505,
                                             columnNumber: 15
                                         }, this),
                                         "Clear all content data?"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 465,
+                                    lineNumber: 504,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
@@ -1105,7 +1140,7 @@ function DataManagement() {
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 470,
+                                            lineNumber: 509,
                                             columnNumber: 44
                                         }, this),
                                         " across",
@@ -1115,13 +1150,13 @@ function DataManagement() {
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 469,
+                                    lineNumber: 508,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 464,
+                            lineNumber: 503,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
@@ -1131,7 +1166,7 @@ function DataManagement() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 478,
+                                    lineNumber: 517,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
@@ -1140,24 +1175,24 @@ function DataManagement() {
                                     children: "Yes, clear all content"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 481,
+                                    lineNumber: 520,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 477,
+                            lineNumber: 516,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/data-management.tsx",
-                    lineNumber: 463,
+                    lineNumber: 502,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/data-management.tsx",
-                lineNumber: 462,
+                lineNumber: 501,
                 columnNumber: 7
             }, this),
             /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialog"], {
@@ -1178,14 +1213,14 @@ function DataManagement() {
                                             className: "w-5 h-5 text-red-400"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 496,
+                                            lineNumber: 535,
                                             columnNumber: 15
                                         }, this),
                                         "NUKE ALL DATA — are you absolutely sure?"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 495,
+                                    lineNumber: 534,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogDescription"], {
@@ -1202,7 +1237,7 @@ function DataManagement() {
                                                     ]
                                                 }, void 0, true, {
                                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                                    lineNumber: 501,
+                                                    lineNumber: 540,
                                                     columnNumber: 46
                                                 }, this),
                                                 " across",
@@ -1212,7 +1247,7 @@ function DataManagement() {
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 500,
+                                            lineNumber: 539,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1221,26 +1256,26 @@ function DataManagement() {
                                                 "• All user accounts (users collection)",
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("br", {}, void 0, false, {
                                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                                    lineNumber: 505,
+                                                    lineNumber: 544,
                                                     columnNumber: 55
                                                 }, this),
                                                 "• All payment records & purchases",
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("br", {}, void 0, false, {
                                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                                    lineNumber: 506,
+                                                    lineNumber: 545,
                                                     columnNumber: 54
                                                 }, this),
                                                 "• All support tickets & messages",
                                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("br", {}, void 0, false, {
                                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                                    lineNumber: 507,
+                                                    lineNumber: 546,
                                                     columnNumber: 53
                                                 }, this),
                                                 "• All content (categories, tests, questions, etc.)"
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 504,
+                                            lineNumber: 543,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1250,14 +1285,14 @@ function DataManagement() {
                                                     children: "admins"
                                                 }, void 0, false, {
                                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                                    lineNumber: 510,
+                                                    lineNumber: 549,
                                                     columnNumber: 47
                                                 }, this),
                                                 " collection) is preserved so you can still log in afterwards."
                                             ]
                                         }, void 0, true, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 510,
+                                            lineNumber: 549,
                                             columnNumber: 15
                                         }, this),
                                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])("span", {
@@ -1265,19 +1300,19 @@ function DataManagement() {
                                             children: "This action is IRREVERSIBLE. Type DELETE to confirm."
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 511,
+                                            lineNumber: 550,
                                             columnNumber: 15
                                         }, this)
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 499,
+                                    lineNumber: 538,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 494,
+                            lineNumber: 533,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$input$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["Input"], {
@@ -1288,7 +1323,7 @@ function DataManagement() {
                             autoFocus: true
                         }, void 0, false, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 514,
+                            lineNumber: 553,
                             columnNumber: 11
                         }, this),
                         /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogFooter"], {
@@ -1298,7 +1333,7 @@ function DataManagement() {
                                     children: "Cancel"
                                 }, void 0, false, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 522,
+                                    lineNumber: 561,
                                     columnNumber: 13
                                 }, this),
                                 /*#__PURE__*/ (0, __TURBOPACK__imported__module__$5b$project$5d2f$node_modules$2f$next$2f$dist$2f$compiled$2f$react$2f$jsx$2d$dev$2d$runtime$2e$js__$5b$app$2d$client$5d$__$28$ecmascript$29$__["jsxDEV"])(__TURBOPACK__imported__module__$5b$project$5d2f$src$2f$components$2f$ui$2f$alert$2d$dialog$2e$tsx__$5b$app$2d$client$5d$__$28$ecmascript$29$__["AlertDialogAction"], {
@@ -1310,37 +1345,37 @@ function DataManagement() {
                                             className: "w-4 h-4 mr-2"
                                         }, void 0, false, {
                                             fileName: "[project]/src/components/admin/data-management.tsx",
-                                            lineNumber: 530,
+                                            lineNumber: 569,
                                             columnNumber: 15
                                         }, this),
                                         "NUKE EVERYTHING"
                                     ]
                                 }, void 0, true, {
                                     fileName: "[project]/src/components/admin/data-management.tsx",
-                                    lineNumber: 525,
+                                    lineNumber: 564,
                                     columnNumber: 13
                                 }, this)
                             ]
                         }, void 0, true, {
                             fileName: "[project]/src/components/admin/data-management.tsx",
-                            lineNumber: 521,
+                            lineNumber: 560,
                             columnNumber: 11
                         }, this)
                     ]
                 }, void 0, true, {
                     fileName: "[project]/src/components/admin/data-management.tsx",
-                    lineNumber: 493,
+                    lineNumber: 532,
                     columnNumber: 9
                 }, this)
             }, void 0, false, {
                 fileName: "[project]/src/components/admin/data-management.tsx",
-                lineNumber: 492,
+                lineNumber: 531,
                 columnNumber: 7
             }, this)
         ]
     }, void 0, true, {
         fileName: "[project]/src/components/admin/data-management.tsx",
-        lineNumber: 277,
+        lineNumber: 316,
         columnNumber: 5
     }, this);
 }

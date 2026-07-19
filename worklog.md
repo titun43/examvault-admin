@@ -3175,3 +3175,30 @@ Stage Summary:
 - User needs to: log in to admin panel → click "Data Management" in sidebar → click the appropriate clear button → Firebase data is wiped → admin panel shows 0 data (live counts update in real-time)
 - Files: src/components/admin/data-management.tsx (NEW), src/components/admin/admin-shell.tsx (MODIFIED), src/lib/store.ts (MODIFIED), src/app/page.tsx (MODIFIED), watchdog-dev.sh (MODIFIED)
 - Commit 1bced19 pushed to https://github.com/titun43/examvault-admin.git (main branch)
+
+---
+Task ID: nuke-permission-fix
+Agent: main
+Task: User reported "NUKE failed: Missing or insufficient permissions" when trying to clear all Firebase data via the Data Management page.
+
+Work Log:
+- Diagnosed: data-management.tsx tried to getDocs() on 3 collections that don't exist in Firestore:
+  * daily_quizzes — NOT a Firestore collection. Daily quizzes are stored in the 'tests' collection with type='dailyQuiz'. The daily-quiz.tsx admin component is just a wrapper around Tests with fixedType="dailyQuiz".
+  * subject_pack_purchases — Prisma (SQLite) table (db.subjectPackPurchase.findUnique), NOT Firestore
+  * exam_pack_purchases — Prisma (SQLite) table (db.examPackPurchase.findUnique), NOT Firestore
+- Firestore rules are deny-by-default: collections without a match block reject ALL reads. So getDocs() on these 3 threw "Missing or insufficient permissions" and aborted the entire NUKE loop.
+- Fix applied to data-management.tsx:
+  1. Removed daily_quizzes, subject_pack_purchases, exam_pack_purchases from CONTENT_COLLECTIONS and ALL_COLLECTIONS
+  2. Added 3 real Firestore collections that were missing from the NUKE list: results, subscriptions, leaderboard (all have "allow delete: if isAdmin()" in firestore.rules)
+  3. Made clearCollection() and clearCollectionWithSubs() RESILIENT: wrapped getDocs() in try/catch — on permission error, return -1 (skip) instead of throwing. One bad collection no longer aborts the whole operation.
+  4. Updated handleClearContent and handleNukeAll to handle -1 return: logs "skipped (permission denied)", final toast reports "N deleted (M collections skipped — no rules)"
+  5. Added explanatory comments about daily_quizzes and Prisma tables
+- Copied fixed file to /home/z/my-project, ran `bun run lint` — 0 errors
+- Committed as ef49204 "fix: NUKE permission denied — remove phantom collections, add resilience" and pushed to GitHub
+- Restarted dev server (rm -rf .next + fresh start), verified page loads at http://localhost:3000 via Agent Browser — login form renders, no errors
+
+Stage Summary:
+- NUKE should now work: the 3 phantom collections are removed, and even if some collection has no rules, it gets skipped instead of aborting
+- Added results, subscriptions, leaderboard to the NUKE list for a truer clean slate
+- Commit ef49204 pushed to https://github.com/titun43/examvault-admin.git (main branch)
+- User should retry: log in → Tools → Data Management → NUKE ALL DATA → type DELETE → confirm

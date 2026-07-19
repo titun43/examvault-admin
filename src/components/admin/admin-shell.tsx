@@ -29,7 +29,6 @@ import {
   Bell,
   Gem,
   Search,
-  Database,
   Headphones,
   Library,
 } from 'lucide-react';
@@ -89,7 +88,6 @@ const NAV_GROUPS: NavGroup[] = [
     title: 'Tools',
     items: [
       { id: 'support', label: 'Support Tickets', icon: Headphones },
-      { id: 'data-seed', label: 'Data Seed', icon: Database },
     ],
   },
 ];

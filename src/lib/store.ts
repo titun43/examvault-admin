@@ -20,8 +20,7 @@ export type AdminSection =
   | 'payment-settings'
   | 'notifications'
   | 'premium-plans'
-  | 'support'
-  | 'data-seed';
+  | 'support';
 
 interface AppState {
   currentSection: AdminSection;

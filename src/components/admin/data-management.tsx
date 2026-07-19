@@ -61,7 +61,11 @@ interface LogEntry {
 }
 
 // Content collections — seeded exam-prep data. Safe to wipe for a fresh start.
-// Does NOT include users, payments, support_tickets, or premium_plans.
+// Does NOT include users, payments, support_tickets, results, or premium_plans.
+// NOTE: 'daily_quizzes' is NOT a separate collection — daily quizzes are stored
+// in the 'tests' collection with type='dailyQuiz'. So clearing 'tests' covers them.
+// NOTE: subject_pack_purchases & exam_pack_purchases are Prisma (SQLite) tables,
+// NOT Firestore collections — they cannot be cleared here.
 const CONTENT_COLLECTIONS = [
   'questions',
   'tests',
@@ -73,19 +77,21 @@ const CONTENT_COLLECTIONS = [
   'upcoming_exams',
   'current_affairs',
   'study_materials',
-  'daily_quizzes',
   'notifications',
 ] as const;
 
-// ALL collections — for the NUKE option. Includes operational data.
+// ALL Firestore collections — for the NUKE option. Includes operational data.
+// Every collection here MUST have a corresponding match block in firestore.rules
+// with allow delete: if isAdmin() — otherwise the delete will fail.
 const ALL_COLLECTIONS = [
   ...CONTENT_COLLECTIONS,
   'premium_plans',
   'users',
   'payments',
   'test_purchases',
-  'subject_pack_purchases',
-  'exam_pack_purchases',
+  'results',
+  'subscriptions',
+  'leaderboard',
   'support_tickets',
 ] as const;
 
@@ -101,14 +107,14 @@ const COLLECTION_LABELS: Record<string, string> = {
   upcoming_exams: 'Upcoming Exams',
   current_affairs: 'Current Affairs',
   study_materials: 'Study Materials',
-  daily_quizzes: 'Daily Quizzes',
   notifications: 'Notifications',
   premium_plans: 'Premium Plans',
   users: 'Users',
   payments: 'Payments',
   test_purchases: 'Test Purchases',
-  subject_pack_purchases: 'Subject Pack Purchases',
-  exam_pack_purchases: 'Exam Pack Purchases',
+  results: 'Results',
+  subscriptions: 'Subscriptions',
+  leaderboard: 'Leaderboard',
   support_tickets: 'Support Tickets',
 };
 
@@ -150,8 +156,18 @@ export default function DataManagement() {
 
   // Delete all docs from a single collection in chunked batches.
   // Firestore writeBatch limit is 500 ops — we use 450 for safety.
+  // RESILIENT: if getDocs fails (permission denied / collection has no rules),
+// returns -1 instead of throwing — so one bad collection doesn't abort the
+  // entire NUKE operation. The caller logs the skip and continues.
   async function clearCollection(name: string): Promise<number> {
-    const snap = await getDocs(collection(db, name));
+    let snap;
+    try {
+      snap = await getDocs(collection(db, name));
+    } catch (e: any) {
+      // Permission denied or collection has no rules — skip, don't abort
+      console.warn(`[clearCollection] ${name}: read failed (skipping):`, e?.code || e?.message);
+      return -1;
+    }
     if (snap.empty) return 0;
 
     const docs = snap.docs;
@@ -165,8 +181,15 @@ export default function DataManagement() {
   }
 
   // Delete a collection AND its known subcollections (e.g. support_tickets/{id}/messages)
+  // RESILIENT: same skip-on-error pattern as clearCollection.
   async function clearCollectionWithSubs(name: string, subName?: string): Promise<number> {
-    const snap = await getDocs(collection(db, name));
+    let snap;
+    try {
+      snap = await getDocs(collection(db, name));
+    } catch (e: any) {
+      console.warn(`[clearCollectionWithSubs] ${name}: read failed (skipping):`, e?.code || e?.message);
+      return -1;
+    }
     if (snap.empty) return 0;
 
     let total = 0;
@@ -217,12 +240,20 @@ export default function DataManagement() {
         updateLog(`Clearing ${label}...`, 'pending');
         const n = await clearCollection(colName);
         results[colName] = n;
-        updateLog(`Clearing ${label}...`, 'done', n === 0 ? 'empty' : `${n} deleted`);
+        if (n === -1) {
+          updateLog(`Clearing ${label}...`, 'error', 'skipped (permission denied)');
+        } else {
+          updateLog(`Clearing ${label}...`, 'done', n === 0 ? 'empty' : `${n} deleted`);
+        }
       }
 
-      const total = Object.values(results).reduce((a, b) => a + b, 0);
-      toast.success(`Cleared ${total} documents from ${CONTENT_COLLECTIONS.length} content collections`);
-      updateLog('Done', 'done', `${total} total documents deleted`);
+      const deleted = Object.values(results).filter((n) => n > 0).reduce((a, b) => a + b, 0);
+      const skipped = Object.values(results).filter((n) => n === -1).length;
+      const msg = skipped > 0
+        ? `Cleared ${deleted} documents (${skipped} collections skipped — no rules)`
+        : `Cleared ${deleted} documents from ${CONTENT_COLLECTIONS.length} content collections`;
+      toast.success(msg);
+      updateLog('Done', 'done', `${deleted} total documents deleted${skipped > 0 ? `, ${skipped} skipped` : ''}`);
     } catch (e) {
       console.error('[clearContent]', e);
       const msg = e instanceof Error ? e.message : 'Unknown error';
@@ -253,12 +284,20 @@ export default function DataManagement() {
           ? await clearCollectionWithSubs(colName, 'messages')
           : await clearCollection(colName);
         results[colName] = n;
-        updateLog(`Nuking ${label}...`, 'done', n === 0 ? 'empty' : `${n} deleted`);
+        if (n === -1) {
+          updateLog(`Nuking ${label}...`, 'error', 'skipped (permission denied)');
+        } else {
+          updateLog(`Nuking ${label}...`, 'done', n === 0 ? 'empty' : `${n} deleted`);
+        }
       }
 
-      const total = Object.values(results).reduce((a, b) => a + b, 0);
-      toast.success(`NUKE complete — ${total} documents deleted across ${ALL_COLLECTIONS.length} collections`);
-      updateLog('Done', 'done', `${total} total documents deleted`);
+      const deleted = Object.values(results).filter((n) => n > 0).reduce((a, b) => a + b, 0);
+      const skipped = Object.values(results).filter((n) => n === -1).length;
+      const msg = skipped > 0
+        ? `NUKE complete — ${deleted} documents deleted (${skipped} collections skipped — no rules)`
+        : `NUKE complete — ${deleted} documents deleted across ${ALL_COLLECTIONS.length} collections`;
+      toast.success(msg);
+      updateLog('Done', 'done', `${deleted} total documents deleted${skipped > 0 ? `, ${skipped} skipped` : ''}`);
     } catch (e) {
       console.error('[nukeAll]', e);
       const msg = e instanceof Error ? e.message : 'Unknown error';

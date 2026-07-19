@@ -71,7 +71,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const emptyForm = {
-  subjectId: '', title: '', slug: '', type: 'mock', duration: 60, totalMarks: 100, passingMarks: 40,
+  categoryId: '', subjectId: '', title: '', slug: '', type: 'mock', duration: 60, totalMarks: 100, passingMarks: 40,
   isPublished: true, difficulty: 'medium', negativeMarking: false, negativeMarks: 0.25,
   instructions: '', year: new Date().getFullYear(), examSession: '', isPremium: false, price: 0,
 };
@@ -360,13 +360,24 @@ export default function Tests({ fixedType }: TestsProps = {}) {
     return categories.find((c) => c.id === sub.categoryId)?.name || '—';
   };
 
+  // Subjects filtered by the selected category in the Add/Edit form. When the
+  // admin picks a category, the Subject dropdown shows only subjects in that
+  // category — so the admin doesn't have to hunt through a long flat list.
+  const filteredSubjects = form.categoryId
+    ? subjects.filter((s) => s.categoryId === form.categoryId)
+    : subjects;
+
   const openAdd = () => {
     setForm({ ...emptyForm, type: fixedType || 'mock' });
     setEditingId(null);
     setDialogOpen(true);
   };
   const openEdit = (item: Test) => {
+    // Pre-fill categoryId from the subject's parent category so the Subject
+    // dropdown filters correctly and the admin sees the full hierarchy.
+    const subj = subjects.find((s) => s.id === item.subjectId);
     setForm({
+      categoryId: subj?.categoryId || '',
       subjectId: item.subjectId, title: item.title, slug: item.slug, type: item.type || 'mock',
       duration: item.duration, totalMarks: item.totalMarks, passingMarks: item.passingMarks,
       isPublished: item.isPublished, difficulty: item.difficulty || 'medium',
@@ -380,6 +391,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
 
   const handleSave = async () => {
     if (!form.title.trim()) { toast.error('Title is required'); return; }
+    if (!form.categoryId) { toast.error('Please select a category'); return; }
     if (!form.subjectId) { toast.error('Please select a subject'); return; }
     setSaving(true);
     try {
@@ -400,6 +412,9 @@ export default function Tests({ fixedType }: TestsProps = {}) {
       }
 
       const data: any = {
+        // Denormalize categoryId onto the test doc so downstream queries
+        // (e.g. "all tests in SSC") don't need a subject lookup join.
+        categoryId: form.categoryId,
         subjectId: form.subjectId,
         title: form.title.trim(),
         slug: form.slug ? slugify(form.slug) : slugify(form.title),
@@ -720,34 +735,98 @@ export default function Tests({ fixedType }: TestsProps = {}) {
               <Label>Title *</Label>
               <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value, slug: form.slug || slugify(e.target.value) })} placeholder="e.g. RRB NTPC Mock Test 1" className="bg-slate-800 border-slate-700" />
             </div>
-            <div className={`grid gap-3 ${fixedType ? 'grid-cols-1' : 'grid-cols-2'}`}>
+            {/* Category + Subject row. Category filters the Subject dropdown so
+                the admin doesn't scroll through a long flat subject list. */}
+            <div className="grid gap-3 grid-cols-1 sm:grid-cols-2">
               <div className="space-y-2">
-                <Label>Subject *</Label>
-                <Select value={form.subjectId} onValueChange={(v) => setForm({ ...form, subjectId: v })}>
-                  <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue placeholder="Select subject" /></SelectTrigger>
+                <Label>Category *</Label>
+                <Select
+                  value={form.categoryId}
+                  onValueChange={(v) => setForm({ ...form, categoryId: v, subjectId: '' })}
+                >
+                  <SelectTrigger className="bg-slate-800 border-slate-700">
+                    <SelectValue placeholder="Select category" />
+                  </SelectTrigger>
                   <SelectContent className="bg-slate-800 border-slate-700">
-                    {subjects.map((s) => <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>)}
+                    {categories.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-slate-500">No categories yet</div>
+                    ) : (
+                      categories.map((c) => (
+                        <SelectItem key={c.id} value={c.id}>
+                          {c.name}{c.isPremium ? ' 👑' : ''}
+                        </SelectItem>
+                      ))
+                    )}
                   </SelectContent>
                 </Select>
+                {categories.length === 0 && (
+                  <p className="text-xs text-amber-400/80 flex items-center gap-1">
+                    <Info className="w-3 h-3" />
+                    No categories found.{' '}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentSection('categories')}
+                      className="underline text-emerald-400 hover:text-emerald-300"
+                    >
+                      Add a category first →
+                    </button>
+                  </p>
+                )}
               </div>
-              {!fixedType && (
-                <div className="space-y-2">
-                  <Label>Type</Label>
-                  <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
-                    <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
-                    <SelectContent className="bg-slate-800 border-slate-700">
-                      <SelectItem value="mock">Mock Test</SelectItem>
-                      <SelectItem value="previousYear">Previous Year</SelectItem>
-                      <SelectItem value="dailyQuiz">Daily Quiz</SelectItem>
-                      <SelectItem value="practice">Practice</SelectItem>
-                      <SelectItem value="subjectwise">Subject-wise</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              {fixedType && (
-                <div className="space-y-2">
-                  <Label>Type</Label>
+              <div className="space-y-2">
+                <Label>Subject *</Label>
+                <Select
+                  value={form.subjectId}
+                  onValueChange={(v) => setForm({ ...form, subjectId: v })}
+                  disabled={!form.categoryId}
+                >
+                  <SelectTrigger className="bg-slate-800 border-slate-700">
+                    <SelectValue placeholder={form.categoryId ? 'Select subject' : 'Select category first'} />
+                  </SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    {filteredSubjects.length === 0 ? (
+                      <div className="px-3 py-2 text-sm text-slate-500">
+                        {form.categoryId ? 'No subjects in this category' : 'Select a category first'}
+                      </div>
+                    ) : (
+                      filteredSubjects.map((s) => (
+                        <SelectItem key={s.id} value={s.id}>{s.name}</SelectItem>
+                      ))
+                    )}
+                  </SelectContent>
+                </Select>
+                {form.categoryId && filteredSubjects.length === 0 && (
+                  <p className="text-xs text-amber-400/80 flex items-center gap-1">
+                    <Info className="w-3 h-3" />
+                    No subjects in this category yet.{' '}
+                    <button
+                      type="button"
+                      onClick={() => setCurrentSection('subjects')}
+                      className="underline text-emerald-400 hover:text-emerald-300"
+                    >
+                      Add a subject →
+                    </button>
+                  </p>
+                )}
+              </div>
+            </div>
+            {/* Type — full-width row. When fixedType is set, shows a disabled
+                input explaining the type is locked for this section. */}
+            <div className="space-y-2">
+              <Label>Type</Label>
+              {!fixedType ? (
+                <Select value={form.type} onValueChange={(v) => setForm({ ...form, type: v })}>
+                  <SelectTrigger className="bg-slate-800 border-slate-700"><SelectValue /></SelectTrigger>
+                  <SelectContent className="bg-slate-800 border-slate-700">
+                    <SelectItem value="mock">Mock Test</SelectItem>
+                    <SelectItem value="previousYear">Previous Year</SelectItem>
+                    <SelectItem value="dailyQuiz">Daily Quiz</SelectItem>
+                    <SelectItem value="practice">Practice</SelectItem>
+                    <SelectItem value="subjectwise">Subject-wise</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : (
+                <>
                   <Input
                     value={fixedLabel || fixedType}
                     disabled
@@ -756,7 +835,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
                   <p className="text-xs text-amber-400/80 flex items-center gap-1">
                     <Info className="w-3 h-3" /> Type is fixed for this section and cannot be changed.
                   </p>
-                </div>
+                </>
               )}
             </div>
             <div className="grid grid-cols-3 gap-3">

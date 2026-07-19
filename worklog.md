@@ -3202,3 +3202,35 @@ Stage Summary:
 - Added results, subscriptions, leaderboard to the NUKE list for a truer clean slate
 - Commit ef49204 pushed to https://github.com/titun43/examvault-admin.git (main branch)
 - User should retry: log in → Tools → Data Management → NUKE ALL DATA → type DELETE → confirm
+
+---
+Task ID: tests-category-dropdown
+Agent: main
+Task: User requested adding a Category option to the Tests Add/Edit form (currently only Subject dropdown exists).
+
+Work Log:
+- Read tests.tsx (1050 lines) to understand the form structure: Subject dropdown + Type dropdown in a grid-cols-2 layout. Categories were loaded via onSnapshot but only used for display in the table (getCategoryName) and premium inheritance logic — never shown in the form.
+- Added categoryId to emptyForm state
+- Updated openEdit to pre-fill categoryId from the subject's parent category (looked up via subjects.find)
+- Added filteredSubjects computed value: subjects.filter by form.categoryId
+- Replaced the form layout:
+  * OLD: grid-cols-2 with [Subject, Type]
+  * NEW: grid-cols-2 with [Category, Subject] + full-width Type row below
+- Category dropdown: lists all categories, premium ones show a crown emoji (👑)
+- Subject dropdown: now FILTERS by selected category, disabled until a category is picked
+- When category changes, subjectId resets to '' (old subject may not be in new category)
+- Smart empty-state hints with clickable navigation links:
+  * No categories → "Add a category first →" (navigates to Categories section)
+  * No subjects in category → "Add a subject →" (navigates to Subjects section)
+- Added categoryId validation to handleSave (required)
+- Added categoryId to the saved data object (denormalized onto test doc)
+- Type dropdown restructured: uses ternary (!fixedType ? <Select> : <disabled Input>) for cleaner code
+- Ran `bun run lint` — 0 errors, 0 warnings
+- Synced to fresh-clones, committed as 79f960c, pushed to GitHub
+- Restarted dev server, verified page loads (HTTP 200, no errors)
+
+Stage Summary:
+- Tests Add/Edit form now has a Category dropdown that filters the Subject list
+- Helps admin find the right subject faster when many categories/subjects exist
+- Also useful after NUKE: if no categories exist, the form tells the admin to add one first (with a clickable link)
+- Commit 79f960c pushed to https://github.com/titun43/examvault-admin.git (main branch)

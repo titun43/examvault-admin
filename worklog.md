@@ -3523,3 +3523,37 @@ Count: adre-reasoning = 30
 subjectTopic spread: Series(6), Analogy(5), Coding(4), Blood Relations(3), Direction(3), Odd One Out(4), Syllogism(3), Ranking(2)
 correctAnswerIndex spread: 0×8, 1×8, 2×7, 3×7
 Verification: `npx tsc --noEmit` clean; tsx runtime check confirms 30 items, balanced answer indices, all 8 subjectTopics present, every field bilingual (question/explanation contain "\n" English+অসমীয়া; options use "English / অসমীয়া").
+
+---
+Task ID: bilingual-bulk-templates
+Agent: main-agent
+Task: Upgrade all bulk-add templates in admin panel to support bilingual (English + Assamese) question/answer upload
+
+Work Log:
+- Investigated admin panel structure; identified 7 bulk-add dialogs: categories, subjects, tests, questions, upcoming-exams, current-affairs, announcements
+- Read bulk-textarea.tsx (shared component), questions.tsx (primary target), and all 7 BULK_SAMPLE/CSV_HEADERS/CSV_SAMPLE_ROWS definitions
+- Confirmed content lives in Firestore (schemaless) — no Prisma migration needed for new *As fields
+- Upgraded Questions bulk template (PRIMARY): added questionAs, optionsAs, explanationAs to JSON sample; added questionAs, option1As-option4As, explanationAs to CSV headers/sample rows; updated CSV parsing logic to map option*As → optionsAs array
+- Upgraded Tests: added titleAs, descriptionAs
+- Upgraded Categories: added nameAs, descriptionAs
+- Upgraded Subjects: added nameAs, descriptionAs
+- Upgraded Announcements: added titleAs, messageAs (fixed ASCII apostrophe in Assamese text হ'ল → হ’ল U+2019)
+- Upgraded Current Affairs: added titleAs, summaryAs, contentAs
+- Upgraded Upcoming Exams: added nameAs, organizationAs, descriptionAs
+- Added Languages icon import to all 7 files
+- Added amber-styled bilingual info box to all 7 bulk dialogs explaining the *As fields
+- Updated field documentation text in all 7 dialogs to describe bilingual fields
+- Enhanced Questions edit dialog: added Assamese input fields (questionAs, optionsAs, explanationAs) with amber-tinted styling
+- Enhanced Questions card display: shows Assamese question/options/explanation with AS badge and amber styling
+- Updated Question interface and emptyForm to include bilingual fields
+- Updated handleSave to persist *As fields only when they have content (no empty strings)
+
+Stage Summary:
+- All 7 bulk-add templates now support bilingual (English + Assamese) content upload via JSON and CSV
+- The *As fields are OPTIONAL — existing single-language uploads continue to work unchanged (backward compatible)
+- Firestore is schemaless, so no database migration is needed
+- Questions section has full bilingual support: bulk import, single add/edit dialog, and card display
+- Lint passes cleanly (0 errors)
+- All 7 BULK_SAMPLE JSON strings validated as parseable JSON with bilingual fields
+- Dev server running on port 3000 (HTTP 200, no console/page errors)
+- Assamese translations use proper Unicode (e.g., ২+২, ভাৰতৰ ৰাজধানী) and U+2019 right single quotation mark instead of ASCII apostrophe

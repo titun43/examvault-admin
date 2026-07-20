@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download, FileSpreadsheet, RefreshCw } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download, FileSpreadsheet, RefreshCw, Languages } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -137,12 +137,13 @@ export default function Categories() {
   const itemsRef = useRef<Category[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
-  const BULK_SAMPLE = '[{"name":"SSC","description":"Staff Selection Commission exams","icon":"📋","image":"https://example.com/ssc-banner.png","color":"#10b981","order":1,"isActive":true},{"name":"Banking","description":"Bank PO/Clerk exams","icon":"🏦","image":"https://example.com/banking-banner.png","color":"#f59e0b","order":2,"isActive":true}]';
+  // Bilingual template: English (primary) + Assamese (As suffix). Optional.
+  const BULK_SAMPLE = '[{"name":"SSC","nameAs":"এছ এছ চি","description":"Staff Selection Commission exams","descriptionAs":"কৰ্মচাৰী নিৰ্বাচন আয়োনৰ পৰীক্ষা","icon":"📋","image":"https://example.com/ssc-banner.png","color":"#10b981","order":1,"isActive":true},{"name":"Banking","nameAs":"বেংকিং","description":"Bank PO/Clerk exams","descriptionAs":"বেংক পিঅ/ক্লাৰ্ক পৰীক্ষা","icon":"🏦","image":"https://example.com/banking-banner.png","color":"#f59e0b","order":2,"isActive":true}]';
 
-  const CSV_HEADERS = ['name', 'description', 'icon', 'image', 'color', 'order', 'isPremium', 'premiumPrice', 'isActive'];
+  const CSV_HEADERS = ['name', 'nameAs', 'description', 'descriptionAs', 'icon', 'image', 'color', 'order', 'isPremium', 'premiumPrice', 'isActive'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['SSC', 'Staff Selection Commission exams', '📋', 'https://example.com/ssc-banner.png', '#10b981', 1, false, 0, true],
-    ['Banking', 'Bank PO/Clerk exams', '🏦', 'https://example.com/banking-banner.png', '#f59e0b', 2, false, 0, true],
+    ['SSC', 'এছ এছ চি', 'Staff Selection Commission exams', 'কৰ্মচাৰী নিৰ্বাচন আয়োনৰ পৰীক্ষা', '📋', 'https://example.com/ssc-banner.png', '#10b981', 1, false, 0, true],
+    ['Banking', 'বেংকিং', 'Bank PO/Clerk exams', 'বেংক পিঅ/ক্লাৰ্ক পৰীক্ষা', '🏦', 'https://example.com/banking-banner.png', '#f59e0b', 2, false, 0, true],
   ];
 
   const handleBulkImport = async () => {
@@ -846,11 +847,21 @@ export default function Categories() {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"name":"SSC","description":"...","icon":"📋","color":"#10b981","order":1,"isActive":true}]'
+              placeholder='[{"name":"SSC","nameAs":"এছ এছ চি","description":"...","descriptionAs":"...","icon":"📋","color":"#10b981","order":1,"isActive":true}]'
             />
+            <div className="rounded-md border border-amber-800/40 bg-amber-950/20 px-3 py-2">
+              <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mb-1">
+                <Languages className="w-3.5 h-3.5" /> Bilingual support (English + Assamese)
+              </p>
+              <p className="text-xs text-amber-200/70">
+                Add <code className="text-amber-300">nameAs</code> and <code className="text-amber-300">descriptionAs</code> alongside the English fields to show categories in both languages. The <code className="text-amber-300">*As</code> fields are optional.
+              </p>
+            </div>
             <p className="text-xs text-slate-500">
-              Fields: <span className="text-slate-400">name</span>,{' '}
-              <span className="text-slate-400">description</span>,{' '}
+              Fields: <span className="text-slate-400">name</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">nameAs</span> (Assamese — optional),{' '}
+              <span className="text-slate-400">description</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">descriptionAs</span> (Assamese — optional),{' '}
               <span className="text-slate-400">icon</span> (emoji),{' '}
               <span className="text-slate-400">image</span> (URL string — banner image),{' '}
               <span className="text-slate-400">color</span> (hex),{' '}

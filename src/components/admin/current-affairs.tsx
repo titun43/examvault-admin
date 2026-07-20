@@ -71,6 +71,7 @@ import {
   Layers,
   Download,
   FileSpreadsheet,
+  Languages,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -146,12 +147,13 @@ export default function CurrentAffairs() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const BULK_SAMPLE = '[{"date":"2024-01-15T00:00:00.000Z","title":"Sample News 1","summary":"Brief summary","content":"Full content here","source":"Newspaper","category":"National","imageUrl":"https://example.com/news1.jpg","isImportant":false,"tags":["india","politics"]},{"date":"2024-01-14T00:00:00.000Z","title":"Sample News 2","summary":"Brief summary 2","content":"Full content 2","source":"TV","category":"Sports","imageUrl":"https://example.com/news2.jpg","isImportant":true,"tags":["cricket"]}]';
+  // Bilingual template: English (primary) + Assamese (As suffix). Optional.
+  const BULK_SAMPLE = '[{"date":"2024-01-15T00:00:00.000Z","title":"Sample News 1","titleAs":"নমুনা বাতৰি ১","summary":"Brief summary","summaryAs":"চমু সাৰাংশ","content":"Full content here","contentAs":"সম্পূৰ্ণ বিষয়বস্তু ইয়াত","source":"Newspaper","category":"National","imageUrl":"https://example.com/news1.jpg","isImportant":false,"tags":["india","politics"]},{"date":"2024-01-14T00:00:00.000Z","title":"Sample News 2","titleAs":"নমুনা বাতৰি ২","summary":"Brief summary 2","summaryAs":"চমু সাৰাংশ ২","content":"Full content 2","contentAs":"সম্পূৰ্ণ বিষয়বস্তু ২","source":"TV","category":"Sports","imageUrl":"https://example.com/news2.jpg","isImportant":true,"tags":["cricket"]}]';
 
-  const CSV_HEADERS = ['date', 'source', 'title', 'summary', 'content', 'category', 'imageUrl', 'tags', 'isImportant'];
+  const CSV_HEADERS = ['date', 'source', 'title', 'titleAs', 'summary', 'summaryAs', 'content', 'contentAs', 'category', 'imageUrl', 'tags', 'isImportant'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['2024-01-15', 'Newspaper', 'Sample News 1', 'Brief summary', 'Full content here', 'National', 'https://example.com/news1.jpg', 'india,politics', false],
-    ['2024-01-14', 'TV', 'Sample News 2', 'Brief summary 2', 'Full content 2', 'Sports', 'https://example.com/news2.jpg', 'cricket', true],
+    ['2024-01-15', 'Newspaper', 'Sample News 1', 'নমুনা বাতৰি ১', 'Brief summary', 'চমু সাৰাংশ', 'Full content here', 'সম্পূৰ্ণ বিষয়বস্তু ইয়াত', 'National', 'https://example.com/news1.jpg', 'india,politics', false],
+    ['2024-01-14', 'TV', 'Sample News 2', 'নমুনা বাতৰি ২', 'Brief summary 2', 'চমু সাৰাংশ ২', 'Full content 2', 'সম্পূৰ্ণ বিষয়বস্তু ২', 'Sports', 'https://example.com/news2.jpg', 'cricket', true],
   ];
 
   const handleBulkImport = async () => {
@@ -810,13 +812,24 @@ export default function CurrentAffairs() {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"date":"2024-01-15T00:00:00.000Z","title":"...","summary":"...","content":"..."}]'
+              placeholder='[{"date":"2024-01-15T00:00:00.000Z","title":"...","titleAs":"...","summary":"...","summaryAs":"...","content":"...","contentAs":"..."}]'
             />
+            <div className="rounded-md border border-amber-800/40 bg-amber-950/20 px-3 py-2">
+              <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mb-1">
+                <Languages className="w-3.5 h-3.5" /> Bilingual support (English + Assamese)
+              </p>
+              <p className="text-xs text-amber-200/70">
+                Add <code className="text-amber-300">titleAs</code>, <code className="text-amber-300">summaryAs</code>, and <code className="text-amber-300">contentAs</code> alongside the English fields to show current affairs in both languages. The <code className="text-amber-300">*As</code> fields are optional.
+              </p>
+            </div>
             <p className="text-xs text-slate-500">
               Fields: <span className="text-slate-400">date</span> (ISO string),{' '}
-              <span className="text-slate-400">title</span>,{' '}
-              <span className="text-slate-400">summary</span>,{' '}
-              <span className="text-slate-400">content</span>,{' '}
+              <span className="text-slate-400">title</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">titleAs</span> (Assamese — optional),{' '}
+              <span className="text-slate-400">summary</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">summaryAs</span> (Assamese — optional),{' '}
+              <span className="text-slate-400">content</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">contentAs</span> (Assamese — optional),{' '}
               <span className="text-slate-400">source</span>,{' '}
               <span className="text-slate-400">category</span> (National | Sports | Economy | Science | Technology | International),{' '}
               <span className="text-slate-400">isImportant</span> (boolean),{' '}

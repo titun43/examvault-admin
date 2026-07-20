@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers, Download, FileSpreadsheet } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers, Download, FileSpreadsheet, Languages } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
@@ -37,9 +37,12 @@ interface Question {
   id: string;
   testId: string;
   question: string;
+  questionAs?: string;
   options: string[];
+  optionsAs?: string[];
   correctAnswerIndex: number;
   explanation?: string;
+  explanationAs?: string;
   subjectTopic?: string;
   marks: number;
   isPremium: boolean;
@@ -47,8 +50,8 @@ interface Question {
 }
 
 const emptyForm = {
-  question: '', options: ['', '', '', ''], correctAnswerIndex: 0,
-  explanation: '', subjectTopic: '', marks: 1, isPremium: false, imageUrl: '',
+  question: '', questionAs: '', options: ['', '', '', ''], optionsAs: ['', '', '', ''], correctAnswerIndex: 0,
+  explanation: '', explanationAs: '', subjectTopic: '', marks: 1, isPremium: false, imageUrl: '',
 };
 
 export default function Questions() {
@@ -70,12 +73,15 @@ export default function Questions() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const BULK_SAMPLE = '[{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"What is 2+2?","options":["3","4","5","6"],"correctAnswer":1,"explanation":"2+2=4","difficulty":"easy","marks":1},{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"Capital of India?","options":["Mumbai","Delhi","Kolkata","Chennai"],"correctAnswer":1,"explanation":"New Delhi is the capital","difficulty":"easy","marks":1}]';
+  // Bilingual template: English (primary) + Assamese (As suffix).
+  // The *As fields are optional — if omitted, the question is single-language.
+  // Firestore is schemaless, so adding these fields requires no migration.
+  const BULK_SAMPLE = '[{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"What is 2+2?","questionAs":"২+২ ৰ মান কি?","options":["3","4","5","6"],"optionsAs":["৩","৪","৫","৬"],"correctAnswer":1,"explanation":"2+2=4","explanationAs":"২+২=৪","difficulty":"easy","marks":1},{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"Capital of India?","questionAs":"ভাৰতৰ ৰাজধানী কি?","options":["Mumbai","Delhi","Kolkata","Chennai"],"optionsAs":["মুম্বাই","দিল্লী","কলকাতা","চেন্নাই"],"correctAnswer":1,"explanation":"New Delhi is the capital","explanationAs":"নতুন দিল্লী হৈছে ৰাজধানী","difficulty":"easy","marks":1}]';
 
-  const CSV_HEADERS = ['testTitle', 'subjectName', 'categoryName', 'question', 'option1', 'option2', 'option3', 'option4', 'correctAnswerIndex', 'explanation', 'subjectTopic', 'marks', 'isPremium'];
+  const CSV_HEADERS = ['testTitle', 'subjectName', 'categoryName', 'question', 'questionAs', 'option1', 'option2', 'option3', 'option4', 'option1As', 'option2As', 'option3As', 'option4As', 'correctAnswerIndex', 'explanation', 'explanationAs', 'subjectTopic', 'marks', 'isPremium'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['SSC Mock 1', 'Quantitative Aptitude', 'SSC', 'What is 2+2?', '3', '4', '5', '6', 1, '2+2=4', 'Math', 1, false],
-    ['SSC Mock 1', 'Quantitative Aptitude', 'SSC', 'Capital of India?', 'Mumbai', 'Delhi', 'Kolkata', 'Chennai', 1, 'New Delhi is the capital', 'GK', 1, false],
+    ['SSC Mock 1', 'Quantitative Aptitude', 'SSC', 'What is 2+2?', '২+২ ৰ মান কি?', '3', '4', '5', '6', '৩', '৪', '৫', '৬', 1, '2+2=4', '২+২=৪', 'Math', 1, false],
+    ['SSC Mock 1', 'Quantitative Aptitude', 'SSC', 'Capital of India?', 'ভাৰতৰ ৰাজধানী কি?', 'Mumbai', 'Delhi', 'Kolkata', 'Chennai', 'মুম্বাই', 'দিল্লী', 'কলকাতা', 'চেন্নাই', 1, 'New Delhi is the capital', 'নতুন দিল্লী হৈছে ৰাজধানী', 'GK', 1, false],
   ];
 
   const handleBulkImport = async () => {
@@ -108,10 +114,22 @@ export default function Questions() {
             const opt3 = obj.option3 ?? '';
             const opt4 = obj.option4 ?? '';
             obj.options = [opt1, opt2, opt3, opt4];
+            // Bilingual: map option*As columns -> optionsAs array (Assamese)
+            const opt1As = obj.option1As ?? '';
+            const opt2As = obj.option2As ?? '';
+            const opt3As = obj.option3As ?? '';
+            const opt4As = obj.option4As ?? '';
+            if (opt1As || opt2As || opt3As || opt4As) {
+              obj.optionsAs = [opt1As, opt2As, opt3As, opt4As];
+            }
             delete obj.option1;
             delete obj.option2;
             delete obj.option3;
             delete obj.option4;
+            delete obj.option1As;
+            delete obj.option2As;
+            delete obj.option3As;
+            delete obj.option4As;
             if ('correctAnswerIndex' in obj) {
               obj.correctAnswerIndex = Number(obj.correctAnswerIndex) || 0;
             }
@@ -279,9 +297,12 @@ export default function Questions() {
   const openEdit = (item: Question) => {
     setForm({
       question: item.question,
+      questionAs: item.questionAs || '',
       options: item.options?.length === 4 ? item.options : ['', '', '', ''],
+      optionsAs: item.optionsAs?.length === 4 ? item.optionsAs : ['', '', '', ''],
       correctAnswerIndex: item.correctAnswerIndex ?? 0,
       explanation: item.explanation || '',
+      explanationAs: item.explanationAs || '',
       subjectTopic: item.subjectTopic || '',
       marks: item.marks || 1,
       isPremium: item.isPremium || false,
@@ -307,7 +328,7 @@ export default function Questions() {
     if (form.options.some((o) => !o.trim())) { toast.error('All 4 options are required'); return; }
     setSaving(true);
     try {
-      const data = {
+      const data: any = {
         testId: selectedTestId,
         question: form.question.trim(),
         options: form.options.map((o) => o.trim()),
@@ -318,6 +339,10 @@ export default function Questions() {
         isPremium: form.isPremium,
         imageUrl: form.imageUrl || null,
       };
+      // Bilingual: only save *As fields if they have content (don't store empty strings)
+      if (form.questionAs.trim()) data.questionAs = form.questionAs.trim();
+      if (form.optionsAs.some((o) => o.trim())) data.optionsAs = form.optionsAs.map((o) => o.trim());
+      if (form.explanationAs.trim()) data.explanationAs = form.explanationAs.trim();
       if (editingId) {
         await updateDoc(doc(db, 'questions', editingId), { ...data, updatedAt: serverTimestamp() });
         toast.success('Question updated');
@@ -507,9 +532,11 @@ export default function Questions() {
                   <div className="flex-1 min-w-0">
                     <div className="flex items-start gap-2 flex-wrap">
                       <p className="text-white font-medium flex-1 min-w-0">{item.question}</p>
+                      {item.questionAs && <Badge variant="outline" className="border-amber-700/60 text-amber-300 bg-amber-950/30 shrink-0"><Languages className="w-3 h-3 mr-1" />AS</Badge>}
                       {item.isPremium && <Badge variant="outline" className="border-amber-700 text-amber-400 bg-amber-950/40 shrink-0"><Crown className="w-3 h-3 mr-1" />Premium</Badge>}
                       <Badge variant="outline" className="border-slate-700 text-slate-400 shrink-0">{item.marks}m</Badge>
                     </div>
+                    {item.questionAs && <p className="text-amber-200/70 text-sm mt-1 font-medium">{item.questionAs}</p>}
                     {item.imageUrl && <img src={item.imageUrl} alt="question" className="mt-2 max-h-40 rounded-lg" />}
                     <div className="mt-3 grid sm:grid-cols-2 gap-2">
                       {item.options?.map((opt, i) => (
@@ -520,10 +547,21 @@ export default function Questions() {
                         </div>
                       ))}
                     </div>
+                    {item.optionsAs && item.optionsAs.length > 0 && item.optionsAs.some((o) => o && o.trim()) && (
+                      <div className="mt-1.5 grid sm:grid-cols-2 gap-2">
+                        {item.optionsAs.map((opt, i) => (
+                          <div key={`as-${i}`} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs ${i === item.correctAnswerIndex ? 'bg-amber-950/20 border border-amber-800/30 text-amber-200/80' : 'bg-slate-800/20 text-slate-500'}`}>
+                            <span className="font-mono text-[10px] text-amber-600/70">{String.fromCharCode(65 + i)}.</span>
+                            <span className="truncate">{opt}</span>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                     {item.explanation && (
                       <div className="mt-2 p-2 rounded-lg bg-slate-800/30 border border-slate-800">
                         <p className="text-xs text-slate-500">Explanation:</p>
                         <p className="text-xs text-slate-400 mt-0.5">{item.explanation}</p>
+                        {item.explanationAs && <p className="text-xs text-amber-200/60 mt-1 border-t border-slate-700/50 pt-1">{item.explanationAs}</p>}
                       </div>
                     )}
                     {item.subjectTopic && <p className="text-xs text-slate-600 mt-1">Topic: {item.subjectTopic}</p>}
@@ -553,6 +591,11 @@ export default function Questions() {
               <Label>Question *</Label>
               <Textarea value={form.question} onChange={(e) => setForm({ ...form, question: e.target.value })} rows={3} placeholder="Enter the question..." className="bg-slate-800 border-slate-700" />
             </div>
+            {/* Bilingual: Assamese question (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5"><Languages className="w-3.5 h-3.5" /> Question (Assamese) <span className="text-slate-500 font-normal">— optional</span></Label>
+              <Textarea value={form.questionAs} onChange={(e) => setForm({ ...form, questionAs: e.target.value })} rows={2} placeholder="অসমীয়া প্ৰশ্ন..." className="bg-slate-800 border-amber-800/50" />
+            </div>
             {form.imageUrl && (
               <div className="relative inline-block">
                 <img src={form.imageUrl} alt="preview" className="max-h-32 rounded-lg" />
@@ -573,9 +616,26 @@ export default function Questions() {
               </div>
               <p className="text-xs text-slate-500">Click the letter button to mark the correct answer (currently: <span className="text-emerald-400 font-semibold">{String.fromCharCode(65 + form.correctAnswerIndex)}</span>)</p>
             </div>
+            {/* Bilingual: Assamese options (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5"><Languages className="w-3.5 h-3.5" /> Options (Assamese) <span className="text-slate-500 font-normal">— optional, same order as above</span></Label>
+              <div className="space-y-2">
+                {form.optionsAs.map((opt, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 border-2 border-amber-800/50 text-amber-400 text-sm font-bold">{String.fromCharCode(65 + i)}</span>
+                    <Input value={opt} onChange={(e) => { const opts = [...form.optionsAs]; opts[i] = e.target.value; setForm({ ...form, optionsAs: opts }); }} placeholder={`বিকল্প ${String.fromCharCode(65 + i)}`} className="bg-slate-800 border-amber-800/50" />
+                  </div>
+                ))}
+              </div>
+            </div>
             <div className="space-y-2">
               <Label>Explanation</Label>
               <Textarea value={form.explanation} onChange={(e) => setForm({ ...form, explanation: e.target.value })} rows={2} placeholder="Why is this the correct answer?" className="bg-slate-800 border-slate-700" />
+            </div>
+            {/* Bilingual: Assamese explanation (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5"><Languages className="w-3.5 h-3.5" /> Explanation (Assamese) <span className="text-slate-500 font-normal">— optional</span></Label>
+              <Textarea value={form.explanationAs} onChange={(e) => setForm({ ...form, explanationAs: e.target.value })} rows={2} placeholder="কিয় এইটো শুদ্ধ উত্তৰ?" className="bg-slate-800 border-amber-800/50" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-2"><Label>Subject Topic</Label><Input value={form.subjectTopic} onChange={(e) => setForm({ ...form, subjectTopic: e.target.value })} placeholder="e.g. Indian Polity" className="bg-slate-800 border-slate-700" /></div>
@@ -644,17 +704,30 @@ export default function Questions() {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"testTitle":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","question":"...","options":["A","B","C","D"],"correctAnswer":1}]'
+              placeholder='[{"testTitle":"SSC Mock 1","question":"...","questionAs":"...","options":["A","B","C","D"],"optionsAs":["ক","খ","গ","ঘ"],"correctAnswer":1}]'
             />
+            <div className="rounded-md border border-amber-800/40 bg-amber-950/20 px-3 py-2">
+              <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mb-1">
+                <Languages className="w-3.5 h-3.5" /> Bilingual support (English + Assamese)
+              </p>
+              <p className="text-xs text-amber-200/70">
+                Add <code className="text-amber-300">questionAs</code>, <code className="text-amber-300">optionsAs</code> (array of 4), and{' '}
+                <code className="text-amber-300">explanationAs</code> alongside the English fields to show questions in both languages.
+                The <code className="text-amber-300">*As</code> fields are optional — omit them for English-only questions.
+              </p>
+            </div>
             <p className="text-xs text-slate-500">
               Fields: <span className="text-slate-400 text-emerald-300">testTitle</span> (parent test — recommended) or{' '}
               <span className="text-slate-400">testId</span> (existing id),{' '}
               <span className="text-slate-400 text-emerald-300">subjectName</span> +{' '}
               <span className="text-slate-400 text-emerald-300">categoryName</span> (optional, disambiguates same-name tests),{' '}
-              <span className="text-slate-400">question</span> (string),{' '}
-              <span className="text-slate-400">options</span> (array of 4 strings),{' '}
+              <span className="text-slate-400">question</span> (string, English),{' '}
+              <span className="text-slate-400 text-amber-300">questionAs</span> (string, Assamese — optional),{' '}
+              <span className="text-slate-400">options</span> (array of 4 strings, English),{' '}
+              <span className="text-slate-400 text-amber-300">optionsAs</span> (array of 4 strings, Assamese — optional),{' '}
               <span className="text-slate-400">correctAnswer</span> (0-based index),{' '}
-              <span className="text-slate-400">explanation</span> (string),{' '}
+              <span className="text-slate-400">explanation</span> (string, English),{' '}
+              <span className="text-slate-400 text-amber-300">explanationAs</span> (string, Assamese — optional),{' '}
               <span className="text-slate-400">difficulty</span> (easy | medium | hard),{' '}
               <span className="text-slate-400">marks</span> (number),{' '}
               <span className="text-slate-400">imageUrl</span> (URL string),{' '}

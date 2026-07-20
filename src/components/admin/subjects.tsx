@@ -28,7 +28,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, BookOpen, Layers, X, Download, FileSpreadsheet } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, BookOpen, Layers, X, Download, FileSpreadsheet, Languages } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
@@ -81,12 +81,13 @@ export default function Subjects() {
   const itemsRef = useRef<Subject[]>([]);
   useEffect(() => { itemsRef.current = items; }, [items]);
 
-  const BULK_SAMPLE = '[{"name":"Quantitative Aptitude","description":"Math for competitive exams","icon":"🔢","categoryName":"SSC","order":1,"isActive":true},{"name":"Reasoning","description":"Logical reasoning","icon":"🧩","categoryName":"SSC","order":2,"isActive":true}]';
+  // Bilingual template: English (primary) + Assamese (As suffix). Optional.
+  const BULK_SAMPLE = '[{"name":"Quantitative Aptitude","nameAs":"পৰিমাণাত্মক দক্ষতা","description":"Math for competitive exams","descriptionAs":"প্ৰতিযোগিতামূলক পৰীক্ষাৰ বাবে গণিত","icon":"🔢","categoryName":"SSC","order":1,"isActive":true},{"name":"Reasoning","nameAs":"যুক্তি","description":"Logical reasoning","descriptionAs":"তাত্ত্বিক যুক্তি","icon":"🧩","categoryName":"SSC","order":2,"isActive":true}]';
 
-  const CSV_HEADERS = ['name', 'categoryName', 'icon', 'order', 'slug', 'description', 'isActive'];
+  const CSV_HEADERS = ['name', 'nameAs', 'categoryName', 'icon', 'order', 'slug', 'description', 'descriptionAs', 'isActive'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['Quantitative Aptitude', 'SSC', '🔢', 1, 'quantitative-aptitude', 'Math for competitive exams', true],
-    ['Reasoning', 'SSC', '🧩', 2, 'reasoning', 'Logical reasoning', true],
+    ['Quantitative Aptitude', 'পৰিমাণাত্মক দক্ষতা', 'SSC', '🔢', 1, 'quantitative-aptitude', 'Math for competitive exams', 'প্ৰতিযোগিতামূলক পৰীক্ষাৰ বাবে গণিত', true],
+    ['Reasoning', 'যুক্তি', 'SSC', '🧩', 2, 'reasoning', 'Logical reasoning', 'তাত্ত্বিক যুক্তি', true],
   ];
 
   const handleBulkImport = async () => {
@@ -637,11 +638,21 @@ export default function Subjects() {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"name":"Quantitative Aptitude","categoryName":"SSC","order":1}]'
+              placeholder='[{"name":"Quantitative Aptitude","nameAs":"পৰিমাণাত্মক দক্ষতা","categoryName":"SSC","order":1}]'
             />
+            <div className="rounded-md border border-amber-800/40 bg-amber-950/20 px-3 py-2">
+              <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mb-1">
+                <Languages className="w-3.5 h-3.5" /> Bilingual support (English + Assamese)
+              </p>
+              <p className="text-xs text-amber-200/70">
+                Add <code className="text-amber-300">nameAs</code> and <code className="text-amber-300">descriptionAs</code> alongside the English fields to show subjects in both languages. The <code className="text-amber-300">*As</code> fields are optional.
+              </p>
+            </div>
             <p className="text-xs text-slate-500">
-              Fields: <span className="text-slate-400">name</span>,{' '}
-              <span className="text-slate-400">description</span>,{' '}
+              Fields: <span className="text-slate-400">name</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">nameAs</span> (Assamese — optional),{' '}
+              <span className="text-slate-400">description</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">descriptionAs</span> (Assamese — optional),{' '}
               <span className="text-slate-400">icon</span> (emoji),{' '}
               <span className="text-slate-400 text-emerald-300">categoryName</span> (parent category — recommended) or{' '}
               <span className="text-slate-400">categoryId</span> (existing id),{' '}

@@ -30,7 +30,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet, IndianRupee, Unlock } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet, IndianRupee, Unlock, Languages } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
@@ -124,12 +124,13 @@ export default function Tests({ fixedType }: TestsProps = {}) {
   const fixedLabel = fixedType ? (TYPE_LABELS[fixedType] || fixedType) : null;
   const visibleItems = fixedType ? items.filter((t) => t.type === fixedType) : items;
 
-  const BULK_SAMPLE = '[{"title":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0,"price":0},{"title":"SSC Mock 2","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25,"price":29}]';
+  // Bilingual template: English (primary) + Assamese (As suffix). Optional.
+  const BULK_SAMPLE = '[{"title":"SSC Mock 1","titleAs":"এছ এছ চি মক ১","description":"Full mock test","descriptionAs":"সম্পূৰ্ণ মক পৰীক্ষা","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":60,"totalMarks":100,"passingMarks":40,"difficulty":"medium","isPublished":true,"isPremium":false,"negativeMarking":false,"negativeMarks":0,"price":0},{"title":"SSC Mock 2","titleAs":"এছ এছ চি মক ২","description":"Hard mock test","descriptionAs":"কঠিন মক পৰীক্ষা","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":90,"totalMarks":150,"passingMarks":60,"difficulty":"hard","isPublished":true,"isPremium":true,"negativeMarking":true,"negativeMarks":0.25,"price":29}]';
 
-  const CSV_HEADERS = ['title', 'description', 'duration', 'totalMarks', 'passingMarks', 'difficulty', 'type', 'subjectName', 'categoryName', 'isPremium', 'isPublished'];
+  const CSV_HEADERS = ['title', 'titleAs', 'description', 'descriptionAs', 'duration', 'totalMarks', 'passingMarks', 'difficulty', 'type', 'subjectName', 'categoryName', 'isPremium', 'isPublished'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['SSC Mock 1', 'Full mock test', 60, 100, 40, 'medium', 'mock', 'Quantitative Aptitude', 'SSC', false, true],
-    ['SSC Mock 2', 'Hard mock test', 90, 150, 60, 'hard', 'mock', 'Quantitative Aptitude', 'SSC', true, true],
+    ['SSC Mock 1', 'এছ এছ চি মক ১', 'Full mock test', 'সম্পূৰ্ণ মক পৰীক্ষা', 60, 100, 40, 'medium', 'mock', 'Quantitative Aptitude', 'SSC', false, true],
+    ['SSC Mock 2', 'এছ এছ চি মক ২', 'Hard mock test', 'কঠিন মক পৰীক্ষা', 90, 150, 60, 'hard', 'mock', 'Quantitative Aptitude', 'SSC', true, true],
   ];
 
   const handleBulkImport = async () => {
@@ -981,10 +982,21 @@ export default function Tests({ fixedType }: TestsProps = {}) {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"title":"SSC Mock 1","subjectName":"Quantitative Aptitude","categoryName":"SSC","type":"mock","duration":60,"totalMarks":100}]'
+              placeholder='[{"title":"SSC Mock 1","titleAs":"...","description":"...","descriptionAs":"...","type":"mock","duration":60}]'
             />
+            <div className="rounded-md border border-amber-800/40 bg-amber-950/20 px-3 py-2">
+              <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mb-1">
+                <Languages className="w-3.5 h-3.5" /> Bilingual support (English + Assamese)
+              </p>
+              <p className="text-xs text-amber-200/70">
+                Add <code className="text-amber-300">titleAs</code> and <code className="text-amber-300">descriptionAs</code> alongside the English fields to show tests in both languages. The <code className="text-amber-300">*As</code> fields are optional.
+              </p>
+            </div>
             <p className="text-xs text-slate-500">
-              Fields: <span className="text-slate-400">title</span>,{' '}
+              Fields: <span className="text-slate-400">title</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">titleAs</span> (Assamese — optional),{' '}
+              <span className="text-slate-400">description</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">descriptionAs</span> (Assamese — optional),{' '}
               <span className="text-slate-400 text-emerald-300">subjectName</span> (parent subject — recommended) or{' '}
               <span className="text-slate-400">subjectId</span> (existing id),{' '}
               <span className="text-slate-400 text-emerald-300">categoryName</span> (optional, disambiguates same-name subjects),{' '}

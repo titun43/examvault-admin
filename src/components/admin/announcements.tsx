@@ -57,6 +57,7 @@ import {
   Layers,
   Download,
   FileSpreadsheet,
+  Languages,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -331,12 +332,13 @@ export default function Announcements() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const BULK_SAMPLE = '[{"title":"Welcome!","message":"Welcome to ExamVault","type":"info","imageUrl":"https://example.com/welcome-banner.png","isPinned":false,"isPublished":true,"order":1},{"title":"New Tests Added","message":"Check out new mock tests","type":"success","imageUrl":"https://example.com/new-tests-banner.png","isPinned":true,"isPublished":true,"order":2}]';
+  // Bilingual template: English (primary) + Assamese (As suffix). Optional.
+  const BULK_SAMPLE = '[{"title":"Welcome!","titleAs":"স্বাগতম!","message":"Welcome to ExamVault","messageAs":"এক্সামভল্টলৈ স্বাগতম","type":"info","imageUrl":"https://example.com/welcome-banner.png","isPinned":false,"isPublished":true,"order":1},{"title":"New Tests Added","titleAs":"নতুন পৰীক্ষা যোগ কৰা হ’ল","message":"Check out new mock tests","messageAs":"নতুন মক পৰীক্ষাবোৰ চাওক","type":"success","imageUrl":"https://example.com/new-tests-banner.png","isPinned":true,"isPublished":true,"order":2}]';
 
-  const CSV_HEADERS = ['title', 'message', 'type', 'imageUrl', 'link', 'linkLabel', 'order', 'isPinned', 'isPublished'];
+  const CSV_HEADERS = ['title', 'titleAs', 'message', 'messageAs', 'type', 'imageUrl', 'link', 'linkLabel', 'order', 'isPinned', 'isPublished'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['Welcome!', 'Welcome to ExamVault', 'info', 'https://example.com/welcome-banner.png', '', '', 1, false, true],
-    ['New Tests Added', 'Check out new mock tests', 'success', 'https://example.com/new-tests-banner.png', '', '', 2, true, true],
+    ['Welcome!', 'স্বাগতম!', 'Welcome to ExamVault', 'এক্সামভল্টলৈ স্বাগতম', 'info', 'https://example.com/welcome-banner.png', '', '', 1, false, true],
+    ['New Tests Added', 'নতুন পৰীক্ষা যোগ কৰা হ’ল', 'Check out new mock tests', 'নতুন মক পৰীক্ষাবোৰ চাওক', 'success', 'https://example.com/new-tests-banner.png', '', '', 2, true, true],
   ];
 
   const handleBulkImport = async () => {
@@ -997,11 +999,21 @@ export default function Announcements() {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"title":"...","message":"...","type":"info","isPinned":false}]'
+              placeholder='[{"title":"...","titleAs":"...","message":"...","messageAs":"...","type":"info","isPinned":false}]'
             />
+            <div className="rounded-md border border-amber-800/40 bg-amber-950/20 px-3 py-2">
+              <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mb-1">
+                <Languages className="w-3.5 h-3.5" /> Bilingual support (English + Assamese)
+              </p>
+              <p className="text-xs text-amber-200/70">
+                Add <code className="text-amber-300">titleAs</code> and <code className="text-amber-300">messageAs</code> alongside the English fields to show announcements in both languages. The <code className="text-amber-300">*As</code> fields are optional.
+              </p>
+            </div>
             <p className="text-xs text-slate-500">
-              Fields: <span className="text-slate-400">title</span>,{' '}
-              <span className="text-slate-400">message</span>,{' '}
+              Fields: <span className="text-slate-400">title</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">titleAs</span> (Assamese — optional),{' '}
+              <span className="text-slate-400">message</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">messageAs</span> (Assamese — optional),{' '}
               <span className="text-slate-400">type</span> (info | success | warning | error | promo),{' '}
               <span className="text-slate-400">isPinned</span> (boolean),{' '}
               <span className="text-slate-400">isPublished</span> (boolean),{' '}

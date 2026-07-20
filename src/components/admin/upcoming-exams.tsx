@@ -65,6 +65,7 @@ import {
   FileSpreadsheet,
   Globe,
   ExternalLink,
+  Languages,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -146,12 +147,13 @@ export default function UpcomingExams() {
   const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
   const [bulkDeleting, setBulkDeleting] = useState(false);
 
-  const BULK_SAMPLE = '[{"name":"SSC CGL 2024","organization":"Staff Selection Commission","examDate":"2024-12-15T00:00:00.000Z","applicationStartDate":"2024-10-01T00:00:00.000Z","applicationEndDate":"2024-10-31T00:00:00.000Z","description":"Combined Graduate Level","imageUrl":"https://example.com/ssc-cgl-banner.png","notificationUrl":"https://ssc.nic.in/notification","officialUrl":"https://ssc.nic.in","isPublished":true,"order":1},{"name":"IBPS PO 2024","organization":"IBPS","examDate":"2024-11-20T00:00:00.000Z","description":"Probationary Officer exam","imageUrl":"https://example.com/ibps-po-banner.png","officialUrl":"https://ibps.in","isPublished":true,"order":2}]';
+  // Bilingual template: English (primary) + Assamese (As suffix). Optional.
+  const BULK_SAMPLE = '[{"name":"SSC CGL 2024","nameAs":"এছ এছ চি চিজিএল ২০২৪","organization":"Staff Selection Commission","organizationAs":"কৰ্মচাৰী নিৰ্বাচন আয়োন","examDate":"2024-12-15T00:00:00.000Z","applicationStartDate":"2024-10-01T00:00:00.000Z","applicationEndDate":"2024-10-31T00:00:00.000Z","description":"Combined Graduate Level","descriptionAs":"স্নাতক স্তৰৰ সংযুক্ত পৰীক্ষা","imageUrl":"https://example.com/ssc-cgl-banner.png","notificationUrl":"https://ssc.nic.in/notification","officialUrl":"https://ssc.nic.in","isPublished":true,"order":1},{"name":"IBPS PO 2024","nameAs":"আইবিপিএছ পিঅ ২০২৪","organization":"IBPS","organizationAs":"আইবিপিএছ","examDate":"2024-11-20T00:00:00.000Z","description":"Probationary Officer exam","descriptionAs":"প্ৰবেশনাৰী বিষয়া পৰীক্ষা","imageUrl":"https://example.com/ibps-po-banner.png","officialUrl":"https://ibps.in","isPublished":true,"order":2}]';
 
-  const CSV_HEADERS = ['name', 'organization', 'imageUrl', 'categoryId', 'examDate', 'applicationStartDate', 'applicationEndDate', 'notificationUrl', 'syllabusUrl', 'officialUrl', 'applyUrl', 'description', 'order', 'isPublished'];
+  const CSV_HEADERS = ['name', 'nameAs', 'organization', 'organizationAs', 'imageUrl', 'categoryId', 'examDate', 'applicationStartDate', 'applicationEndDate', 'notificationUrl', 'syllabusUrl', 'officialUrl', 'applyUrl', 'description', 'descriptionAs', 'order', 'isPublished'];
   const CSV_SAMPLE_ROWS: (string | number | boolean)[][] = [
-    ['SSC CGL 2024', 'Staff Selection Commission', 'https://example.com/ssc-cgl-banner.png', '', '2024-12-15', '2024-10-01', '2024-10-31', 'https://ssc.nic.in/notification', '', 'https://ssc.nic.in', 'https://ssc.nic.in/apply', 'Combined Graduate Level', 1, true],
-    ['IBPS PO 2024', 'IBPS', 'https://example.com/ibps-po-banner.png', '', '2024-11-20', '', '', '', '', 'https://ibps.in', 'https://ibps.in/apply', 'Probationary Officer exam', 2, true],
+    ['SSC CGL 2024', 'এছ এছ চি চিজিএল ২০২৪', 'Staff Selection Commission', 'কৰ্মচাৰী নিৰ্বাচন আয়োন', 'https://example.com/ssc-cgl-banner.png', '', '2024-12-15', '2024-10-01', '2024-10-31', 'https://ssc.nic.in/notification', '', 'https://ssc.nic.in', 'https://ssc.nic.in/apply', 'Combined Graduate Level', 'স্নাতক স্তৰৰ সংযুক্ত পৰীক্ষা', 1, true],
+    ['IBPS PO 2024', 'আইবিপিএছ পিঅ ২০২৪', 'IBPS', 'আইবিপিএছ', 'https://example.com/ibps-po-banner.png', '', '2024-11-20', '', '', '', '', 'https://ibps.in', 'https://ibps.in/apply', 'Probationary Officer exam', 'প্ৰবেশনাৰী বিষয়া পৰীক্ষা', 2, true],
   ];
 
   const handleBulkImport = async () => {
@@ -828,15 +830,26 @@ export default function UpcomingExams() {
             <BulkTextarea
               value={bulkText}
               onChange={setBulkText}
-              placeholder='[{"name":"SSC CGL 2024","organization":"...","examDate":"2024-12-15T00:00:00.000Z"}]'
+              placeholder='[{"name":"SSC CGL 2024","nameAs":"...","organization":"...","organizationAs":"...","examDate":"2024-12-15T00:00:00.000Z"}]'
             />
+            <div className="rounded-md border border-amber-800/40 bg-amber-950/20 px-3 py-2">
+              <p className="text-xs text-amber-300 font-semibold flex items-center gap-1.5 mb-1">
+                <Languages className="w-3.5 h-3.5" /> Bilingual support (English + Assamese)
+              </p>
+              <p className="text-xs text-amber-200/70">
+                Add <code className="text-amber-300">nameAs</code>, <code className="text-amber-300">organizationAs</code>, and <code className="text-amber-300">descriptionAs</code> alongside the English fields to show exams in both languages. The <code className="text-amber-300">*As</code> fields are optional.
+              </p>
+            </div>
             <p className="text-xs text-slate-500">
-              Fields: <span className="text-slate-400">name</span>,{' '}
-              <span className="text-slate-400">organization</span>,{' '}
+              Fields: <span className="text-slate-400">name</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">nameAs</span> (Assamese — optional),{' '}
+              <span className="text-slate-400">organization</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">organizationAs</span> (Assamese — optional),{' '}
               <span className="text-slate-400">examDate</span> (ISO string),{' '}
               <span className="text-slate-400">applicationStartDate</span> (ISO string),{' '}
               <span className="text-slate-400">applicationEndDate</span> (ISO string),{' '}
-              <span className="text-slate-400">description</span>,{' '}
+              <span className="text-slate-400">description</span> (English),{' '}
+              <span className="text-slate-400 text-amber-300">descriptionAs</span> (Assamese — optional),{' '}
               <span className="text-slate-400">isPublished</span> (boolean),{' '}
               <span className="text-slate-400">order</span> (number)
             </p>

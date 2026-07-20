@@ -19,7 +19,7 @@
 // admins can write/delete.
 // =============================================================================
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
   collection,
   onSnapshot,
@@ -27,6 +27,11 @@ import {
   writeBatch,
   doc,
   getDoc,
+  deleteDoc,
+  updateDoc,
+  query,
+  where,
+  serverTimestamp,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
@@ -51,6 +56,15 @@ import {
   Database,
   Bomb,
   ShieldAlert,
+  Search,
+  FolderTree,
+  BookOpen,
+  FileText,
+  HelpCircle,
+  Image as ImageIcon,
+  Megaphone,
+  CalendarClock,
+  Newspaper,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -118,6 +132,84 @@ const COLLECTION_LABELS: Record<string, string> = {
   support_tickets: 'Support Tickets',
 };
 
+// Config for the "Browse & Delete Individual Items" panel.
+// Maps each browsable collection to: icon, and whether it's hierarchical
+// (deleting a parent should offer to cascade-delete children).
+const COLLECTION_BROWSE_CONFIG: Record<
+  string,
+  { icon: typeof Database; hasChildren: boolean }
+> = {
+  categories:        { icon: FolderTree,    hasChildren: true  },
+  subjects:          { icon: BookOpen,      hasChildren: true  },
+  tests:             { icon: FileText,      hasChildren: true  },
+  questions:         { icon: HelpCircle,    hasChildren: false },
+  banners:           { icon: ImageIcon,     hasChildren: false },
+  app_open_banners:  { icon: ImageIcon,     hasChildren: false },
+  announcements:     { icon: Megaphone,     hasChildren: false },
+  upcoming_exams:    { icon: CalendarClock, hasChildren: false },
+  current_affairs:   { icon: Newspaper,     hasChildren: false },
+  study_materials:   { icon: BookOpen,      hasChildren: false },
+  notifications:     { icon: Megaphone,     hasChildren: false },
+};
+
+// Ordered list of collections shown as pills in the browse panel.
+const BROWSABLE_COLLECTIONS = [
+  'categories', 'subjects', 'tests', 'questions',
+  'banners', 'app_open_banners', 'announcements',
+  'upcoming_exams', 'current_affairs', 'study_materials', 'notifications',
+];
+
+// Returns the primary human-readable name for a document.
+const getDisplayName = (colName: string, data: any): string => {
+  if (!data) return '(unknown)';
+  return String(data.name || data.title || data.question || '(unnamed)');
+};
+
+// Returns an optional secondary line (metadata) shown under the name.
+const getDisplaySubtitle = (colName: string, data: any): string | null => {
+  if (!data) return null;
+  const fmtDate = (v: any): string | null => {
+    if (!v) return null;
+    const d = v?.seconds ? new Date(v.seconds * 1000) : v instanceof Date ? v : null;
+    return d ? d.toLocaleDateString() : null;
+  };
+  switch (colName) {
+    case 'categories':
+      return [
+        data.isPremium ? '★ Premium' : null,
+        data.subjectCount != null ? `${data.subjectCount} subjects` : null,
+      ].filter(Boolean).join(' • ') || null;
+    case 'subjects':
+      return [
+        data.testCount != null ? `${data.testCount} tests` : null,
+        data.categoryId ? `cat:${String(data.categoryId).slice(0, 8)}` : null,
+      ].filter(Boolean).join(' • ') || null;
+    case 'tests':
+      return [
+        data.isPremium ? '★ Premium' : null,
+        data.questionCount != null ? `${data.questionCount} Qs` : null,
+        data.duration ? `${data.duration} min` : null,
+      ].filter(Boolean).join(' • ') || null;
+    case 'questions':
+      return data.testId ? `test:${String(data.testId).slice(0, 8)}` : null;
+    case 'banners':
+    case 'app_open_banners':
+      return data.isActive === false ? 'Inactive' : 'Active';
+    case 'announcements':
+      return [data.type || null, data.isPinned ? 'Pinned' : null].filter(Boolean).join(' • ') || null;
+    case 'upcoming_exams':
+      return [data.organization || null, fmtDate(data.examDate)].filter(Boolean).join(' • ') || null;
+    case 'current_affairs':
+      return [data.category || null, fmtDate(data.date)].filter(Boolean).join(' • ') || null;
+    case 'study_materials':
+      return [data.type || null, data.subjectId ? `subj:${String(data.subjectId).slice(0, 8)}` : null].filter(Boolean).join(' • ') || null;
+    case 'notifications':
+      return data.type || null;
+    default:
+      return null;
+  }
+};
+
 export default function DataManagement() {
   const [clearing, setClearing] = useState(false);
   const [nuking, setNuking] = useState(false);
@@ -131,6 +223,16 @@ export default function DataManagement() {
     Object.fromEntries(ALL_COLLECTIONS.map((c) => [c, 0])),
   );
 
+  // ---- Individual-item browser state ----
+  const [selectedCollection, setSelectedCollection] = useState<string>('categories');
+  const [browseItems, setBrowseItems] = useState<Array<{ id: string; data: any }>>([]);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState<{ id: string; data: any; collection: string } | null>(null);
+  const [cascadeDelete, setCascadeDelete] = useState(true);
+  const [childCounts, setChildCounts] = useState<{ subjects: number; tests: number; questions: number }>({ subjects: 0, tests: 0, questions: 0 });
+  const [loadingChildren, setLoadingChildren] = useState(false);
+  const [deletingItem, setDeletingItem] = useState(false);
+
   useEffect(() => {
     const unsubs = (ALL_COLLECTIONS as readonly string[]).map((name) =>
       onSnapshot(
@@ -141,6 +243,88 @@ export default function DataManagement() {
     );
     return () => unsubs.forEach((u) => u());
   }, []);
+
+  // Live subscription to the currently-browsed collection for the individual
+  // delete panel. Re-subscribes whenever the admin switches collections.
+  useEffect(() => {
+    setBrowseItems([]);
+    const unsub = onSnapshot(
+      collection(db, selectedCollection),
+      (snap) => {
+        const items = snap.docs.map((d) => ({ id: d.id, data: d.data() as any }));
+        items.sort((a, b) => {
+          const an = String(getDisplayName(selectedCollection, a.data));
+          const bn = String(getDisplayName(selectedCollection, b.data));
+          return an.localeCompare(bn);
+        });
+        setBrowseItems(items);
+      },
+      () => {},
+    );
+    return () => unsub();
+  }, [selectedCollection]);
+
+  // Whenever the delete target changes, fetch how many child documents would
+  // be affected (for the cascade warning in the confirmation dialog).
+  useEffect(() => {
+    if (!deleteTarget || !COLLECTION_BROWSE_CONFIG[deleteTarget.collection]?.hasChildren) {
+      setChildCounts({ subjects: 0, tests: 0, questions: 0 });
+      return;
+    }
+    let cancelled = false;
+    setLoadingChildren(true);
+    (async () => {
+      try {
+        const result = { subjects: 0, tests: 0, questions: 0 };
+        const { id, collection: col } = deleteTarget;
+        if (col === 'categories') {
+          const subjSnap = await getDocs(query(collection(db, 'subjects'), where('categoryId', '==', id)));
+          result.subjects = subjSnap.size;
+          const subjectIds = subjSnap.docs.map((d) => d.id);
+          for (let i = 0; i < subjectIds.length; i += 30) {
+            const chunk = subjectIds.slice(i, i + 30);
+            const tSnap = await getDocs(query(collection(db, 'tests'), where('subjectId', 'in', chunk)));
+            result.tests += tSnap.size;
+            const testIds = tSnap.docs.map((d) => d.id);
+            for (let j = 0; j < testIds.length; j += 30) {
+              const qChunk = testIds.slice(j, j + 30);
+              const qSnap = await getDocs(query(collection(db, 'questions'), where('testId', 'in', qChunk)));
+              result.questions += qSnap.size;
+            }
+          }
+        } else if (col === 'subjects') {
+          const tSnap = await getDocs(query(collection(db, 'tests'), where('subjectId', '==', id)));
+          result.tests = tSnap.size;
+          const testIds = tSnap.docs.map((d) => d.id);
+          for (let i = 0; i < testIds.length; i += 30) {
+            const chunk = testIds.slice(i, i + 30);
+            const qSnap = await getDocs(query(collection(db, 'questions'), where('testId', 'in', chunk)));
+            result.questions += qSnap.size;
+          }
+        } else if (col === 'tests') {
+          const qSnap = await getDocs(query(collection(db, 'questions'), where('testId', '==', id)));
+          result.questions = qSnap.size;
+        }
+        if (!cancelled) setChildCounts(result);
+      } catch (e) {
+        console.error('[childCounts]', e);
+      } finally {
+        if (!cancelled) setLoadingChildren(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [deleteTarget]);
+
+  // Filtered list for the browse panel (search by name, subtitle, or doc id).
+  const filteredItems = useMemo(() => {
+    if (!searchQuery.trim()) return browseItems;
+    const q = searchQuery.toLowerCase();
+    return browseItems.filter((item) => {
+      const name = String(getDisplayName(selectedCollection, item.data)).toLowerCase();
+      const subtitle = String(getDisplaySubtitle(selectedCollection, item.data) || '').toLowerCase();
+      return name.includes(q) || subtitle.includes(q) || item.id.toLowerCase().includes(q);
+    });
+  }, [browseItems, searchQuery, selectedCollection]);
 
   const updateLog = (step: string, status: LogEntry['status'], detail?: string) => {
     setLog((prev) => {
@@ -308,7 +492,100 @@ export default function DataManagement() {
     }
   };
 
-  const busy = clearing || nuking;
+  // ===========================================================================
+  // INDIVIDUAL ITEM DELETE
+  // ===========================================================================
+  // After deleting a child doc (subject/test/question), the parent's cached
+  // count field (subjectCount / testCount / questionCount) is now stale. The
+  // Flutter app reads these directly, so we recompute + write them back here.
+  const recomputeParentCount = async (deletedColName: string, parentId: string) => {
+    try {
+      if (deletedColName === 'subjects') {
+        const snap = await getDocs(query(collection(db, 'subjects'), where('categoryId', '==', parentId)));
+        await updateDoc(doc(db, 'categories', parentId), { subjectCount: snap.size, updatedAt: serverTimestamp() });
+      } else if (deletedColName === 'tests') {
+        const snap = await getDocs(query(collection(db, 'tests'), where('subjectId', '==', parentId)));
+        await updateDoc(doc(db, 'subjects', parentId), { testCount: snap.size, updatedAt: serverTimestamp() });
+      } else if (deletedColName === 'questions') {
+        const snap = await getDocs(query(collection(db, 'questions'), where('testId', '==', parentId)));
+        await updateDoc(doc(db, 'tests', parentId), { questionCount: snap.size, updatedAt: serverTimestamp() });
+      }
+    } catch (e) {
+      console.error('[recomputeParentCount]', e);
+    }
+  };
+
+  // Deletes a single document. For hierarchical collections, optionally cascades
+  // to all descendant documents. Commits in batches of 450 (Firestore limit 500).
+  const handleDeleteItem = async () => {
+    if (!deleteTarget) return;
+    setDeletingItem(true);
+    try {
+      const { id, collection: colName, data } = deleteTarget;
+      const refs: any[] = [];
+
+      if (cascadeDelete && COLLECTION_BROWSE_CONFIG[colName]?.hasChildren) {
+        if (colName === 'categories') {
+          const subjSnap = await getDocs(query(collection(db, 'subjects'), where('categoryId', '==', id)));
+          const subjectIds = subjSnap.docs.map((d) => d.id);
+          subjSnap.docs.forEach((d) => refs.push(d.ref));
+          for (let i = 0; i < subjectIds.length; i += 30) {
+            const chunk = subjectIds.slice(i, i + 30);
+            const tSnap = await getDocs(query(collection(db, 'tests'), where('subjectId', 'in', chunk)));
+            const testIds = tSnap.docs.map((d) => d.id);
+            tSnap.docs.forEach((d) => refs.push(d.ref));
+            for (let j = 0; j < testIds.length; j += 30) {
+              const qChunk = testIds.slice(j, j + 30);
+              const qSnap = await getDocs(query(collection(db, 'questions'), where('testId', 'in', qChunk)));
+              qSnap.docs.forEach((d) => refs.push(d.ref));
+            }
+          }
+        } else if (colName === 'subjects') {
+          const tSnap = await getDocs(query(collection(db, 'tests'), where('subjectId', '==', id)));
+          const testIds = tSnap.docs.map((d) => d.id);
+          tSnap.docs.forEach((d) => refs.push(d.ref));
+          for (let i = 0; i < testIds.length; i += 30) {
+            const chunk = testIds.slice(i, i + 30);
+            const qSnap = await getDocs(query(collection(db, 'questions'), where('testId', 'in', chunk)));
+            qSnap.docs.forEach((d) => refs.push(d.ref));
+          }
+        } else if (colName === 'tests') {
+          const qSnap = await getDocs(query(collection(db, 'questions'), where('testId', '==', id)));
+          qSnap.docs.forEach((d) => refs.push(d.ref));
+        }
+      }
+
+      refs.push(doc(db, colName, id));
+
+      for (let i = 0; i < refs.length; i += 450) {
+        const chunk = refs.slice(i, i + 450);
+        const batch = writeBatch(db);
+        chunk.forEach((r) => batch.delete(r));
+        await batch.commit();
+      }
+
+      const parentId = data?.categoryId || data?.subjectId || data?.testId;
+      if (parentId) await recomputeParentCount(colName, parentId);
+
+      const displayName = getDisplayName(colName, data);
+      const childCount = refs.length - 1;
+      toast.success(
+        childCount > 0
+          ? `Deleted "${displayName.slice(0, 50)}" + ${childCount} child doc${childCount === 1 ? '' : 's'}`
+          : `Deleted "${displayName.slice(0, 50)}"`,
+      );
+      setDeleteTarget(null);
+      setCascadeDelete(true);
+    } catch (e) {
+      console.error('[deleteItem]', e);
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      toast.error(`Delete failed: ${msg}`);
+    } finally {
+      setDeletingItem(false);
+    }
+  };
+
+  const busy = clearing || nuking || deletingItem;
   const contentTotal = CONTENT_COLLECTIONS.reduce((sum, c) => sum + (counts[c] || 0), 0);
   const allTotal = ALL_COLLECTIONS.reduce((sum, c) => sum + (counts[c] || 0), 0);
 
@@ -453,6 +730,97 @@ export default function DataManagement() {
         </Card>
       </div>
 
+      {/* ===================== Browse & Delete Individual Items ===================== */}
+      <Card className="bg-slate-900 border-slate-800">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-2 mb-1">
+            <Search className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-semibold text-white">Browse &amp; Delete Individual Items</h3>
+            <span className="text-xs text-slate-500 ml-auto">live from Firestore</span>
+          </div>
+          <p className="text-xs text-slate-400 mb-4">
+            Pick a collection, then delete items one at a time. For categories, subjects &amp; tests you can cascade-delete all children too.
+          </p>
+
+          {/* Collection pills */}
+          <div className="flex flex-wrap gap-2 mb-4">
+            {BROWSABLE_COLLECTIONS.map((key) => {
+              const cfg = COLLECTION_BROWSE_CONFIG[key];
+              if (!cfg) return null;
+              const active = selectedCollection === key;
+              const n = key === selectedCollection ? browseItems.length : counts[key] || 0;
+              const label = COLLECTION_LABELS[key] || key;
+              return (
+                <button
+                  key={key}
+                  type="button"
+                  onClick={() => { setSelectedCollection(key); setSearchQuery(''); }}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium border transition-colors ${
+                    active
+                      ? 'bg-emerald-600 text-white border-emerald-600'
+                      : 'bg-slate-800 text-slate-300 border-slate-700 hover:border-slate-600 hover:bg-slate-700/50'
+                  }`}
+                >
+                  <cfg.icon className="w-3.5 h-3.5" />
+                  {label}
+                  <span className={`ml-0.5 px-1.5 py-0.5 rounded-full text-[10px] ${active ? 'bg-white/20' : 'bg-slate-900/60 text-slate-400'}`}>
+                    {n}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Search + count */}
+          <div className="flex items-center gap-2 mb-3">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+              <Input
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={`Search ${COLLECTION_LABELS[selectedCollection]?.toLowerCase() ?? 'items'}…`}
+                className="pl-8 h-9 bg-slate-950 border-slate-700 text-white placeholder:text-slate-600"
+              />
+            </div>
+            <span className="text-xs text-slate-500 whitespace-nowrap tabular-nums">
+              {filteredItems.length} / {browseItems.length}
+            </span>
+          </div>
+
+          {/* Items list */}
+          {browseItems.length === 0 ? (
+            <p className="text-sm text-slate-600 text-center py-8">No items in this collection.</p>
+          ) : filteredItems.length === 0 ? (
+            <p className="text-sm text-slate-600 text-center py-8">No matches for “{searchQuery}”.</p>
+          ) : (
+            <div className="border border-slate-800 rounded-lg divide-y divide-slate-800 max-h-96 overflow-y-auto">
+              {filteredItems.map((item) => {
+                const name = getDisplayName(selectedCollection, item.data);
+                const subtitle = getDisplaySubtitle(selectedCollection, item.data);
+                return (
+                  <div key={item.id} className="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-800/50 group">
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-slate-200 truncate">{name}</p>
+                      {subtitle && <p className="text-xs text-slate-500 truncate">{subtitle}</p>}
+                    </div>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setDeleteTarget({ id: item.id, data: item.data, collection: selectedCollection })}
+                      disabled={busy}
+                      className="text-red-400 hover:text-red-300 hover:bg-red-950/40 h-8 px-2 opacity-60 group-hover:opacity-100 transition-opacity"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 mr-1" />
+                      Delete
+                    </Button>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
       {/* ===================== Operation Log ===================== */}
       {log.length > 0 && (
         <Card className="bg-slate-900 border-slate-800">
@@ -568,6 +936,135 @@ export default function DataManagement() {
             >
               <Bomb className="w-4 h-4 mr-2" />
               NUKE EVERYTHING
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* ===================== Individual Delete Confirmation ===================== */}
+      <AlertDialog
+        open={!!deleteTarget}
+        onOpenChange={(open) => {
+          if (!open && !deletingItem) {
+            setDeleteTarget(null);
+            setCascadeDelete(true);
+          }
+        }}
+      >
+        <AlertDialogContent className="bg-slate-900 border-slate-700">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-white flex items-center gap-2">
+              <Trash2 className="w-5 h-5 text-red-400" />
+              Delete this {deleteTarget ? (COLLECTION_LABELS[deleteTarget.collection] || 'item').toLowerCase() : 'item'}?
+            </AlertDialogTitle>
+            <AlertDialogDescription asChild>
+              <div className="space-y-3 text-slate-400">
+                {deleteTarget && (
+                  <p className="text-sm">
+                    You are about to permanently delete{' '}
+                    <span className="font-semibold text-white">
+                      “{getDisplayName(deleteTarget.collection, deleteTarget.data).slice(0, 80)}”
+                    </span>
+                  </p>
+                )}
+
+                {deleteTarget && COLLECTION_BROWSE_CONFIG[deleteTarget.collection]?.hasChildren && (
+                  <>
+                    {loadingChildren ? (
+                      <p className="text-xs text-slate-500 flex items-center gap-2">
+                        <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                        Counting child documents…
+                      </p>
+                    ) : (() => {
+                      const total = childCounts.subjects + childCounts.tests + childCounts.questions;
+                      if (total === 0) {
+                        return (
+                          <p className="text-xs text-emerald-400 bg-emerald-950/30 border border-emerald-900/40 rounded-lg p-2.5">
+                            ✓ This item has no child documents. Safe to delete.
+                          </p>
+                        );
+                      }
+                      return (
+                        <div className="rounded-lg bg-slate-950/60 border border-slate-700 p-3 space-y-1.5 text-xs">
+                          <p className="font-medium text-slate-300">This item has child documents:</p>
+                          {deleteTarget.collection === 'categories' && (
+                            <ul className="text-slate-400 space-y-0.5 ml-1">
+                              <li>• <strong className="text-slate-200">{childCounts.subjects}</strong> subject{childCounts.subjects === 1 ? '' : 's'}</li>
+                              <li>• <strong className="text-slate-200">{childCounts.tests}</strong> test{childCounts.tests === 1 ? '' : 's'}</li>
+                              <li>• <strong className="text-slate-200">{childCounts.questions}</strong> question{childCounts.questions === 1 ? '' : 's'}</li>
+                            </ul>
+                          )}
+                          {deleteTarget.collection === 'subjects' && (
+                            <ul className="text-slate-400 space-y-0.5 ml-1">
+                              <li>• <strong className="text-slate-200">{childCounts.tests}</strong> test{childCounts.tests === 1 ? '' : 's'}</li>
+                              <li>• <strong className="text-slate-200">{childCounts.questions}</strong> question{childCounts.questions === 1 ? '' : 's'}</li>
+                            </ul>
+                          )}
+                          {deleteTarget.collection === 'tests' && (
+                            <ul className="text-slate-400 space-y-0.5 ml-1">
+                              <li>• <strong className="text-slate-200">{childCounts.questions}</strong> question{childCounts.questions === 1 ? '' : 's'}</li>
+                            </ul>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    {!loadingChildren && (() => {
+                      const total = childCounts.subjects + childCounts.tests + childCounts.questions;
+                      if (total === 0) return null;
+                      return (
+                        <label className="flex items-start gap-2 cursor-pointer rounded-lg border border-amber-900/50 bg-amber-950/30 p-3">
+                          <input
+                            type="checkbox"
+                            checked={cascadeDelete}
+                            onChange={(e) => setCascadeDelete(e.target.checked)}
+                            className="rounded border-slate-600 mt-0.5"
+                          />
+                          <span className="text-sm text-slate-300">
+                            <strong className="text-amber-400">
+                              Also delete all {total} child document{total === 1 ? '' : 's'}
+                            </strong>{' '}
+                            (recommended)
+                            <br />
+                            <span className="text-xs text-slate-500">
+                              If unchecked, children remain but become <strong>orphaned</strong> — their parent ID will point to a deleted doc.
+                            </span>
+                          </span>
+                        </label>
+                      );
+                    })()}
+                  </>
+                )}
+
+                <p className="text-red-400 text-sm font-medium flex items-center gap-1">
+                  <AlertTriangle className="w-4 h-4" />
+                  This action cannot be undone.
+                </p>
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel className="bg-slate-800 border-slate-700 text-slate-200 hover:bg-slate-700" disabled={deletingItem}>
+              Cancel
+            </AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                handleDeleteItem();
+              }}
+              disabled={deletingItem || loadingChildren}
+              className="bg-red-600 hover:bg-red-700 text-white disabled:opacity-50"
+            >
+              {deletingItem ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Deleting…
+                </>
+              ) : (
+                <>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Yes, Delete
+                </>
+              )}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

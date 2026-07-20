@@ -1,2 +1,15 @@
 skills/
 node_modules/
+
+# Next.js build & dev cache — never commit these
+.next/
+out/
+
+# Build artifacts
+*.tsbuildinfo
+
+# Local logs
+dev.log
+
+# Agent tool scratch
+tool-results/

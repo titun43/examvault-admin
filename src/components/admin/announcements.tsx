@@ -957,11 +957,11 @@ export default function Announcements() {
 
       {/* Bulk Add Dialog */}
       <Dialog open={bulkOpen} onOpenChange={setBulkOpen}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl">
-          <DialogHeader>
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] flex flex-col overflow-hidden">
+          <DialogHeader className="shrink-0">
             <DialogTitle>Bulk Add Announcements</DialogTitle>
           </DialogHeader>
-          <div className="space-y-3">
+          <div className="space-y-3 flex-1 overflow-y-auto min-h-0 pr-1">
             <div className="flex items-center justify-between gap-2">
               <p className="text-xs text-slate-500">
                 Paste a JSON array of announcement objects below, or paste CSV rows (first row = column headers).

@@ -21,6 +21,7 @@ export type AdminSection =
   | 'notifications'
   | 'premium-plans'
   | 'support'
+  | 'question-reports'
   | 'data-management';
 
 interface AppState {

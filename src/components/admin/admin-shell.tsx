@@ -30,7 +30,6 @@ import {
   Gem,
   Search,
   Headphones,
-  Library,
   Database,
   Flag,
 } from 'lucide-react';
@@ -61,7 +60,6 @@ const NAV_GROUPS: NavGroup[] = [
       { id: 'tests', label: 'Tests', icon: FileText },
       { id: 'daily-quiz', label: 'Daily Quiz', icon: CalendarDays },
       { id: 'previous-papers', label: 'Previous Papers', icon: ClipboardList },
-      { id: 'study-materials', label: 'Study Materials', icon: Library },
       { id: 'questions', label: 'Questions', icon: FileQuestion },
     ],
   },

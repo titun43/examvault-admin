@@ -8,7 +8,7 @@
 // Two operations:
 //   1. "Clear All Content Data" — deletes every document from the content
 //      collections (categories, subjects, tests, questions, banners,
-//      announcements, upcoming_exams, current_affairs, study_materials, etc.).
+//      announcements, upcoming_exams, current_affairs, etc.).
 //      Does NOT touch user accounts, payments, or support tickets.
 //
 //   2. "NUKE ALL DATA" — deletes EVERYTHING including users, payments,
@@ -90,7 +90,6 @@ const CONTENT_COLLECTIONS = [
   'announcements',
   'upcoming_exams',
   'current_affairs',
-  'study_materials',
   'notifications',
 ] as const;
 
@@ -120,7 +119,6 @@ const COLLECTION_LABELS: Record<string, string> = {
   announcements: 'Announcements',
   upcoming_exams: 'Upcoming Exams',
   current_affairs: 'Current Affairs',
-  study_materials: 'Study Materials',
   notifications: 'Notifications',
   premium_plans: 'Premium Plans',
   users: 'Users',
@@ -148,7 +146,6 @@ const COLLECTION_BROWSE_CONFIG: Record<
   announcements:     { icon: Megaphone,     hasChildren: false },
   upcoming_exams:    { icon: CalendarClock, hasChildren: false },
   current_affairs:   { icon: Newspaper,     hasChildren: false },
-  study_materials:   { icon: BookOpen,      hasChildren: false },
   notifications:     { icon: Megaphone,     hasChildren: false },
 };
 
@@ -156,7 +153,7 @@ const COLLECTION_BROWSE_CONFIG: Record<
 const BROWSABLE_COLLECTIONS = [
   'categories', 'subjects', 'tests', 'questions',
   'banners', 'app_open_banners', 'announcements',
-  'upcoming_exams', 'current_affairs', 'study_materials', 'notifications',
+  'upcoming_exams', 'current_affairs', 'notifications',
 ];
 
 // Returns the primary human-readable name for a document.
@@ -201,8 +198,6 @@ const getDisplaySubtitle = (colName: string, data: any): string | null => {
       return [data.organization || null, fmtDate(data.examDate)].filter(Boolean).join(' • ') || null;
     case 'current_affairs':
       return [data.category || null, fmtDate(data.date)].filter(Boolean).join(' • ') || null;
-    case 'study_materials':
-      return [data.type || null, data.subjectId ? `subj:${String(data.subjectId).slice(0, 8)}` : null].filter(Boolean).join(' • ') || null;
     case 'notifications':
       return data.type || null;
     default:
@@ -667,7 +662,7 @@ export default function DataManagement() {
             <p className="text-sm text-slate-400">
               Deletes all documents from the <span className="text-amber-400 font-semibold">content collections</span>:
               categories, subjects, tests, questions, banners, announcements, upcoming
-              exams, current affairs, study materials, daily quizzes, and notifications.
+              exams, current affairs, daily quizzes, and notifications.
             </p>
             <div className="rounded-lg bg-amber-950/30 border border-amber-900/40 p-3 text-xs text-amber-300/80">
               <p className="flex items-center gap-1.5 font-semibold mb-1">

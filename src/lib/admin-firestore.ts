@@ -58,7 +58,7 @@ export async function deleteImage(url: string): Promise<void> {
 // when admin deletes content that has an associated image/PDF.
 //
 // `fileFields` = the field names on the doc that may contain a Storage
-// download URL (e.g. ['pdfUrl', 'thumbnailUrl'] for study_materials).
+// download URL (e.g. ['thumbnailUrl', 'imageUrl'] for banners/announcements).
 // Fields that are missing, empty, or non-URL are silently skipped.
 export async function deleteDocWithFiles(
   collectionName: string,

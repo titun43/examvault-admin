@@ -191,7 +191,6 @@ export default function HomeView() {
         const defaultTickers = [
           { emoji: '🎉', title: 'New SSC CGL 2025 Mock Tests Available Now!' },
           { emoji: '🏆', title: 'Weekly Leaderboard Challenge — Compete & Win!' },
-          { emoji: '📚', title: 'Banking Study Materials Just Updated!' },
           { emoji: '🔥', title: 'Daily Quiz Streak — Don\'t Break Your Chain!' },
           { emoji: '🎯', title: 'Railway Practice Set Added — Start Practicing!' },
           { emoji: '✨', title: 'Earn XP & Badges — Level Up Your Prep!' },

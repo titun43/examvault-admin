@@ -9,14 +9,12 @@ import {
   SEED_SUBJECTS,
   SEED_TESTS,
   SEED_BANNERS,
-  SEED_STUDY_MATERIALS,
   resolveQuestions,
   type QuestionPoolMap,
   type SeedCategory,
   type SeedSubject,
   type SeedTest,
   type SeedBanner,
-  type SeedStudyMaterial,
   type SeedQuestionPoolItem,
 } from './structure';
 
@@ -68,7 +66,6 @@ export interface AssamSeedData {
   subjects: SeedSubject[];
   tests: SeedTest[];
   banners: SeedBanner[];
-  studyMaterials: SeedStudyMaterial[];
   questions: ResolvedQuestion[];
   /** Pool size per subject (for verification / display). */
   poolSizes: Record<string, number>;
@@ -86,7 +83,6 @@ export function buildAssamSeed(): AssamSeedData {
     subjects: SEED_SUBJECTS,
     tests: SEED_TESTS,
     banners: SEED_BANNERS,
-    studyMaterials: SEED_STUDY_MATERIALS,
     questions,
     poolSizes,
   };
@@ -99,7 +95,6 @@ export const ASSAM_SEED_SUMMARY = {
   subjects: _seed.subjects.length,
   tests: _seed.tests.length,
   banners: _seed.banners.length,
-  studyMaterials: _seed.studyMaterials.length,
   questions: _seed.questions.length,
   totalPoolItems: Object.values(_seed.poolSizes).reduce((a, b) => a + b, 0),
 };

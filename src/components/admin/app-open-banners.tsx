@@ -509,7 +509,7 @@ export default function AppOpenBanners() {
     if (deleteIds.length === 0) return;
     setSaving(true);
     try {
-      await deleteItemsWithFiles('app_open_banners', deleteIds, ['image']);
+      await deleteItemsWithFiles('app_open_banners', deleteIds, ['imageUrl']);
       toast.success(`Deleted ${deleteIds.length} banner(s)`);
       setDeleteIds([]);
       setDeleteOpen(false);

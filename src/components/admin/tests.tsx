@@ -30,7 +30,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet, IndianRupee, Unlock, Languages } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileText, FileQuestion, Crown, Eye, EyeOff, Layers, X, Download, Info, FileSpreadsheet, IndianRupee, Unlock, Languages, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
@@ -38,6 +38,7 @@ interface Test {
   id: string;
   subjectId: string;
   title: string;
+  titleAs?: string | null;
   slug: string;
   type: string;
   duration: number;
@@ -48,6 +49,8 @@ interface Test {
   negativeMarking: boolean;
   negativeMarks: number;
   instructions?: string;
+  description?: string | null;
+  descriptionAs?: string | null;
   year?: number;
   examSession?: string;
   isPremium: boolean;
@@ -71,9 +74,9 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const emptyForm = {
-  categoryId: '', subjectId: '', title: '', slug: '', type: 'mock', duration: 60, totalMarks: 100, passingMarks: 40,
+  categoryId: '', subjectId: '', title: '', titleAs: '', slug: '', type: 'mock', duration: 60, totalMarks: 100, passingMarks: 40,
   isPublished: true, difficulty: 'medium', negativeMarking: false, negativeMarks: 0.25,
-  instructions: '', year: new Date().getFullYear(), examSession: '', isPremium: false, price: 0,
+  instructions: '', description: '', descriptionAs: '', year: new Date().getFullYear(), examSession: '', isPremium: false, price: 0,
 };
 
 interface TestsProps {
@@ -89,6 +92,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -321,9 +325,14 @@ export default function Tests({ fixedType }: TestsProps = {}) {
 
   useEffect(() => {
     const u1 = onSnapshot(collection(db, 'tests'), (snap) => {
+      setError(null);
       setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Test));
       setLoading(false);
-    }, () => setLoading(false));
+    }, (err) => {
+      console.error('[tests] onSnapshot error:', err);
+      setError(err?.message || 'Failed to load tests. Check Firestore permissions and network connection.');
+      setLoading(false);
+    });
     const u2 = onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Subject)));
     const u3 = onSnapshot(collection(db, 'categories'), (snap) => setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Category)));
 
@@ -379,11 +388,12 @@ export default function Tests({ fixedType }: TestsProps = {}) {
     const subj = subjects.find((s) => s.id === item.subjectId);
     setForm({
       categoryId: subj?.categoryId || '',
-      subjectId: item.subjectId, title: item.title, slug: item.slug, type: item.type || 'mock',
+      subjectId: item.subjectId, title: item.title, titleAs: item.titleAs || '', slug: item.slug, type: item.type || 'mock',
       duration: item.duration, totalMarks: item.totalMarks, passingMarks: item.passingMarks,
       isPublished: item.isPublished, difficulty: item.difficulty || 'medium',
       negativeMarking: item.negativeMarking, negativeMarks: item.negativeMarks || 0.25,
-      instructions: item.instructions || '', year: item.year || new Date().getFullYear(),
+      instructions: item.instructions || '', description: item.description || '', descriptionAs: item.descriptionAs || '',
+      year: item.year || new Date().getFullYear(),
       examSession: item.examSession || '', isPremium: item.isPremium, price: item.price ?? 0,
     });
     setEditingId(item.id);
@@ -418,6 +428,7 @@ export default function Tests({ fixedType }: TestsProps = {}) {
         categoryId: form.categoryId,
         subjectId: form.subjectId,
         title: form.title.trim(),
+        titleAs: form.titleAs.trim() || null,
         slug: form.slug ? slugify(form.slug) : slugify(form.title),
         // Force the fixed type when in fixedType mode (Daily Quiz section)
         type: fixedType || form.type,
@@ -429,6 +440,8 @@ export default function Tests({ fixedType }: TestsProps = {}) {
         negativeMarking: form.negativeMarking,
         negativeMarks: Number(form.negativeMarks) || 0,
         instructions: form.instructions || null,
+        description: form.description.trim() || null,
+        descriptionAs: form.descriptionAs.trim() || null,
         isPremium: effectiveIsPremium,
         price: Number(form.price) || 0,
       };
@@ -567,7 +580,16 @@ export default function Tests({ fixedType }: TestsProps = {}) {
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-emerald-500 animate-spin" /></div>
-      ) : visibleItems.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {visibleItems.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <FileText className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -723,6 +745,8 @@ export default function Tests({ fixedType }: TestsProps = {}) {
         </Card>
         </>
       )}
+      </>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -735,6 +759,11 @@ export default function Tests({ fixedType }: TestsProps = {}) {
             <div className="space-y-2">
               <Label>Title *</Label>
               <Input value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value, slug: form.slug || slugify(e.target.value) })} placeholder="e.g. RRB NTPC Mock Test 1" className="bg-slate-800 border-slate-700" />
+            </div>
+            {/* Bilingual: Assamese title (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5"><Languages className="w-3.5 h-3.5" /> Title (Assamese) <span className="text-slate-500 font-normal">— optional</span></Label>
+              <Input value={form.titleAs} onChange={(e) => setForm({ ...form, titleAs: e.target.value })} placeholder="অসমীয়া শিৰোনাম" className="bg-slate-800 border-amber-800/50" />
             </div>
             {/* Category + Subject row. Category filters the Subject dropdown so
                 the admin doesn't scroll through a long flat subject list. */}
@@ -875,6 +904,11 @@ export default function Tests({ fixedType }: TestsProps = {}) {
             <div className="space-y-2">
               <Label>Instructions</Label>
               <Textarea value={form.instructions} onChange={(e) => setForm({ ...form, instructions: e.target.value })} rows={2} placeholder="Test instructions for students" className="bg-slate-800 border-slate-700" />
+            </div>
+            {/* Bilingual: Assamese description (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5"><Languages className="w-3.5 h-3.5" /> Description (Assamese) <span className="text-slate-500 font-normal">— optional</span></Label>
+              <Textarea value={form.descriptionAs} onChange={(e) => setForm({ ...form, descriptionAs: e.target.value })} rows={2} placeholder="অসমীয়া বিৱৰণ" className="bg-slate-800 border-amber-800/50" />
             </div>
             <div className="flex items-center gap-6 flex-wrap">
               <div className="flex items-center gap-2">

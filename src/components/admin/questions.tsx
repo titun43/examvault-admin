@@ -29,7 +29,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers, Download, FileSpreadsheet, Languages } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FileQuestion, ArrowLeft, CheckCircle2, Circle, Image as ImageIcon, X, Crown, Layers, Download, FileSpreadsheet, Languages, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
@@ -58,6 +58,7 @@ export default function Questions() {
   const { selectedTestId, selectedTestTitle, setCurrentSection } = useAppStore();
   const [items, setItems] = useState<Question[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -287,19 +288,26 @@ export default function Questions() {
     setLoading(true);
     const q = query(collection(db, 'questions'), where('testId', '==', selectedTestId));
     const unsub = onSnapshot(q, (snap) => {
+      setError(null);
       setItems(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Question));
       setLoading(false);
-    }, () => setLoading(false));
+    }, (err) => {
+      console.error('[questions] onSnapshot error:', err);
+      setError(err?.message || 'Failed to load questions. Check Firestore permissions and network connection.');
+      setLoading(false);
+    });
     return () => unsub();
   }, [selectedTestId]);
 
   const openAdd = () => { setForm(emptyForm); setEditingId(null); setDialogOpen(true); };
   const openEdit = (item: Question) => {
+    // C4 fix: preserve the actual options array length instead of truncating to 4 empty strings
+    const optLen = item.options?.length || 4;
     setForm({
       question: item.question,
       questionAs: item.questionAs || '',
-      options: item.options?.length === 4 ? item.options : ['', '', '', ''],
-      optionsAs: item.optionsAs?.length === 4 ? item.optionsAs : ['', '', '', ''],
+      options: item.options?.length ? [...item.options] : ['', '', '', ''],
+      optionsAs: item.optionsAs?.length === optLen ? [...item.optionsAs] : Array(optLen).fill(''),
       correctAnswerIndex: item.correctAnswerIndex ?? 0,
       explanation: item.explanation || '',
       explanationAs: item.explanationAs || '',
@@ -325,7 +333,8 @@ export default function Questions() {
 
   const handleSave = async () => {
     if (!form.question.trim()) { toast.error('Question text is required'); return; }
-    if (form.options.some((o) => !o.trim())) { toast.error('All 4 options are required'); return; }
+    if (form.options.some((o) => !o.trim())) { toast.error(`All ${form.options.length} options are required`); return; }
+    if (form.correctAnswerIndex >= form.options.length) { toast.error('Correct answer index is out of range'); return; }
     setSaving(true);
     try {
       const data: any = {
@@ -339,18 +348,20 @@ export default function Questions() {
         isPremium: form.isPremium,
         imageUrl: form.imageUrl || null,
       };
-      // Bilingual: only save *As fields if they have content (don't store empty strings)
-      if (form.questionAs.trim()) data.questionAs = form.questionAs.trim();
-      if (form.optionsAs.some((o) => o.trim())) data.optionsAs = form.optionsAs.map((o) => o.trim());
-      if (form.explanationAs.trim()) data.explanationAs = form.explanationAs.trim();
+      // C2 fix: always write bilingual fields (with null when empty) so they can be CLEARED on edit
+      data.questionAs = form.questionAs.trim() || null;
+      data.optionsAs = form.optionsAs.some((o) => o.trim()) ? form.optionsAs.map((o) => o.trim()) : null;
+      data.explanationAs = form.explanationAs.trim() || null;
       if (editingId) {
         await updateDoc(doc(db, 'questions', editingId), { ...data, updatedAt: serverTimestamp() });
         toast.success('Question updated');
       } else {
         await addDoc(collection(db, 'questions'), { ...data, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
-        // Increment questionCount on the test
-        const testRef = doc(db, 'tests', selectedTestId!);
-        await updateDoc(testRef, { questionCount: items.length + 1 });
+        // C3 fix: re-count via getDocs to avoid stale items.length race condition
+        if (selectedTestId) {
+          const qsnap = await getDocs(query(collection(db, 'questions'), where('testId', '==', selectedTestId)));
+          await updateDoc(doc(db, 'tests', selectedTestId), { questionCount: qsnap.size });
+        }
         toast.success('Question added');
       }
       setDialogOpen(false);
@@ -365,10 +376,10 @@ export default function Questions() {
     if (!deleteId) return;
     try {
       await deleteDocWithFiles('questions', deleteId, ['imageUrl']);
-      // Decrement questionCount
+      // C3 fix: re-count via getDocs to avoid stale items.length race condition
       if (selectedTestId) {
-        const testRef = doc(db, 'tests', selectedTestId);
-        await updateDoc(testRef, { questionCount: Math.max(0, items.length - 1) });
+        const qsnap = await getDocs(query(collection(db, 'questions'), where('testId', '==', selectedTestId)));
+        await updateDoc(doc(db, 'tests', selectedTestId), { questionCount: qsnap.size });
       }
       toast.success('Question deleted');
       setDeleteId(null);
@@ -409,10 +420,10 @@ export default function Questions() {
     try {
       const ids = Array.from(selectedIds);
       await deleteItemsWithFiles('questions', ids, ['imageUrl']);
-      // Decrement questionCount on the test
+      // C3 fix: re-count via getDocs to avoid stale items.length race condition
       if (selectedTestId) {
-        const testRef = doc(db, 'tests', selectedTestId);
-        await updateDoc(testRef, { questionCount: Math.max(0, items.length - ids.length) });
+        const qsnap = await getDocs(query(collection(db, 'questions'), where('testId', '==', selectedTestId)));
+        await updateDoc(doc(db, 'tests', selectedTestId), { questionCount: qsnap.size });
       }
       toast.success(`${ids.length} question${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
@@ -469,7 +480,16 @@ export default function Questions() {
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-emerald-500 animate-spin" /></div>
-      ) : items.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {items.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <FileQuestion className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -582,6 +602,8 @@ export default function Questions() {
         </div>
         </>
       )}
+      </>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-2xl max-h-[90vh] overflow-y-auto">
@@ -611,10 +633,16 @@ export default function Questions() {
                       {String.fromCharCode(65 + i)}
                     </button>
                     <Input value={opt} onChange={(e) => { const opts = [...form.options]; opts[i] = e.target.value; setForm({ ...form, options: opts }); }} placeholder={`Option ${String.fromCharCode(65 + i)}`} className="bg-slate-800 border-slate-700" />
+                    {form.options.length > 2 && (
+                      <button type="button" onClick={() => { const opts = form.options.filter((_, idx) => idx !== i); const optsAs = form.optionsAs.filter((_, idx) => idx !== i); const cai = form.correctAnswerIndex >= opts.length ? opts.length - 1 : (form.correctAnswerIndex > i ? form.correctAnswerIndex - 1 : form.correctAnswerIndex); setForm({ ...form, options: opts, optionsAs: optsAs, correctAnswerIndex: cai }); }} className="w-7 h-7 rounded-md border border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-700 flex items-center justify-center shrink-0" title="Remove option"><X className="w-3.5 h-3.5" /></button>
+                    )}
                   </div>
                 ))}
               </div>
-              <p className="text-xs text-slate-500">Click the letter button to mark the correct answer (currently: <span className="text-emerald-400 font-semibold">{String.fromCharCode(65 + form.correctAnswerIndex)}</span>)</p>
+              <div className="flex items-center gap-3">
+                <button type="button" onClick={() => setForm({ ...form, options: [...form.options, ''], optionsAs: [...form.optionsAs, ''] })} className="text-xs text-emerald-400 hover:text-emerald-300 flex items-center gap-1"><Plus className="w-3.5 h-3.5" /> Add option</button>
+                <p className="text-xs text-slate-500">Click a letter to mark the correct answer (currently: <span className="text-emerald-400 font-semibold">{String.fromCharCode(65 + form.correctAnswerIndex)}</span>)</p>
+              </div>
             </div>
             {/* Bilingual: Assamese options (optional) */}
             <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">

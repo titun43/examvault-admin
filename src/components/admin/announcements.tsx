@@ -58,6 +58,7 @@ import {
   Download,
   FileSpreadsheet,
   Languages,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -99,7 +100,9 @@ interface AnnouncementButtonFormState {
 interface Announcement {
   id: string;
   title: string;
+  titleAs?: string | null;
   message?: string;
+  messageAs?: string | null;
   type?: AnnouncementType;
   imageUrl?: string;
   link?: string;
@@ -189,7 +192,9 @@ const buildButtonPayload = (b: AnnouncementButtonFormState): ActionButton | null
 
 const emptyForm = {
   title: '',
+  titleAs: '',
   message: '',
+  messageAs: '',
   type: 'info' as AnnouncementType,
   imageUrl: '',
   link: '',
@@ -317,6 +322,7 @@ function ButtonEditor({
 export default function Announcements() {
   const [items, setItems] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -410,6 +416,7 @@ export default function Announcements() {
     const unsub = onSnapshot(
       collection(db, 'announcements'),
       (snap) => {
+        setError(null);
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }) as Announcement)
           .sort((a, b) => {
@@ -425,7 +432,11 @@ export default function Announcements() {
         setItems(list);
         setLoading(false);
       },
-      () => setLoading(false),
+      (err) => {
+        console.error('[announcements] onSnapshot error:', err);
+        setError(err?.message || 'Failed to load announcements. Check Firestore permissions and network connection.');
+        setLoading(false);
+      },
     );
     return () => unsub();
   }, []);
@@ -455,7 +466,9 @@ export default function Announcements() {
         : { ...emptyButtonForm, params: {} };
     setForm({
       title: item.title || '',
+      titleAs: item.titleAs || '',
       message: item.message || '',
+      messageAs: item.messageAs || '',
       type: (item.type as AnnouncementType) || 'info',
       imageUrl: item.imageUrl || '',
       link: item.link || '',
@@ -512,7 +525,9 @@ export default function Announcements() {
       }
       const data: Record<string, any> = {
         title: form.title.trim(),
+        titleAs: form.titleAs.trim() || null,
         message: form.message.trim(),
+        messageAs: form.messageAs.trim() || null,
         type: form.type,
         imageUrl: form.imageUrl || null,
         link: legacyLink,
@@ -549,7 +564,7 @@ export default function Announcements() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDocWithFiles('announcements', deleteId, ['image']);
+      await deleteDocWithFiles('announcements', deleteId, ['imageUrl']);
       toast.success('Announcement deleted');
       setDeleteId(null);
     } catch (err: any) {
@@ -590,7 +605,7 @@ export default function Announcements() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItemsWithFiles('announcements', ids, ['image']);
+      await deleteItemsWithFiles('announcements', ids, ['imageUrl']);
       toast.success(`${ids.length} announcement${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();
@@ -628,7 +643,16 @@ export default function Announcements() {
         <div className="flex justify-center py-20">
           <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
         </div>
-      ) : items.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {items.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <Newspaper className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -812,6 +836,8 @@ export default function Announcements() {
         </div>
         </>
       )}
+      </>
+      )}
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -829,6 +855,18 @@ export default function Announcements() {
                 className="bg-slate-800 border-slate-700"
               />
             </div>
+            {/* Bilingual: Assamese title (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Title (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Input
+                value={form.titleAs}
+                onChange={(e) => setForm({ ...form, titleAs: e.target.value })}
+                placeholder="অসমীয়া শিৰোনাম"
+                className="bg-slate-800 border-amber-800/50"
+              />
+            </div>
             <div className="space-y-2">
               <Label>Message *</Label>
               <Textarea
@@ -837,6 +875,19 @@ export default function Announcements() {
                 placeholder="Announcement body..."
                 className="bg-slate-800 border-slate-700"
                 rows={3}
+              />
+            </div>
+            {/* Bilingual: Assamese message (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Message (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Textarea
+                value={form.messageAs}
+                onChange={(e) => setForm({ ...form, messageAs: e.target.value })}
+                rows={3}
+                placeholder="অসমীয়া বাৰ্তা"
+                className="bg-slate-800 border-amber-800/50"
               />
             </div>
             <div className="space-y-2">

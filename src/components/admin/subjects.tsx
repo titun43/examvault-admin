@@ -28,7 +28,7 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from '
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from '@/components/ui/alert-dialog';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, BookOpen, Layers, X, Download, FileSpreadsheet, Languages } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, BookOpen, Layers, X, Download, FileSpreadsheet, Languages, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 
@@ -36,9 +36,11 @@ interface Subject {
   id: string;
   categoryId: string;
   name: string;
+  nameAs?: string | null;
   slug: string;
   icon?: string;
   description?: string;
+  descriptionAs?: string | null;
   order?: number;
   testCount?: number;
   premiumPrice?: number;
@@ -50,12 +52,13 @@ interface Category {
   icon?: string;
 }
 
-const emptyForm = { name: '', categoryId: '', slug: '', icon: '', description: '', order: 0, premiumPrice: 0 };
+const emptyForm = { name: '', nameAs: '', categoryId: '', slug: '', icon: '', description: '', descriptionAs: '', order: 0, premiumPrice: 0 };
 
 export default function Subjects() {
   const [items, setItems] = useState<Subject[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -235,12 +238,17 @@ export default function Subjects() {
 
   useEffect(() => {
     const u1 = onSnapshot(collection(db, 'subjects'), (snap) => {
+      setError(null);
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }) as Subject)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
       setItems(list);
       setLoading(false);
-    }, () => setLoading(false));
+    }, (err) => {
+      console.error('[subjects] onSnapshot error:', err);
+      setError(err?.message || 'Failed to load subjects. Check Firestore permissions and network connection.');
+      setLoading(false);
+    });
 
     const u2 = onSnapshot(collection(db, 'categories'), (snap) => {
       setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Category));
@@ -276,8 +284,8 @@ export default function Subjects() {
   const openAdd = () => { setForm(emptyForm); setEditingId(null); setDialogOpen(true); };
   const openEdit = (item: Subject) => {
     setForm({
-      name: item.name, categoryId: item.categoryId, slug: item.slug,
-      icon: item.icon || '', description: item.description || '', order: item.order || 0,
+      name: item.name, nameAs: item.nameAs || '', categoryId: item.categoryId, slug: item.slug,
+      icon: item.icon || '', description: item.description || '', descriptionAs: item.descriptionAs || '', order: item.order || 0,
       premiumPrice: item.premiumPrice ?? 0,
     });
     setEditingId(item.id);
@@ -291,10 +299,12 @@ export default function Subjects() {
     try {
       const data = {
         name: form.name.trim(),
+        nameAs: form.nameAs.trim() || null,
         categoryId: form.categoryId,
         slug: form.slug ? slugify(form.slug) : slugify(form.name),
         icon: form.icon || null,
         description: form.description || null,
+        descriptionAs: form.descriptionAs || null,
         order: Number(form.order) || 0,
         // Subject Pack price (INR). 0 = not purchasable individually.
         // When > 0, the Flutter test_list_screen shows an "Unlock this subject
@@ -399,7 +409,16 @@ export default function Subjects() {
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-emerald-500 animate-spin" /></div>
-      ) : items.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {items.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <BookOpen className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -496,6 +515,8 @@ export default function Subjects() {
         </Card>
         </>
       )}
+      </>
+      )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
@@ -504,6 +525,11 @@ export default function Subjects() {
             <div className="space-y-2">
               <Label>Name *</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value, slug: form.slug || slugify(e.target.value) })} placeholder="e.g. General Knowledge" className="bg-slate-800 border-slate-700" />
+            </div>
+            {/* Bilingual: Assamese name (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5"><Languages className="w-3.5 h-3.5" /> Name (Assamese) <span className="text-slate-500 font-normal">— optional</span></Label>
+              <Input value={form.nameAs} onChange={(e) => setForm({ ...form, nameAs: e.target.value })} placeholder="অসমীয়া নাম" className="bg-slate-800 border-amber-800/50" />
             </div>
             <div className="space-y-2">
               <Label>Category *</Label>
@@ -547,6 +573,11 @@ export default function Subjects() {
             <div className="space-y-2">
               <Label>Description</Label>
               <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} rows={2} className="bg-slate-800 border-slate-700" />
+            </div>
+            {/* Bilingual: Assamese description (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5"><Languages className="w-3.5 h-3.5" /> Description (Assamese) <span className="text-slate-500 font-normal">— optional</span></Label>
+              <Textarea value={form.descriptionAs} onChange={(e) => setForm({ ...form, descriptionAs: e.target.value })} rows={2} placeholder="অসমীয়া বিৱৰণ" className="bg-slate-800 border-amber-800/50" />
             </div>
           </div>
           <DialogFooter>
@@ -654,7 +685,10 @@ export default function Subjects() {
         <AlertDialogContent className="bg-slate-900 border-slate-700 text-white">
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this subject?</AlertDialogTitle>
-            <AlertDialogDescription className="text-slate-400">Tests under this subject will remain but lose their subject link.</AlertDialogDescription>
+            <AlertDialogDescription className="text-slate-400">
+              This action cannot be undone.
+              <span className="block mt-2 text-amber-400">Warning: Tests and Questions under this subject will remain in Firestore but lose their subject link. Delete them manually if needed.</span>
+            </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel className="border-slate-700 text-slate-300">Cancel</AlertDialogCancel>

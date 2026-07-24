@@ -46,6 +46,7 @@ import {
   User as UserIcon,
   Send,
   X,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -99,6 +100,7 @@ const emptyForm = {
 export default function Notifications() {
   const [items, setItems] = useState<AppNotification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
@@ -117,6 +119,7 @@ export default function Notifications() {
     const unsub = onSnapshot(
       collection(db, 'notifications'),
       (snap) => {
+        setError(null);
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }) as AppNotification)
           .sort((a, b) => {
@@ -127,7 +130,11 @@ export default function Notifications() {
         setItems(list);
         setLoading(false);
       },
-      () => setLoading(false),
+      (err) => {
+        console.error('[notifications] onSnapshot error:', err);
+        setError(err?.message || 'Failed to load notifications. Check Firestore permissions and network connection.');
+        setLoading(false);
+      },
     );
     return () => unsub();
   }, []);
@@ -265,7 +272,16 @@ export default function Notifications() {
         <div className="flex justify-center py-20">
           <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
         </div>
-      ) : items.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {items.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <Bell className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -386,6 +402,8 @@ export default function Notifications() {
           })}
         </div>
         </>
+      )}
+      </>
       )}
 
       {/* Send Dialog */}

@@ -26,7 +26,7 @@ import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Badge } from '@/components/ui/badge';
-import { Plus, Pencil, Trash2, Loader2, ClipboardList, FileQuestion, Crown, X, Info } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, ClipboardList, FileQuestion, Crown, X, Info, AlertTriangle } from 'lucide-react';
 import { toast } from 'sonner';
 
 interface Test {
@@ -63,6 +63,7 @@ export default function PreviousPapers() {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -77,12 +78,17 @@ export default function PreviousPapers() {
     // Query tests where type == previousYear
     const q = query(collection(db, 'tests'), where('type', '==', 'previousYear'));
     const u1 = onSnapshot(q, (snap) => {
+      setError(null);
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }) as Test)
         .sort((a, b) => (b.year || 0) - (a.year || 0));
       setItems(list);
       setLoading(false);
-    }, () => setLoading(false));
+    }, (err) => {
+      console.error('[previous-papers] onSnapshot error:', err);
+      setError(err?.message || 'Failed to load previous papers. Check Firestore permissions and network connection.');
+      setLoading(false);
+    });
     const u2 = onSnapshot(collection(db, 'subjects'), (snap) => setSubjects(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Subject)));
     const u3 = onSnapshot(collection(db, 'categories'), (snap) => setCategories(snap.docs.map((d) => ({ id: d.id, ...d.data() }) as Category)));
     return () => { u1(); u2(); u3(); };
@@ -220,7 +226,16 @@ export default function PreviousPapers() {
 
       {loading ? (
         <div className="flex justify-center py-20"><Loader2 className="w-6 h-6 text-amber-500 animate-spin" /></div>
-      ) : items.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {items.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <ClipboardList className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -321,6 +336,8 @@ export default function PreviousPapers() {
           </CardContent>
         </Card>
         </>
+      )}
+      </>
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>

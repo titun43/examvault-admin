@@ -66,6 +66,7 @@ import {
   Globe,
   ExternalLink,
   Languages,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -73,7 +74,9 @@ import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 interface UpcomingExam {
   id: string;
   name?: string;
+  nameAs?: string | null;
   organization?: string;
+  organizationAs?: string | null;
   categoryId?: string;
   examDate?: any;
   applicationStartDate?: any;
@@ -84,6 +87,7 @@ interface UpcomingExam {
   applyUrl?: string;        // Direct application / registration link
   imageUrl?: string;
   description?: string;
+  descriptionAs?: string | null;
   tags?: string[];
   isPublished?: boolean;
   order?: number;
@@ -98,7 +102,9 @@ interface Category {
 
 const emptyForm = {
   name: '',
+  nameAs: '',
   organization: '',
+  organizationAs: '',
   categoryId: 'none',
   examDate: '',
   applicationStartDate: '',
@@ -109,6 +115,7 @@ const emptyForm = {
   applyUrl: '',
   imageUrl: '',
   description: '',
+  descriptionAs: '',
   tags: '',
   isPublished: true,
   order: 0,
@@ -132,6 +139,7 @@ export default function UpcomingExams() {
   const [items, setItems] = useState<UpcomingExam[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -224,6 +232,7 @@ export default function UpcomingExams() {
     const unsub1 = onSnapshot(
       collection(db, 'upcoming_exams'),
       (snap) => {
+        setError(null);
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }) as UpcomingExam)
           .sort((a, b) => {
@@ -237,7 +246,11 @@ export default function UpcomingExams() {
         setItems(list);
         setLoading(false);
       },
-      () => setLoading(false),
+      (err) => {
+        console.error('[upcoming_exams] onSnapshot error:', err);
+        setError(err?.message || 'Failed to load upcoming exams. Check Firestore permissions and network connection.');
+        setLoading(false);
+      },
     );
     const unsub2 = onSnapshot(collection(db, 'categories'), (snap) => {
       const cats = snap.docs
@@ -265,7 +278,9 @@ export default function UpcomingExams() {
   const openEdit = (item: UpcomingExam) => {
     setForm({
       name: item.name || '',
+      nameAs: item.nameAs || '',
       organization: item.organization || '',
+      organizationAs: item.organizationAs || '',
       categoryId: item.categoryId || 'none',
       examDate: item.examDate ? toDateTimeInputValue(item.examDate) : '',
       applicationStartDate: item.applicationStartDate ? toDateTimeInputValue(item.applicationStartDate) : '',
@@ -276,6 +291,7 @@ export default function UpcomingExams() {
       applyUrl: item.applyUrl || '',
       imageUrl: item.imageUrl || '',
       description: item.description || '',
+      descriptionAs: item.descriptionAs || '',
       tags: Array.isArray(item.tags) ? item.tags.join(', ') : '',
       isPublished: item.isPublished !== false,
       order: item.order || 0,
@@ -316,7 +332,9 @@ export default function UpcomingExams() {
         .filter(Boolean);
       const data: Record<string, any> = {
         name: form.name.trim(),
+        nameAs: form.nameAs.trim() || null,
         organization: form.organization.trim() || null,
+        organizationAs: form.organizationAs.trim() || null,
         categoryId: form.categoryId === 'none' ? null : form.categoryId,
         examDate: new Date(form.examDate),
         applicationStartDate: form.applicationStartDate ? new Date(form.applicationStartDate) : null,
@@ -327,6 +345,7 @@ export default function UpcomingExams() {
         applyUrl: form.applyUrl.trim() || null,
         imageUrl: form.imageUrl || null,
         description: form.description.trim() || null,
+        descriptionAs: form.descriptionAs.trim() || null,
         tags: tagsArray,
         isPublished: !!form.isPublished,
         order: Number(form.order) || 0,
@@ -356,7 +375,7 @@ export default function UpcomingExams() {
   const handleDelete = async () => {
     if (!deleteId) return;
     try {
-      await deleteDocWithFiles('upcoming_exams', deleteId, ['image']);
+      await deleteDocWithFiles('upcoming_exams', deleteId, ['imageUrl']);
       toast.success('Exam deleted');
       setDeleteId(null);
     } catch (err: any) {
@@ -397,7 +416,7 @@ export default function UpcomingExams() {
     setBulkDeleting(true);
     try {
       const ids = Array.from(selectedIds);
-      await deleteItemsWithFiles('upcoming_exams', ids, ['image']);
+      await deleteItemsWithFiles('upcoming_exams', ids, ['imageUrl']);
       toast.success(`${ids.length} exam${ids.length === 1 ? '' : 's'} deleted`);
       setBulkDeleteOpen(false);
       clearSelection();
@@ -435,7 +454,16 @@ export default function UpcomingExams() {
         <div className="flex justify-center py-20">
           <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
         </div>
-      ) : items.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {items.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <CalendarClock className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -591,6 +619,8 @@ export default function UpcomingExams() {
         </div>
         </>
       )}
+      </>
+      )}
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -606,6 +636,18 @@ export default function UpcomingExams() {
                 onChange={(e) => setForm({ ...form, name: e.target.value })}
                 placeholder="e.g. RRB NTPC 2025"
                 className="bg-slate-800 border-slate-700"
+              />
+            </div>
+            {/* Bilingual: Assamese name (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Exam Name (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Input
+                value={form.nameAs}
+                onChange={(e) => setForm({ ...form, nameAs: e.target.value })}
+                placeholder="অসমীয়া পৰীক্ষাৰ নাম"
+                className="bg-slate-800 border-amber-800/50"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -637,6 +679,18 @@ export default function UpcomingExams() {
                   </SelectContent>
                 </Select>
               </div>
+            </div>
+            {/* Bilingual: Assamese organization (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Organization (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Input
+                value={form.organizationAs}
+                onChange={(e) => setForm({ ...form, organizationAs: e.target.value })}
+                placeholder="অসমীয়া সংস্থাৰ নাম"
+                className="bg-slate-800 border-amber-800/50"
+              />
             </div>
             <div className="space-y-2">
               <Label>Exam Date *</Label>
@@ -744,6 +798,19 @@ export default function UpcomingExams() {
                 placeholder="Short description about the exam"
                 className="bg-slate-800 border-slate-700"
                 rows={2}
+              />
+            </div>
+            {/* Bilingual: Assamese description (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Description (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Textarea
+                value={form.descriptionAs}
+                onChange={(e) => setForm({ ...form, descriptionAs: e.target.value })}
+                placeholder="পৰীক্ষাৰ বিষয়ে চমু বিৱৰণ"
+                rows={2}
+                className="bg-slate-800 border-amber-800/50"
               />
             </div>
             <div className="space-y-2">

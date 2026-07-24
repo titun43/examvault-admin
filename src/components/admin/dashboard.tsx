@@ -16,6 +16,7 @@ import {
   ClipboardList,
   Loader2,
   TrendingUp,
+  AlertTriangle,
 } from 'lucide-react';
 
 interface Stats {
@@ -71,6 +72,7 @@ export default function Dashboard() {
     users: 0, announcements: 0, upcomingExams: 0, banners: 0, currentAffairs: 0,
   });
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     const collections = [
@@ -89,6 +91,7 @@ export default function Dashboard() {
       onSnapshot(
         collection(db, c.name),
         (snap) => {
+          setError(null);
           setStats((prev) => {
             const next = { ...prev, [c.key]: snap.size };
             // Calculate previousPapers from tests where type=previousYear
@@ -99,7 +102,10 @@ export default function Dashboard() {
             return next;
           });
         },
-        () => {},
+        (err) => {
+          console.error(`[dashboard] onSnapshot error for ${c.name}:`, err);
+          setError(err?.message || 'Failed to load some dashboard stats. Check Firestore permissions and network connection.');
+        },
       ),
     );
 
@@ -114,6 +120,14 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6">
+      {error && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+
       {/* Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
         <StatCard label="Categories" value={stats.categories} icon={FolderTree} color="bg-blue-950/50 text-blue-400" loading={loading} />

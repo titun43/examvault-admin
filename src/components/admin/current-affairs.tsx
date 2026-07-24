@@ -72,6 +72,7 @@ import {
   Download,
   FileSpreadsheet,
   Languages,
+  AlertTriangle,
 } from 'lucide-react';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -80,8 +81,11 @@ interface CurrentAffair {
   id: string;
   date?: any;
   title?: string;
+  titleAs?: string | null;
   content?: string;
+  contentAs?: string | null;
   summary?: string;
+  summaryAs?: string | null;
   pdfUrl?: string;
   imageUrl?: string;
   source?: string;
@@ -101,8 +105,11 @@ interface Category {
 const emptyForm = {
   date: '',
   title: '',
+  titleAs: '',
   summary: '',
+  summaryAs: '',
   content: '',
+  contentAs: '',
   source: '',
   category: '',
   categoryId: 'none',
@@ -130,6 +137,7 @@ export default function CurrentAffairs() {
   const [items, setItems] = useState<CurrentAffair[]>([]);
   const [categories, setCategories] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -225,6 +233,7 @@ export default function CurrentAffairs() {
     const unsub1 = onSnapshot(
       collection(db, 'current_affairs'),
       (snap) => {
+        setError(null);
         const list = snap.docs
           .map((d) => ({ id: d.id, ...d.data() }) as CurrentAffair)
           .sort((a, b) => {
@@ -235,7 +244,11 @@ export default function CurrentAffairs() {
         setItems(list);
         setLoading(false);
       },
-      () => setLoading(false),
+      (err) => {
+        console.error('[current_affairs] onSnapshot error:', err);
+        setError(err?.message || 'Failed to load current affairs. Check Firestore permissions and network connection.');
+        setLoading(false);
+      },
     );
     const unsub2 = onSnapshot(collection(db, 'categories'), (snap) => {
       const cats = snap.docs
@@ -259,8 +272,11 @@ export default function CurrentAffairs() {
     setForm({
       date: item.date ? toDateTimeInputValue(item.date) : '',
       title: item.title || '',
+      titleAs: item.titleAs || '',
       summary: item.summary || '',
+      summaryAs: item.summaryAs || '',
       content: item.content || '',
+      contentAs: item.contentAs || '',
       source: item.source || '',
       category: item.category || '',
       categoryId: item.categoryId || 'none',
@@ -329,8 +345,11 @@ export default function CurrentAffairs() {
       const data: Record<string, any> = {
         date: new Date(form.date),
         title: form.title.trim(),
+        titleAs: form.titleAs.trim() || null,
         summary: form.summary.trim(),
+        summaryAs: form.summaryAs.trim() || null,
         content: form.content.trim(),
+        contentAs: form.contentAs.trim() || null,
         source: form.source.trim() || null,
         category: form.category.trim() || null,
         categoryId: form.categoryId === 'none' ? null : form.categoryId,
@@ -443,7 +462,16 @@ export default function CurrentAffairs() {
         <div className="flex justify-center py-20">
           <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
         </div>
-      ) : items.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {items.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <Newspaper className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -588,6 +616,8 @@ export default function CurrentAffairs() {
         </Card>
         </>
       )}
+      </>
+      )}
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -625,6 +655,18 @@ export default function CurrentAffairs() {
                 className="bg-slate-800 border-slate-700"
               />
             </div>
+            {/* Bilingual: Assamese title (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Title (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Input
+                value={form.titleAs}
+                onChange={(e) => setForm({ ...form, titleAs: e.target.value })}
+                placeholder="অসমীয়া শিৰোনাম"
+                className="bg-slate-800 border-amber-800/50"
+              />
+            </div>
             <div className="space-y-2">
               <Label>Summary *</Label>
               <Textarea
@@ -635,6 +677,19 @@ export default function CurrentAffairs() {
                 rows={2}
               />
             </div>
+            {/* Bilingual: Assamese summary (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Summary (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Textarea
+                value={form.summaryAs}
+                onChange={(e) => setForm({ ...form, summaryAs: e.target.value })}
+                rows={2}
+                placeholder="অসমীয়া সাৰাংশ"
+                className="bg-slate-800 border-amber-800/50"
+              />
+            </div>
             <div className="space-y-2">
               <Label>Content *</Label>
               <Textarea
@@ -643,6 +698,19 @@ export default function CurrentAffairs() {
                 placeholder="Full content of the current affair"
                 className="bg-slate-800 border-slate-700"
                 rows={5}
+              />
+            </div>
+            {/* Bilingual: Assamese content (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Content (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Textarea
+                value={form.contentAs}
+                onChange={(e) => setForm({ ...form, contentAs: e.target.value })}
+                rows={5}
+                placeholder="অসমীয়া বিষয়বস্তু"
+                className="bg-slate-800 border-amber-800/50"
               />
             </div>
             <div className="grid grid-cols-2 gap-3">

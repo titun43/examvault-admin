@@ -35,7 +35,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download, FileSpreadsheet, RefreshCw, Languages } from 'lucide-react';
+import { Plus, Pencil, Trash2, Loader2, FolderTree, Image as ImageIcon, X, Layers, Crown, IndianRupee, Download, FileSpreadsheet, RefreshCw, Languages, AlertTriangle } from 'lucide-react';
 import { Switch } from '@/components/ui/switch';
 import { toast } from 'sonner';
 import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
@@ -43,9 +43,11 @@ import { downloadJson, downloadCsv, parseCsv } from '@/lib/download';
 interface Category {
   id: string;
   name: string;
+  nameAs?: string | null;
   slug: string;
   icon?: string;
   description?: string;
+  descriptionAs?: string | null;
   image?: string;
   color?: string;
   order?: number;
@@ -55,7 +57,7 @@ interface Category {
   premiumDurationMonths?: number;
 }
 
-const emptyForm = { name: '', slug: '', icon: '', description: '', image: '', color: '#10b981', order: 0, isPremium: false, premiumPrice: 99, premiumDurationMonths: 1 };
+const emptyForm = { name: '', nameAs: '', slug: '', icon: '', description: '', descriptionAs: '', image: '', color: '#10b981', order: 0, isPremium: false, premiumPrice: 99, premiumDurationMonths: 1 };
 
 // =============================================================================
 // propagateCategoryPremiumToTests — THE ROOT-CAUSE FIX for the
@@ -112,6 +114,7 @@ export default function Categories() {
   const { setCurrentSection } = useAppStore();
   const [items, setItems] = useState<Category[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
   const [dialogOpen, setDialogOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [form, setForm] = useState(emptyForm);
@@ -234,12 +237,17 @@ export default function Categories() {
 
   useEffect(() => {
     const unsub = onSnapshot(collection(db, 'categories'), (snap) => {
+      setError(null);
       const list = snap.docs
         .map((d) => ({ id: d.id, ...d.data() }) as Category)
         .sort((a, b) => (a.order || 0) - (b.order || 0));
       setItems(list);
       setLoading(false);
-    }, () => setLoading(false));
+    }, (err) => {
+      console.error('[categories] onSnapshot error:', err);
+      setError(err?.message || 'Failed to load categories. Check Firestore permissions and network connection.');
+      setLoading(false);
+    });
 
     // Live subject counts → { categoryId: count }. Kept in state for instant
     // display AND any stale `subjectCount` values are written back to the
@@ -277,9 +285,11 @@ export default function Categories() {
   const openEdit = (item: Category) => {
     setForm({
       name: item.name || '',
+      nameAs: item.nameAs || '',
       slug: item.slug || '',
       icon: item.icon || '',
       description: item.description || '',
+      descriptionAs: item.descriptionAs || '',
       image: item.image || '',
       color: item.color || '#10b981',
       order: item.order || 0,
@@ -326,9 +336,12 @@ export default function Categories() {
     try {
       const data = {
         ...form,
+        name: form.name.trim(),
+        nameAs: form.nameAs.trim() || null,
         slug: form.slug ? slugify(form.slug) : slugify(form.name),
         icon: form.icon || null,
         description: form.description || null,
+        descriptionAs: form.descriptionAs || null,
         image: form.image || null,
         color: form.color || null,
         order: Number(form.order) || 0,
@@ -579,7 +592,16 @@ export default function Categories() {
         <div className="flex justify-center py-20">
           <Loader2 className="w-6 h-6 text-emerald-500 animate-spin" />
         </div>
-      ) : items.length === 0 ? (
+      ) : (
+        <>
+      {error && !loading && (
+        <div className="flex items-center gap-2 p-4 text-red-300 text-sm rounded-lg bg-red-950/40 border border-red-800/40 mb-4">
+          <AlertTriangle className="w-4 h-4 shrink-0" />
+          <span className="flex-1">{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-300 underline shrink-0">Dismiss</button>
+        </div>
+      )}
+      {items.length === 0 ? (
         <Card className="bg-slate-900 border-slate-800 border-dashed">
           <CardContent className="py-16 text-center">
             <FolderTree className="w-12 h-12 text-slate-700 mx-auto mb-3" />
@@ -675,6 +697,8 @@ export default function Categories() {
         </div>
         </>
       )}
+      </>
+      )}
 
       {/* Add/Edit Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
@@ -690,6 +714,18 @@ export default function Categories() {
                 onChange={(e) => setForm({ ...form, name: e.target.value, slug: form.slug || slugify(e.target.value) })}
                 placeholder="e.g. SSC, Railway, UPSC"
                 className="bg-slate-800 border-slate-700"
+              />
+            </div>
+            {/* Bilingual: Assamese name (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Name (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Input
+                value={form.nameAs}
+                onChange={(e) => setForm({ ...form, nameAs: e.target.value })}
+                placeholder="অসমীয়া নাম"
+                className="bg-slate-800 border-amber-800/50"
               />
             </div>
             <div className="space-y-2">
@@ -712,6 +748,13 @@ export default function Categories() {
             <div className="space-y-2">
               <Label>Description</Label>
               <Textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} placeholder="Short description" className="bg-slate-800 border-slate-700" rows={2} />
+            </div>
+            {/* Bilingual: Assamese description (optional) */}
+            <div className="space-y-2 rounded-md border border-amber-800/30 bg-amber-950/10 p-3">
+              <Label className="text-amber-300 flex items-center gap-1.5">
+                <Languages className="w-3.5 h-3.5" /> Description (Assamese) <span className="text-slate-500 font-normal">— optional</span>
+              </Label>
+              <Textarea value={form.descriptionAs} onChange={(e) => setForm({ ...form, descriptionAs: e.target.value })} placeholder="চমু বিৱৰণ" className="bg-slate-800 border-amber-800/50" rows={2} />
             </div>
             <div className="space-y-2">
               <Label>Image</Label>
@@ -903,7 +946,8 @@ export default function Categories() {
           <AlertDialogHeader>
             <AlertDialogTitle>Delete this category?</AlertDialogTitle>
             <AlertDialogDescription className="text-slate-400">
-              This action cannot be undone. Subjects and tests under this category will remain but lose their category link.
+              This action cannot be undone.
+              <span className="block mt-2 text-amber-400">Warning: Subjects, Tests, and Questions under this category will remain in Firestore but lose their category link. Delete them manually if needed.</span>
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>

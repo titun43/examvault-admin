@@ -519,9 +519,9 @@ export default function Subjects() {
       )}
 
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg">
+        <DialogContent className="bg-slate-900 border-slate-700 text-white max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader><DialogTitle>{editingId ? 'Edit Subject' : 'Add Subject'}</DialogTitle></DialogHeader>
-          <div className="space-y-4">
+          <div className="space-y-4 max-h-[60vh] overflow-y-auto pr-1">
             <div className="space-y-2">
               <Label>Name *</Label>
               <Input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value, slug: form.slug || slugify(e.target.value) })} placeholder="e.g. General Knowledge" className="bg-slate-800 border-slate-700" />

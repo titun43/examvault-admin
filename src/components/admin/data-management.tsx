@@ -8,7 +8,7 @@
 // Two operations:
 //   1. "Clear All Content Data" — deletes every document from the content
 //      collections (categories, subjects, tests, questions, banners,
-//      announcements, upcoming_exams, current_affairs, etc.).
+//      announcements, upcoming_exams, current_affairs, study_materials, etc.).
 //      Does NOT touch user accounts, payments, or support tickets.
 //
 //   2. "NUKE ALL DATA" — deletes EVERYTHING including users, payments,
@@ -65,6 +65,7 @@ import {
   Megaphone,
   CalendarClock,
   Newspaper,
+  RefreshCw,
 } from 'lucide-react';
 import { toast } from 'sonner';
 
@@ -90,6 +91,7 @@ const CONTENT_COLLECTIONS = [
   'announcements',
   'upcoming_exams',
   'current_affairs',
+  'study_materials',
   'notifications',
 ] as const;
 
@@ -119,6 +121,7 @@ const COLLECTION_LABELS: Record<string, string> = {
   announcements: 'Announcements',
   upcoming_exams: 'Upcoming Exams',
   current_affairs: 'Current Affairs',
+  study_materials: 'Study Materials',
   notifications: 'Notifications',
   premium_plans: 'Premium Plans',
   users: 'Users',
@@ -146,6 +149,7 @@ const COLLECTION_BROWSE_CONFIG: Record<
   announcements:     { icon: Megaphone,     hasChildren: false },
   upcoming_exams:    { icon: CalendarClock, hasChildren: false },
   current_affairs:   { icon: Newspaper,     hasChildren: false },
+  study_materials:   { icon: BookOpen,      hasChildren: false },
   notifications:     { icon: Megaphone,     hasChildren: false },
 };
 
@@ -153,7 +157,7 @@ const COLLECTION_BROWSE_CONFIG: Record<
 const BROWSABLE_COLLECTIONS = [
   'categories', 'subjects', 'tests', 'questions',
   'banners', 'app_open_banners', 'announcements',
-  'upcoming_exams', 'current_affairs', 'notifications',
+  'upcoming_exams', 'current_affairs', 'study_materials', 'notifications',
 ];
 
 // Returns the primary human-readable name for a document.
@@ -198,6 +202,8 @@ const getDisplaySubtitle = (colName: string, data: any): string | null => {
       return [data.organization || null, fmtDate(data.examDate)].filter(Boolean).join(' • ') || null;
     case 'current_affairs':
       return [data.category || null, fmtDate(data.date)].filter(Boolean).join(' • ') || null;
+    case 'study_materials':
+      return [data.type || null, data.subjectId ? `subj:${String(data.subjectId).slice(0, 8)}` : null].filter(Boolean).join(' • ') || null;
     case 'notifications':
       return data.type || null;
     default:
@@ -227,6 +233,12 @@ export default function DataManagement() {
   const [childCounts, setChildCounts] = useState<{ subjects: number; tests: number; questions: number }>({ subjects: 0, tests: 0, questions: 0 });
   const [loadingChildren, setLoadingChildren] = useState(false);
   const [deletingItem, setDeletingItem] = useState(false);
+  const [syncingCounts, setSyncingCounts] = useState(false);
+  const [syncResult, setSyncResult] = useState<{
+    subjects: { ok: number; fixed: number; failed: number };
+    categories: { ok: number; fixed: number; failed: number };
+    tests: { ok: number; fixed: number; failed: number };
+  } | null>(null);
 
   useEffect(() => {
     const unsubs = (ALL_COLLECTIONS as readonly string[]).map((name) =>
@@ -510,6 +522,132 @@ export default function DataManagement() {
     }
   };
 
+  // ===========================================================================
+  // SYNC ALL DENORMALIZED COUNTS — one-click repair
+  // ===========================================================================
+  // The Flutter user app reads 3 denormalized count fields directly:
+  //   - `category.subjectCount`  (number of subjects in this category)
+  //   - `subject.testCount`      (number of tests in this subject)
+  //   - `test.questionCount`     (number of questions in this test)
+  //
+  // These fields drift whenever a child is added/deleted through a code path
+  // that forgets to write back the parent count. Past versions of this admin
+  // panel had a "Sync Counts Now" button in `data-seed.tsx` (deleted in
+  // commit a58817f) — without it, admins had no way to repair stale counts
+  // except by opening the Subjects page and hoping its onSnapshot writeback
+  // (which silently swallows errors) would fix things.
+  //
+  // This handler walks ALL categories, subjects, and tests, recomputes the
+  // ABSOLUTE count for each via a fresh getDocs query, and writes back only
+  // the ones that are actually stale. Returns a summary so the admin can see
+  // exactly how many docs were repaired.
+  const handleSyncCounts = async () => {
+    setSyncingCounts(true);
+    setSyncResult(null);
+    const result = {
+      subjects: { ok: 0, fixed: 0, failed: 0 },
+      categories: { ok: 0, fixed: 0, failed: 0 },
+      tests: { ok: 0, fixed: 0, failed: 0 },
+    };
+    try {
+      // ---- 1. Sync subject.testCount for every subject ----
+      const subjSnap = await getDocs(collection(db, 'subjects'));
+      // Build a { subjectId: testCount } map in ONE pass over the tests
+      // collection — much cheaper than 1 query per subject.
+      const testsSnap = await getDocs(collection(db, 'tests'));
+      const testCountBySubject: Record<string, number> = {};
+      const questionCountByTest: Record<string, number> = {};
+      // Also gather subjectIds per category for category.subjectCount
+      const subjectCountByCategory: Record<string, number> = {};
+      testsSnap.docs.forEach((d) => {
+        const data = d.data() as any;
+        const sid = data?.subjectId;
+        if (sid) testCountBySubject[sid] = (testCountBySubject[sid] || 0) + 1;
+      });
+      subjSnap.docs.forEach((d) => {
+        const data = d.data() as any;
+        const cid = data?.categoryId;
+        if (cid) subjectCountByCategory[cid] = (subjectCountByCategory[cid] || 0) + 1;
+      });
+      // Count questions per test in ONE pass
+      const qSnap = await getDocs(collection(db, 'questions'));
+      qSnap.docs.forEach((d) => {
+        const data = d.data() as any;
+        const tid = data?.testId;
+        if (tid) questionCountByTest[tid] = (questionCountByTest[tid] || 0) + 1;
+      });
+
+      // Write back stale subject.testCount
+      for (const subjDoc of subjSnap.docs) {
+        const correct = testCountBySubject[subjDoc.id] || 0;
+        const current = (subjDoc.data() as any)?.testCount;
+        if (current === correct) { result.subjects.ok++; continue; }
+        try {
+          await updateDoc(doc(db, 'subjects', subjDoc.id), {
+            testCount: correct,
+            updatedAt: serverTimestamp(),
+          });
+          result.subjects.fixed++;
+        } catch (e) {
+          console.warn('[syncCounts] subject', subjDoc.id, e);
+          result.subjects.failed++;
+        }
+      }
+
+      // ---- 2. Sync category.subjectCount for every category ----
+      const catSnap = await getDocs(collection(db, 'categories'));
+      for (const catDoc of catSnap.docs) {
+        const correct = subjectCountByCategory[catDoc.id] || 0;
+        const current = (catDoc.data() as any)?.subjectCount;
+        if (current === correct) { result.categories.ok++; continue; }
+        try {
+          await updateDoc(doc(db, 'categories', catDoc.id), {
+            subjectCount: correct,
+            updatedAt: serverTimestamp(),
+          });
+          result.categories.fixed++;
+        } catch (e) {
+          console.warn('[syncCounts] category', catDoc.id, e);
+          result.categories.failed++;
+        }
+      }
+
+      // ---- 3. Sync test.questionCount for every test ----
+      for (const testDoc of testsSnap.docs) {
+        const correct = questionCountByTest[testDoc.id] || 0;
+        const current = (testDoc.data() as any)?.questionCount;
+        if (current === correct) { result.tests.ok++; continue; }
+        try {
+          await updateDoc(doc(db, 'tests', testDoc.id), {
+            questionCount: correct,
+            updatedAt: serverTimestamp(),
+          });
+          result.tests.fixed++;
+        } catch (e) {
+          console.warn('[syncCounts] test', testDoc.id, e);
+          result.tests.failed++;
+        }
+      }
+
+      setSyncResult(result);
+      const totalFixed = result.subjects.fixed + result.categories.fixed + result.tests.fixed;
+      const totalFailed = result.subjects.failed + result.categories.failed + result.tests.failed;
+      if (totalFailed > 0) {
+        toast.warning(`Synced counts — ${totalFixed} fixed, ${totalFailed} failed (see console)`);
+      } else if (totalFixed > 0) {
+        toast.success(`Synced counts — ${totalFixed} document${totalFixed === 1 ? '' : 's'} repaired`);
+      } else {
+        toast.success('All counts already correct — nothing to sync');
+      }
+    } catch (e) {
+      console.error('[syncCounts]', e);
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      toast.error(`Sync failed: ${msg}`);
+    } finally {
+      setSyncingCounts(false);
+    }
+  };
+
   // Deletes a single document. For hierarchical collections, optionally cascades
   // to all descendant documents. Commits in batches of 450 (Firestore limit 500).
   const handleDeleteItem = async () => {
@@ -580,7 +718,7 @@ export default function DataManagement() {
     }
   };
 
-  const busy = clearing || nuking || deletingItem;
+  const busy = clearing || nuking || deletingItem || syncingCounts;
   const contentTotal = CONTENT_COLLECTIONS.reduce((sum, c) => sum + (counts[c] || 0), 0);
   const allTotal = ALL_COLLECTIONS.reduce((sum, c) => sum + (counts[c] || 0), 0);
 
@@ -662,7 +800,7 @@ export default function DataManagement() {
             <p className="text-sm text-slate-400">
               Deletes all documents from the <span className="text-amber-400 font-semibold">content collections</span>:
               categories, subjects, tests, questions, banners, announcements, upcoming
-              exams, current affairs, daily quizzes, and notifications.
+              exams, current affairs, study materials, daily quizzes, and notifications.
             </p>
             <div className="rounded-lg bg-amber-950/30 border border-amber-900/40 p-3 text-xs text-amber-300/80">
               <p className="flex items-center gap-1.5 font-semibold mb-1">
@@ -724,6 +862,65 @@ export default function DataManagement() {
           </CardContent>
         </Card>
       </div>
+
+      {/* ===================== Sync Counts Now ===================== */}
+      <Card className="bg-slate-900 border-sky-900/60">
+        <CardContent className="p-5">
+          <div className="flex items-start justify-between gap-4 flex-wrap">
+            <div className="flex-1 min-w-[260px]">
+              <div className="flex items-center gap-2 mb-1">
+                <RefreshCw className={`w-4 h-4 text-sky-400 ${syncingCounts ? 'animate-spin' : ''}`} />
+                <h3 className="text-sm font-semibold text-white">Sync Denormalized Counts</h3>
+                <span className="text-xs text-slate-500 ml-auto">repairs stale counts in one click</span>
+              </div>
+              <p className="text-xs text-slate-400 mb-3">
+                The Flutter user app reads cached count fields directly from each doc —
+                <code className="text-sky-300 mx-1">category.subjectCount</code>,
+                <code className="text-sky-300 mx-1">subject.testCount</code>,
+                <code className="text-sky-300 mx-1">test.questionCount</code>.
+                If these drift (e.g. a test was added without updating its parent subject), the user
+                app shows <span className="text-red-400 font-semibold">“0 Tests”</span> or a wrong number.
+                This button recomputes <span className="text-white font-semibold">every</span> count from
+                scratch and writes back only the stale ones.
+              </p>
+              {syncResult && (
+                <div className="rounded-lg bg-slate-950/60 border border-slate-800 p-3 mb-3">
+                  <p className="text-xs text-slate-400 mb-2 font-semibold">Last sync result:</p>
+                  <div className="grid grid-cols-3 gap-2 text-xs">
+                    <div className="rounded border border-slate-800 bg-slate-900/40 p-2">
+                      <p className="text-slate-500 mb-0.5">Subjects</p>
+                      <p className="text-emerald-400 font-bold">{syncResult.subjects.fixed} fixed</p>
+                      <p className="text-slate-500">{syncResult.subjects.ok} ok · {syncResult.subjects.failed} failed</p>
+                    </div>
+                    <div className="rounded border border-slate-800 bg-slate-900/40 p-2">
+                      <p className="text-slate-500 mb-0.5">Categories</p>
+                      <p className="text-emerald-400 font-bold">{syncResult.categories.fixed} fixed</p>
+                      <p className="text-slate-500">{syncResult.categories.ok} ok · {syncResult.categories.failed} failed</p>
+                    </div>
+                    <div className="rounded border border-slate-800 bg-slate-900/40 p-2">
+                      <p className="text-slate-500 mb-0.5">Tests</p>
+                      <p className="text-emerald-400 font-bold">{syncResult.tests.fixed} fixed</p>
+                      <p className="text-slate-500">{syncResult.tests.ok} ok · {syncResult.tests.failed} failed</p>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+            <Button
+              onClick={handleSyncCounts}
+              disabled={busy}
+              className="bg-sky-600 hover:bg-sky-700 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {syncingCounts ? (
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              ) : (
+                <RefreshCw className="w-4 h-4 mr-2" />
+              )}
+              {syncingCounts ? 'Syncing…' : 'Sync Counts Now'}
+            </Button>
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ===================== Browse & Delete Individual Items ===================== */}
       <Card className="bg-slate-900 border-slate-800">

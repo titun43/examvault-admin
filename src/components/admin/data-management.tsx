@@ -250,7 +250,7 @@ export default function DataManagement() {
     setSeedResult(null);
     try {
       // Dynamically import seed data
-      const seedModule = await import('../../seed-data/06-assam-extra');
+      const seedModule = await import('@/seed-data/06-assam-extra');
       const allCategories = [...seedModule.ADDITIONAL_ASSAM_CATEGORIES, ...seedModule.ASSAM_DAILY_QUIZZES];
       let cats = 0, subs = 0, tsts = 0, qs = 0, banners = 0, exams = 0, cas = 0, anns = 0;
 

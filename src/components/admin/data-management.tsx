@@ -249,6 +249,37 @@ export default function DataManagement() {
     setSeedingAssam(true);
     setSeedResult(null);
     try {
+      // First ensure admin doc exists for current user
+      const { getAuth } = await import('firebase/auth');
+      const { auth } = await import('@/lib/firebase');
+      const currentUser = getAuth().currentUser;
+      if (!currentUser) {
+        setSeedResult('❌ Error: Not logged in. Please sign in first.');
+        setSeedingAssam(false);
+        return;
+      }
+
+      // Ensure admins/{uid} doc exists
+      const adminDocRef = doc(db, 'admins', currentUser.uid);
+      const adminDoc = await getDoc(adminDocRef);
+      if (!adminDoc.exists()) {
+        await setDoc(adminDocRef, {
+          email: currentUser.email,
+          role: 'admin',
+          createdAt: serverTimestamp(),
+        });
+        // Wait a moment for Firestore to sync
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
+      // Also ensure users/{uid} has role=admin
+      const userDocRef = doc(db, 'users', currentUser.uid);
+      const userDoc = await getDoc(userDocRef);
+      if (userDoc.exists() && userDoc.data()?.role !== 'admin') {
+        await setDoc(userDocRef, { role: 'admin', updatedAt: serverTimestamp() }, { merge: true });
+        await new Promise(r => setTimeout(r, 1000));
+      }
+
       // Dynamically import seed data
       const seedModule = await import('@/seed-data/06-assam-extra');
       const allCategories = [...seedModule.ADDITIONAL_ASSAM_CATEGORIES, ...seedModule.ASSAM_DAILY_QUIZZES];
@@ -321,16 +352,16 @@ export default function DataManagement() {
         banners++;
       }
 
-      // Upcoming Exams
+      // Upcoming Exams (collection name: upcoming_exams — NOT upcomingExams)
       for (const e of seedModule.ADDITIONAL_ASSAM_UPCOMING_EXAMS) {
-        const eRef = doc(collection(db, 'upcomingExams'));
+        const eRef = doc(collection(db, 'upcoming_exams'));
         await setDoc(eRef, { ...e, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
         exams++;
       }
 
-      // Current Affairs
+      // Current Affairs (collection name: current_affairs — NOT currentAffairs)
       for (const ca of seedModule.ADDITIONAL_ASSAM_CURRENT_AFFAIRS) {
-        const caRef = doc(collection(db, 'currentAffairs'));
+        const caRef = doc(collection(db, 'current_affairs'));
         await setDoc(caRef, { ...ca, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
         cas++;
       }

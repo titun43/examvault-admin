@@ -32,6 +32,7 @@ import {
   query,
   where,
   serverTimestamp,
+  setDoc,
 } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { Button } from '@/components/ui/button';
@@ -239,6 +240,115 @@ export default function DataManagement() {
     categories: { ok: number; fixed: number; failed: number };
     tests: { ok: number; fixed: number; failed: number };
   } | null>(null);
+
+  // ---- Seed Assam data state ----
+  const [seedingAssam, setSeedingAssam] = useState(false);
+  const [seedResult, setSeedResult] = useState<string | null>(null);
+
+  const seedAssamData = async () => {
+    setSeedingAssam(true);
+    setSeedResult(null);
+    try {
+      // Dynamically import seed data
+      const seedModule = await import('@/seed-data/06-assam-extra');
+      const allCategories = [...seedModule.ADDITIONAL_ASSAM_CATEGORIES, ...seedModule.ASSAM_DAILY_QUIZZES];
+      let cats = 0, subs = 0, tsts = 0, qs = 0, banners = 0, exams = 0, cas = 0, anns = 0;
+
+      for (const cat of allCategories) {
+        // Add category
+        const catRef = doc(collection(db, 'categories'));
+        await setDoc(catRef, {
+          name: cat.name, slug: cat.slug, icon: cat.icon,
+          description: cat.description, image: cat.image, color: cat.color,
+          order: cat.order, isPremium: cat.isPremium,
+          premiumPrice: cat.premiumPrice, premiumDurationMonths: cat.premiumDurationMonths,
+          subjectCount: cat.subjects.length,
+          createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+        });
+        cats++;
+
+        for (const subj of cat.subjects) {
+          const subjRef = doc(collection(db, 'subjects'));
+          await setDoc(subjRef, {
+            name: subj.name, slug: subj.slug, icon: subj.icon,
+            description: subj.description, order: subj.order,
+            categoryId: catRef.id, categoryName: cat.name,
+            testCount: subj.tests.length,
+            createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+          });
+          subs++;
+
+          for (const test of subj.tests) {
+            const testRef = doc(collection(db, 'tests'));
+            await setDoc(testRef, {
+              title: test.title, slug: test.slug, type: test.type,
+              duration: test.duration, totalMarks: test.totalMarks,
+              passingMarks: test.passingMarks, isPublished: test.isPublished,
+              difficulty: test.difficulty, negativeMarking: test.negativeMarking,
+              negativeMarks: test.negativeMarks, instructions: test.instructions,
+              year: test.year, examSession: test.examSession,
+              isPremium: test.isPremium, price: test.price,
+              categoryId: catRef.id, categoryName: cat.name,
+              subjectId: subjRef.id, subjectName: subj.name,
+              attemptCount: 0, questionCount: test.questions.length,
+              createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+            });
+            tsts++;
+
+            // Add questions in batch
+            const batch = writeBatch(db);
+            for (let i = 0; i < test.questions.length; i++) {
+              const q = test.questions[i];
+              const qRef = doc(collection(db, 'questions'));
+              batch.set(qRef, {
+                ...q, testId: testRef.id, testTitle: test.title,
+                subjectId: subjRef.id, subjectName: subj.name,
+                categoryId: catRef.id, categoryName: cat.name,
+                order: i + 1,
+                createdAt: serverTimestamp(), updatedAt: serverTimestamp(),
+              });
+              qs++;
+            }
+            await batch.commit();
+          }
+        }
+      }
+
+      // Banners
+      for (const b of seedModule.ADDITIONAL_ASSAM_BANNERS) {
+        const bRef = doc(collection(db, 'banners'));
+        await setDoc(bRef, { ...b, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        banners++;
+      }
+
+      // Upcoming Exams
+      for (const e of seedModule.ADDITIONAL_ASSAM_UPCOMING_EXAMS) {
+        const eRef = doc(collection(db, 'upcomingExams'));
+        await setDoc(eRef, { ...e, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        exams++;
+      }
+
+      // Current Affairs
+      for (const ca of seedModule.ADDITIONAL_ASSAM_CURRENT_AFFAIRS) {
+        const caRef = doc(collection(db, 'currentAffairs'));
+        await setDoc(caRef, { ...ca, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        cas++;
+      }
+
+      // Announcements
+      for (const ann of seedModule.ADDITIONAL_ASSAM_ANNOUNCEMENTS) {
+        const aRef = doc(collection(db, 'announcements'));
+        await setDoc(aRef, { ...ann, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+        anns++;
+      }
+
+      setSeedResult(`✅ Success! ${cats} categories, ${subs} subjects, ${tsts} tests, ${qs} questions, ${banners} banners, ${exams} upcoming exams, ${cas} current affairs, ${anns} announcements added.`);
+    } catch (e: any) {
+      setSeedResult(`❌ Error: ${e.message}`);
+    } finally {
+      setSeedingAssam(false);
+    }
+  };
 
   useEffect(() => {
     const unsubs = (ALL_COLLECTIONS as readonly string[]).map((name) =>
@@ -738,6 +848,45 @@ export default function DataManagement() {
           </p>
         </div>
       </div>
+
+      {/* ===================== Seed Assam Data ===================== */}
+      <Card className="bg-slate-900 border-slate-800 border-emerald-900">
+        <CardContent className="p-5">
+          <div className="flex items-center gap-2 mb-3">
+            <Database className="w-4 h-4 text-emerald-400" />
+            <h3 className="text-sm font-semibold text-white">Seed Assam Exam Data (A-Z)</h3>
+          </div>
+          <p className="text-slate-400 text-xs mb-4">
+            Uploads Assam-specific categories, subjects, tests, questions, daily quizzes,
+            banners, upcoming exams, current affairs, and announcements to Firestore.
+            Safe to run multiple times (creates new documents each time).
+          </p>
+          <div className="flex items-center gap-3 flex-wrap">
+            <Button
+              onClick={seedAssamData}
+              disabled={seedingAssam}
+              className="bg-emerald-600 hover:bg-emerald-700 text-white"
+            >
+              {seedingAssam ? (
+                <>
+                  <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                  Seeding...
+                </>
+              ) : (
+                <>
+                  <Database className="w-4 h-4 mr-2" />
+                  Seed Assam Data
+                </>
+              )}
+            </Button>
+            {seedResult && (
+              <p className={`text-xs ${seedResult.startsWith('✅') ? 'text-emerald-400' : 'text-red-400'}`}>
+                {seedResult}
+              </p>
+            )}
+          </div>
+        </CardContent>
+      </Card>
 
       {/* ===================== Live Data Status ===================== */}
       <Card className="bg-slate-900 border-slate-800">
